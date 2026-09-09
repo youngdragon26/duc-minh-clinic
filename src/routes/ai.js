@@ -213,6 +213,17 @@ router.post('/chat', async (req, res) => {
         ].join('\n\n')
       : 'Không tìm thấy tài liệu tham khảo nào liên quan trong cơ sở tri thức.';
 
+    // Nêu thẳng tên tài liệu khớp nhất bằng 1 câu cụ thể — thực tế cho thấy chỉ
+    // đưa cả khối tài liệu và nói "ưu tiên dùng thông tin trên" là chưa đủ, model
+    // vẫn có thể tự bịa ra 1 chuyên khoa không hề xuất hiện trong tài liệu tham
+    // khảo (đã xảy ra thật: tài liệu chỉ có "Da liễu"/"Nhi khoa" nhưng model trả
+    // lời "Tai – Mũi – Họng"). Nêu tên tài liệu rõ ràng, cụ thể giúp model bám sát
+    // hơn là 1 quy tắc chung chung.
+    const topHit = retrieved[0];
+    const groundingNote = topHit && topHit.similarity > 0.6
+      ? `LƯU Ý QUAN TRỌNG: tài liệu khớp nhất với câu hỏi hiện tại là "${topHit.title}". Nếu câu hỏi liên quan tới triệu chứng hoặc nên khám chuyên khoa nào, PHẢI trả lời theo đúng tài liệu này — TUYỆT ĐỐI KHÔNG tự nêu ra 1 chuyên khoa khác không xuất hiện trong "Tài liệu tham khảo" ở trên.`
+      : '';
+
     const systemPrompt = [
       'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
       `Hôm nay là ngày ${todayVN} (giờ Việt Nam).`,
@@ -220,6 +231,8 @@ router.post('/chat', async (req, res) => {
       context,
       '',
       knowledgeBlock,
+      '',
+      groundingNote,
       '',
       'Bạn có công cụ check_available_slots để tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
       '',
