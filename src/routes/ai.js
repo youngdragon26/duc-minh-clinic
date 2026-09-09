@@ -176,6 +176,31 @@ router.get('/_debug-chat-error', async (req, res) => {
   }
 });
 
+// TẠM THỜI: kiểm tra model có dùng được function calling (tool) không.
+router.get('/_debug-tool-call', async (req, res) => {
+  const client = getClient();
+  if (!client) return res.json({ error: 'no client' });
+  const modelName = req.query.model || CHAT_MODEL;
+  try {
+    const model = client.getGenerativeModel({
+      model: modelName,
+      tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+    });
+    const chat = model.startChat({ history: [] });
+    let result = await chat.sendMessage('Nội tổng quát ngày mai còn giờ trống không?');
+    const calls = result.response.functionCalls();
+    if (!calls || !calls.length) {
+      return res.json({ ok: true, model: modelName, calledTool: false, text: result.response.text() });
+    }
+    const call = calls[0];
+    const toolResult = await checkAvailableSlots(call.args);
+    result = await chat.sendMessage([{ functionResponse: { name: call.name, response: toolResult } }]);
+    return res.json({ ok: true, model: modelName, calledTool: true, args: call.args, text: result.response.text() });
+  } catch (e) {
+    return res.json({ ok: false, model: modelName, message: e.message, status: e.status });
+  }
+});
+
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
