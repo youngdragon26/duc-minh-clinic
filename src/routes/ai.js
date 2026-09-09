@@ -1,7 +1,9 @@
 const express = require('express');
 const { pool } = require('../db');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
 const { SPECIALTIES } = require('../constants');
+const { chunkText } = require('../lib/chunk');
+const { embedText, toVectorLiteral } = require('../lib/embeddings');
 
 const router = express.Router();
 
@@ -128,6 +130,28 @@ async function checkAvailableSlots({ specialty, date }) {
   return { specialty, date, available: doctors.some((d) => d.freeSlots.length > 0), doctors };
 }
 
+// ---------- RAG: Retrieval phase ----------
+// Nhúng câu hỏi thành vector, tìm các đoạn tri thức gần nhất bằng cosine similarity
+// (toán tử <=> của pgvector), kèm tên tài liệu nguồn để model có thể trích dẫn.
+async function retrieveKnowledge(query, k = 4) {
+  try {
+    const queryVector = await embedText(query, 'RETRIEVAL_QUERY');
+    const literal = toVectorLiteral(queryVector);
+    const result = await pool.query(
+      `SELECT c.content, d.title, 1 - (c.embedding <=> $1::vector) AS similarity
+       FROM kb_chunks c JOIN kb_documents d ON d.id = c.document_id
+       WHERE c.embedding IS NOT NULL
+       ORDER BY c.embedding <=> $1::vector
+       LIMIT $2`,
+      [literal, k]
+    );
+    return result.rows;
+  } catch (e) {
+    console.error('Retrieval error:', e);
+    return []; // Retrieval lỗi không nên làm sập cả chatbot — chỉ mất phần ngữ cảnh bổ sung.
+  }
+}
+
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
@@ -140,17 +164,31 @@ router.post('/chat', async (req, res) => {
       return res.status(400).json({ error: 'Thiếu nội dung câu hỏi.' });
     }
 
-    const context = await buildClinicContext();
+    const [context, retrieved] = await Promise.all([
+      buildClinicContext(),
+      retrieveKnowledge(message.trim()),
+    ]);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+
+    const knowledgeBlock = retrieved.length
+      ? [
+          'Tài liệu tham khảo tìm được (có thể liên quan hoặc không, tự đánh giá; nếu dùng thì ghi "(Nguồn: <tên tài liệu>)" cuối câu):',
+          ...retrieved.map((r) => `--- ${r.title} ---\n${r.content}`),
+        ].join('\n\n')
+      : 'Không tìm thấy tài liệu tham khảo nào liên quan trong cơ sở tri thức.';
+
     const systemPrompt = [
       'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
       `Hôm nay là ngày ${todayVN} (giờ Việt Nam).`,
       '',
       context,
       '',
+      knowledgeBlock,
+      '',
       'Bạn có công cụ check_available_slots để tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
       '',
       'Quy tắc:',
+      '- Ưu tiên dùng thông tin trong "Tài liệu tham khảo" ở trên nếu liên quan tới câu hỏi; nếu tài liệu không liên quan thì bỏ qua, không nhắc tới nó.',
       '- Chỉ gợi ý chuyên khoa nên khám dựa trên triệu chứng khách mô tả, KHÔNG chẩn đoán bệnh, KHÔNG kê đơn hay tên thuốc cụ thể.',
       '- Nếu triệu chứng nghe nghiêm trọng/cấp cứu (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...), khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.',
       '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0975 755 333.',
@@ -202,6 +240,83 @@ router.post('/chat', async (req, res) => {
 });
 
 router.use(authenticate);
+
+// ---------- Quản lý cơ sở tri thức (Indexing phase) — chỉ admin ----------
+
+router.get('/kb', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT d.id, d.title, d.content, d.created_at AS "createdAt",
+             (SELECT COUNT(*) FROM kb_chunks c WHERE c.document_id = d.id)::int AS "chunkCount"
+      FROM kb_documents d ORDER BY d.created_at DESC
+    `);
+    res.json({ documents: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.post('/kb', requireAdmin, async (req, res) => {
+  const client = getClient();
+  if (!client) return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
+  try {
+    const { title, content } = req.body || {};
+    if (!title || !content || !content.trim()) {
+      return res.status(400).json({ error: 'Thiếu tiêu đề hoặc nội dung tài liệu.' });
+    }
+
+    const chunks = chunkText(content, 500, 100);
+    if (chunks.length === 0) {
+      return res.status(400).json({ error: 'Nội dung quá ngắn hoặc không hợp lệ.' });
+    }
+
+    // Nhúng từng chunk thành vector TRƯỚC khi ghi vào CSDL, để không lưu tài
+    // liệu "dở dang" (có chunk nhưng thiếu embedding) nếu Gemini lỗi giữa chừng.
+    const embeddings = [];
+    for (const chunk of chunks) {
+      embeddings.push(await withRetry(() => embedText(chunk, 'RETRIEVAL_DOCUMENT')));
+    }
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+      const docRes = await dbClient.query(
+        'INSERT INTO kb_documents (title, content, created_by) VALUES ($1,$2,$3) RETURNING id, title, content, created_at AS "createdAt"',
+        [title.trim(), content.trim(), req.user.id]
+      );
+      const doc = docRes.rows[0];
+      for (let i = 0; i < chunks.length; i++) {
+        await dbClient.query(
+          'INSERT INTO kb_chunks (document_id, chunk_index, content, embedding) VALUES ($1,$2,$3,$4::vector)',
+          [doc.id, i, chunks[i], toVectorLiteral(embeddings[i])]
+        );
+      }
+      await dbClient.query('COMMIT');
+      res.status(201).json({ document: { ...doc, chunkCount: chunks.length } });
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+  } catch (e) {
+    console.error(e);
+    const { status, error } = aiErrorResponse(e);
+    res.status(status).json({ error });
+  }
+});
+
+router.delete('/kb/:id', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM kb_documents WHERE id = $1', [Number(req.params.id)]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Không tìm thấy tài liệu.' });
+    res.status(204).end();
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
 
 // Bác sĩ/nhân viên/admin xem tóm tắt AI về lịch sử khám của 1 bệnh nhân.
 router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async (req, res) => {

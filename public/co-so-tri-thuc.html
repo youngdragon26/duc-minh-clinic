@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cơ sở tri thức AI — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --accent-warm:#dd9636; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --accent-warm:#f0b25a; --err:#ff8a80;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:820px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:820px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:12px; line-height:1.6;}
+  .notice{
+    background:color-mix(in srgb, var(--accent-warm) 16%, var(--surface));
+    border:1px solid var(--accent-warm); border-radius:10px; padding:12px 14px;
+    font-size:.82rem; color:var(--ink); margin-bottom:24px; line-height:1.55;
+  }
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
+  input, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  textarea{resize:vertical; min-height:140px; line-height:1.6;}
+  input:focus, textarea:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  button.primary{
+    margin-top:16px; padding:10px 18px; border:none; border-radius:8px;
+    background:var(--accent-deep); color:#fff; font-weight:600; cursor:pointer; font-size:.88rem; font-family:inherit;
+  }
+  button.primary:hover{background:var(--accent);}
+  button.primary:disabled{opacity:.6; cursor:default;}
+  button.ghost{padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.78rem; color:var(--ink); font-family:inherit;}
+  button.ghost:hover{border-color:var(--accent);}
+  .msg{margin-top:10px; font-size:.85rem;}
+  .msg.err{color:var(--err);}
+  .msg.ok{color:var(--accent-deep);}
+  .doc{border-top:1px solid var(--line); padding:16px 0;}
+  .doc:first-child{border-top:none; padding-top:0;}
+  .doc-head{display:flex; justify-content:space-between; align-items:start; gap:12px;}
+  .doc-head b{font-family:"Lora",serif; font-size:1rem;}
+  .doc-meta{font-size:.76rem; color:var(--ink-muted); margin-top:2px;}
+  .doc-content{font-size:.85rem; color:var(--ink-muted); margin-top:8px; line-height:1.6; white-space:pre-wrap;}
+  .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/tai-khoan.html" class="back">← Về trang quản trị</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Cơ sở tri thức AI (RAG)</h1>
+  <p class="sub">Mỗi tài liệu bạn thêm sẽ được chia nhỏ và chuyển thành vector — chatbot tự tìm đoạn liên quan nhất khi có người hỏi, thay vì tự bịa câu trả lời.</p>
+  <div class="notice">
+    ⚠ Chỉ nhập nội dung bạn (hoặc bác sĩ) đã xác minh là đúng — đây là nguồn thông tin AI sẽ dùng để tư vấn cho bệnh nhân thật.
+    Ví dụ nội dung phù hợp: hướng dẫn nên khám chuyên khoa nào theo từng nhóm triệu chứng thường gặp, quy định/chính sách của phòng khám, câu hỏi thường gặp.
+  </div>
+
+  <div class="card" id="noAccessCard" hidden>
+    <p style="margin:0;">Bạn không có quyền truy cập trang này (chỉ dành cho Quản trị viên).</p>
+  </div>
+
+  <div id="content" hidden>
+    <div class="card">
+      <b>Thêm tài liệu mới</b>
+      <form id="kbForm">
+        <label>Tiêu đề</label>
+        <input type="text" id="kbTitle" placeholder="Ví dụ: Triệu chứng hô hấp ở trẻ em" required>
+        <label>Nội dung</label>
+        <textarea id="kbContent" placeholder="Viết nội dung đầy đủ, có thể nhiều đoạn văn..." required></textarea>
+        <button class="primary" type="submit" id="kbSubmit">Thêm &amp; tạo embedding</button>
+        <div class="msg" id="kbMsg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <b>Danh sách tài liệu</b>
+      <div id="docList"></div>
+      <div class="empty" id="docEmpty" hidden>Chưa có tài liệu nào trong cơ sở tri thức.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  const token = localStorage.getItem('dm_token');
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  async function loadDocs() {
+    const { documents } = await api('/api/ai/kb');
+    const list = document.getElementById('docList');
+    document.getElementById('docEmpty').hidden = documents.length > 0;
+    list.innerHTML = documents.map(d => `
+      <div class="doc">
+        <div class="doc-head">
+          <div>
+            <b>${d.title}</b>
+            <div class="doc-meta">${d.chunkCount} đoạn · thêm ngày ${new Date(d.createdAt).toLocaleDateString('vi-VN')}</div>
+          </div>
+          <button class="ghost del-doc" data-id="${d.id}">Xoá</button>
+        </div>
+        <div class="doc-content">${d.content}</div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.del-doc').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Xoá tài liệu này khỏi cơ sở tri thức?')) return;
+        try {
+          await api('/api/ai/kb/' + btn.dataset.id, { method: 'DELETE' });
+          loadDocs();
+        } catch (e) { alert(e.message); }
+      });
+    });
+  }
+
+  document.getElementById('kbForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('kbMsg');
+    const btn = document.getElementById('kbSubmit');
+    msg.textContent = ''; msg.className = 'msg';
+    btn.disabled = true;
+    btn.textContent = 'Đang tạo embedding...';
+    try {
+      const { document: doc } = await api('/api/ai/kb', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: document.getElementById('kbTitle').value,
+          content: document.getElementById('kbContent').value,
+        }),
+      });
+      e.target.reset();
+      msg.textContent = `Đã thêm "${doc.title}" (${doc.chunkCount} đoạn).`;
+      msg.className = 'msg ok';
+      loadDocs();
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Thêm & tạo embedding';
+    }
+  });
+
+  (async function init() {
+    if (!token) { document.getElementById('noAccessCard').hidden = false; return; }
+    try {
+      const { user } = await api('/api/auth/me');
+      if (user.role !== 'admin') { document.getElementById('noAccessCard').hidden = false; return; }
+    } catch (e) {
+      document.getElementById('noAccessCard').hidden = false; return;
+    }
+    document.getElementById('content').hidden = false;
+    await loadDocs();
+  })();
+</script>
+</body>
+</html>

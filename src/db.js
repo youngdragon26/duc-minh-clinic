@@ -110,6 +110,38 @@ async function init() {
     );
   `);
 
+  // ---------- RAG: cơ sở tri thức (Indexing phase) ----------
+  // text-embedding-004 của Gemini sinh vector 768 chiều.
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kb_documents (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kb_chunks (
+      id SERIAL PRIMARY KEY,
+      document_id INTEGER NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      embedding vector(768),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // ANN index (HNSW) cho similarity search — vẫn hoạt động tốt kể cả khi dữ
+  // liệu còn ít, sẽ phát huy tác dụng khi cơ sở tri thức lớn dần.
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS ix_kb_chunks_embedding
+      ON kb_chunks USING hnsw (embedding vector_cosine_ops);
+  `);
+
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
 
   // Giá khám theo từng chuyên khoa — admin thiết lập trong "Bảng giá dịch vụ".
