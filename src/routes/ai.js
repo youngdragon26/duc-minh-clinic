@@ -5,7 +5,11 @@ const { SPECIALTIES } = require('../constants');
 
 const router = express.Router();
 
-const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
+// Chatbot dùng function calling (tra lịch trống) — model 3.6 mới đổi vai trò
+// "function response" khiến bản SDK hiện tại (@google/generative-ai) bị lỗi 400
+// "Role 'function' is not supported", nên tạm dùng bản 2.5 ổn định hơn cho phần này.
+const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash';
+// Tóm tắt bệnh sử không dùng tool, gemini-3.6-flash chạy tốt (đã test) và mạnh hơn.
 const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.6-flash';
 
 let genAI;
