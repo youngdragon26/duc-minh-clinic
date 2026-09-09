@@ -117,9 +117,13 @@ router.get('/mine', async (req, res) => {
 });
 
 // Chi tiết 1 lịch hẹn — nhân viên/bác sĩ/admin xem mọi lịch hẹn, bệnh nhân chỉ xem của mình.
-router.get('/:id(\\d+)', async (req, res) => {
+// Lưu ý: route này phải đặt SAU '/mine' và '/doctors' ở trên — Express khớp theo thứ tự
+// đăng ký, nên 2 đường dẫn cố định đó luôn được ưu tiên trước khi rơi vào ':id'.
+router.get('/:id', async (req, res) => {
   try {
-    const result = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [Number(req.params.id)]);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy lịch hẹn.' });
+    const result = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy lịch hẹn.' });
     const appt = result.rows[0];
     if (!STAFF_ROLES.includes(req.user.role) && appt.patient_id !== req.user.id) {
