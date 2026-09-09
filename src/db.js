@@ -140,12 +140,11 @@ async function init() {
   await pool.query(`DROP INDEX IF EXISTS ix_kb_chunks_embedding;`);
   await pool.query(`ALTER TABLE kb_chunks ALTER COLUMN embedding TYPE vector(3072);`);
 
-  // ANN index (HNSW) cho similarity search — vẫn hoạt động tốt kể cả khi dữ
-  // liệu còn ít, sẽ phát huy tác dụng khi cơ sở tri thức lớn dần.
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS ix_kb_chunks_embedding
-      ON kb_chunks USING hnsw (embedding vector_cosine_ops);
-  `);
+  // KHÔNG tạo chỉ mục HNSW/IVFFlat: pgvector giới hạn các loại chỉ mục này tối
+  // đa 2000 chiều, trong khi vector ở đây có 3072 chiều — tạo chỉ mục sẽ làm
+  // toàn bộ server sập khi khởi động (đã xảy ra thật, đây là bản vá cho lỗi đó).
+  // Không có chỉ mục thì similarity search vẫn đúng, chỉ là quét tuần tự thay vì
+  // ANN — hoàn toàn ổn với quy mô vài trăm tài liệu như 1 phòng khám nhỏ.
 
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
 
