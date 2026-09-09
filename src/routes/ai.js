@@ -176,6 +176,18 @@ async function retrieveKnowledge(query, k = 4) {
   }
 }
 
+// TẠM THỜI: xem kết quả retrieval thô (không gọi generateContent, không tốn quota chat) — xoá sau khi chẩn đoán xong.
+router.get('/_debug-retrieve', async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.json({ error: 'thiếu ?q=' });
+    const hits = await retrieveKnowledge(String(q), 6);
+    res.json({ query: q, hits });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
