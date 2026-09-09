@@ -87,6 +87,7 @@
       <div class="who"><b id="whoName"></b><span id="whoMeta"></span></div>
       <button class="ghost" id="logoutBtn">Đăng xuất</button>
     </div>
+    <div class="row-actions" id="quickLinks" style="margin-top:14px;"></div>
   </div>
 
   <div class="card" id="authCard">
@@ -139,6 +140,10 @@
         <option value="patient">Bệnh nhân</option>
         <option value="admin">Quản trị viên</option>
       </select>
+      <div id="newSpecialtyWrap">
+        <label>Chuyên khoa</label>
+        <select id="newSpecialty"></select>
+      </div>
       <button class="primary" type="submit">Tạo tài khoản</button>
       <div class="msg" id="createUserMsg"></div>
     </form>
@@ -148,7 +153,7 @@
     <b>Danh sách tài khoản</b>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Ngày tạo</th><th></th></tr></thead>
+        <thead><tr><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Chuyên khoa</th><th>Ngày tạo</th><th></th></tr></thead>
         <tbody id="usersBody"></tbody>
       </table>
     </div>
@@ -194,6 +199,17 @@
     return ROLE_LABELS[role] || role;
   }
 
+  const SPECIALTIES = ['Nội tổng quát', 'Nhi khoa', 'Tai – Mũi – Họng', 'Da liễu', 'Sản phụ khoa', 'Răng – Hàm – Mặt'];
+  const newRoleSelect = document.getElementById('newRole');
+  const newSpecialtyWrap = document.getElementById('newSpecialtyWrap');
+  const newSpecialtySelect = document.getElementById('newSpecialty');
+  newSpecialtySelect.innerHTML = SPECIALTIES.map(s => `<option value="${s}">${s}</option>`).join('');
+  function syncSpecialtyVisibility() {
+    newSpecialtyWrap.hidden = newRoleSelect.value !== 'doctor';
+  }
+  newRoleSelect.addEventListener('change', syncSpecialtyVisibility);
+  syncSpecialtyVisibility();
+
   async function refreshSession() {
     if (!token) { renderLoggedOut(); return; }
     try {
@@ -216,7 +232,15 @@
     sessionCard.hidden = false;
     authCard.hidden = true;
     whoName.textContent = me.name;
-    whoMeta.textContent = me.email + ' · ' + roleLabel(me.role);
+    whoMeta.textContent = me.email + ' · ' + roleLabel(me.role) + (me.specialty ? ' · ' + me.specialty : '');
+
+    const quickLinks = document.getElementById('quickLinks');
+    if (['staff', 'doctor', 'admin'].includes(me.role)) {
+      quickLinks.innerHTML = '<a class="ghost" style="text-decoration:none; display:inline-block;" href="/hang-doi.html">Hàng đợi khám →</a>';
+    } else {
+      quickLinks.innerHTML = '<a class="ghost" style="text-decoration:none; display:inline-block;" href="/dat-lich.html">Đặt lịch khám →</a>';
+    }
+
     if (me.role === 'admin') {
       adminCard.hidden = false;
       await loadUsers();
@@ -234,6 +258,7 @@
         <td>${u.email}</td>
         <td>${u.phone || '—'}</td>
         <td><span class="pill ${u.role}">${roleLabel(u.role)}</span></td>
+        <td>${u.specialty || '—'}</td>
         <td>${new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
         <td>
           <div class="row-actions">
@@ -327,9 +352,11 @@
           phone: document.getElementById('newPhone').value,
           password: document.getElementById('newPassword').value,
           role: document.getElementById('newRole').value,
+          specialty: document.getElementById('newSpecialty').value,
         }),
       });
       e.target.reset();
+      syncSpecialtyVisibility();
       msg.textContent = 'Đã tạo tài khoản.';
       loadUsers();
     } catch (e) {

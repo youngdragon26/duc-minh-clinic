@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { pool, ROLES } = require('../db');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { SPECIALTIES } = require('../constants');
 
 const router = express.Router();
 router.use(authenticate, requireAdmin);
@@ -9,7 +10,10 @@ router.use(authenticate, requireAdmin);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, createdAt: u.created_at };
+  return {
+    id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role,
+    specialty: u.specialty, createdAt: u.created_at,
+  };
 }
 
 router.get('/users', async (req, res) => {
@@ -26,7 +30,7 @@ router.get('/users', async (req, res) => {
 // form đăng ký công khai, để không ai tự phong mình làm bác sĩ/nhân viên.
 router.post('/users', async (req, res) => {
   try {
-    const { name, email, phone, password, role } = req.body || {};
+    const { name, email, phone, password, role, specialty } = req.body || {};
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ error: 'Thiếu họ tên, email, mật khẩu hoặc vai trò.' });
@@ -40,6 +44,9 @@ router.post('/users', async (req, res) => {
     if (!ROLES.includes(role)) {
       return res.status(400).json({ error: 'Vai trò không hợp lệ.' });
     }
+    if (role === 'doctor' && !SPECIALTIES.includes(specialty)) {
+      return res.status(400).json({ error: 'Vui lòng chọn đúng chuyên khoa cho bác sĩ.' });
+    }
 
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
     if (existing.rows.length > 0) {
@@ -48,8 +55,8 @@ router.post('/users', async (req, res) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name.trim(), email.toLowerCase(), phone || null, passwordHash, role]
+      'INSERT INTO users (name, email, phone, password_hash, role, specialty) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [name.trim(), email.toLowerCase(), phone || null, passwordHash, role, role === 'doctor' ? specialty : null]
     );
     res.status(201).json({ user: publicUser(result.rows[0]) });
   } catch (e) {

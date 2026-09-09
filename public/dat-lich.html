@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đặt lịch khám — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --accent-warm:#dd9636; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --accent-warm:#f0b25a; --err:#ff8a80;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:640px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:640px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:24px; line-height:1.6;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
+  input, select, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  textarea{resize:vertical; min-height:70px;}
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  button.primary{
+    margin-top:18px; width:100%; padding:11px; border:none; border-radius:8px;
+    background:var(--accent-deep); color:#fff; font-weight:600; cursor:pointer; font-size:.92rem; font-family:inherit;
+  }
+  button.primary:hover{background:var(--accent);}
+  button.primary:disabled{opacity:.6; cursor:default;}
+  .msg{margin-top:10px; font-size:.85rem;}
+  .msg.err{color:var(--err);}
+  .msg.ok{color:var(--accent-deep);}
+  button.ghost{padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;}
+  button.ghost:hover{border-color:var(--accent);}
+  table{width:100%; border-collapse:collapse; margin-top:12px; font-size:.85rem;}
+  th, td{text-align:left; padding:9px 6px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--ink-muted); font-weight:600; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;}
+  .table-scroll{overflow-x:auto;}
+  .pill{padding:2px 9px; border-radius:20px; font-size:.72rem; font-weight:600; white-space:nowrap; display:inline-block;}
+  .pill.cho_xac_nhan{background:#fdf0d0; color:#8a5a00;}
+  .pill.da_xac_nhan{background:#d7e9ff; color:#1d4ed8;}
+  .pill.da_checkin{background:#e6dcff; color:#5b21b6;}
+  .pill.dang_kham{background:#dff5e0; color:#166534;}
+  .pill.hoan_thanh{background:#d7f0ea; color:var(--accent-deep);}
+  .pill.da_huy{background:#f3d9d6; color:#8f2c22;}
+  .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
+  [hidden]{display:none !important;}
+  @media (max-width:520px){ .grid2{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/" class="back">← Về trang chủ</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Đặt lịch khám</h1>
+  <p class="sub">Chọn chuyên khoa, bác sĩ (nếu muốn) và khung giờ phù hợp — mất khoảng 30 giây.</p>
+
+  <div class="card" id="needLoginCard" hidden>
+    <p style="margin:0 0 12px;">Bạn cần đăng nhập để đặt lịch khám.</p>
+    <a href="/tai-khoan.html" class="back" style="text-decoration:underline;">Đăng nhập / Đăng ký →</a>
+  </div>
+
+  <div id="bookingArea" hidden>
+    <div class="card">
+      <form id="bookForm">
+        <label>Chuyên khoa</label>
+        <select id="fSpecialty" required></select>
+
+        <label>Bác sĩ (không bắt buộc)</label>
+        <select id="fDoctor">
+          <option value="">Không chọn bác sĩ cụ thể</option>
+        </select>
+
+        <div class="grid2">
+          <div>
+            <label>Ngày khám</label>
+            <input type="date" id="fDate" required>
+          </div>
+          <div>
+            <label>Giờ khám</label>
+            <select id="fTime" required></select>
+          </div>
+        </div>
+
+        <label>Lý do khám / triệu chứng (không bắt buộc)</label>
+        <textarea id="fNote" placeholder="Ví dụ: ho, sốt nhẹ 2 ngày..."></textarea>
+
+        <button class="primary" type="submit" id="bookSubmit">Đặt lịch</button>
+        <div class="msg" id="bookMsg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <b>Lịch hẹn của tôi</b>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Ngày</th><th>Giờ</th><th>Chuyên khoa</th><th>Bác sĩ</th><th>Trạng thái</th><th></th></tr></thead>
+          <tbody id="mineBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="mineEmpty" hidden>Bạn chưa có lịch hẹn nào.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  const token = localStorage.getItem('dm_token');
+
+  const SPECIALTIES = ['Nội tổng quát', 'Nhi khoa', 'Tai – Mũi – Họng', 'Da liễu', 'Sản phụ khoa', 'Răng – Hàm – Mặt'];
+  const STATUS_LABELS = {
+    cho_xac_nhan: 'Chờ xác nhận', da_xac_nhan: 'Đã xác nhận', da_checkin: 'Đã check-in',
+    dang_kham: 'Đang khám', hoan_thanh: 'Hoàn thành', da_huy: 'Đã huỷ',
+  };
+  const CANCELLABLE = ['cho_xac_nhan', 'da_xac_nhan'];
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        ...(opts.headers || {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  const fSpecialty = document.getElementById('fSpecialty');
+  const fDoctor = document.getElementById('fDoctor');
+  const fDate = document.getElementById('fDate');
+  const fTime = document.getElementById('fTime');
+
+  fSpecialty.innerHTML = SPECIALTIES.map(s => `<option value="${s}">${s}</option>`).join('');
+
+  const timeSlots = [];
+  for (let h = 7; h <= 20; h++) timeSlots.push(String(h).padStart(2, '0') + ':00');
+  fTime.innerHTML = timeSlots.map(t => `<option value="${t}">${t}</option>`).join('');
+
+  const today = new Date().toISOString().slice(0, 10);
+  fDate.min = today;
+  fDate.value = today;
+
+  async function loadDoctors() {
+    const { doctors } = await api('/api/appointments/doctors?specialty=' + encodeURIComponent(fSpecialty.value));
+    fDoctor.innerHTML = '<option value="">Không chọn bác sĩ cụ thể</option>' +
+      doctors.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  }
+  fSpecialty.addEventListener('change', loadDoctors);
+
+  document.getElementById('bookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('bookMsg');
+    const submitBtn = document.getElementById('bookSubmit');
+    msg.textContent = ''; msg.className = 'msg';
+    submitBtn.disabled = true;
+    try {
+      await api('/api/appointments', {
+        method: 'POST',
+        body: JSON.stringify({
+          specialty: fSpecialty.value,
+          doctorId: fDoctor.value || null,
+          date: fDate.value,
+          time: fTime.value,
+          note: document.getElementById('fNote').value,
+        }),
+      });
+      msg.textContent = 'Đặt lịch thành công! Nhân viên sẽ xác nhận sớm.';
+      msg.className = 'msg ok';
+      document.getElementById('fNote').value = '';
+      loadMine();
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  async function loadMine() {
+    const { appointments } = await api('/api/appointments/mine');
+    const body = document.getElementById('mineBody');
+    const empty = document.getElementById('mineEmpty');
+    empty.hidden = appointments.length > 0;
+    body.innerHTML = appointments.map(a => `
+      <tr>
+        <td>${a.date}</td>
+        <td>${a.time}</td>
+        <td>${a.specialty}</td>
+        <td>${a.doctorName || 'Chưa chỉ định'}</td>
+        <td><span class="pill ${a.status}">${STATUS_LABELS[a.status] || a.status}</span></td>
+        <td>${CANCELLABLE.includes(a.status) ? `<button class="ghost cancel-appt" data-id="${a.id}">Huỷ</button>` : ''}</td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('.cancel-appt').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Huỷ lịch hẹn này?')) return;
+        await api(`/api/appointments/${btn.dataset.id}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'da_huy' }),
+        });
+        loadMine();
+      });
+    });
+  }
+
+  (async function init() {
+    if (!token) {
+      document.getElementById('needLoginCard').hidden = false;
+      return;
+    }
+    try {
+      await api('/api/auth/me');
+    } catch (e) {
+      localStorage.removeItem('dm_token');
+      document.getElementById('needLoginCard').hidden = false;
+      return;
+    }
+    document.getElementById('bookingArea').hidden = false;
+    await loadDoctors();
+    await loadMine();
+  })();
+</script>
+</body>
+</html>

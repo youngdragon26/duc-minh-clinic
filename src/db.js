@@ -34,6 +34,33 @@ async function init() {
     ALTER TABLE users ADD CONSTRAINT users_role_check
       CHECK (role IN ('admin','patient','doctor','staff'));
   `);
+
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS specialty TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS appointments (
+      id SERIAL PRIMARY KEY,
+      patient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      doctor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      specialty TEXT NOT NULL,
+      appointment_date DATE NOT NULL,
+      appointment_time TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'cho_xac_nhan'
+        CHECK (status IN ('cho_xac_nhan','da_xac_nhan','da_checkin','dang_kham','hoan_thanh','da_huy')),
+      note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Chặn 2 lịch hẹn trùng giờ của cùng 1 bác sĩ ở tầng CSDL (không chỉ kiểm tra
+  // ở code) để tránh race condition khi 2 người đặt cùng lúc — lịch đã huỷ thì
+  // không tính vào, nên giờ đó lại đặt được cho người khác.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_appointments_doctor_slot
+      ON appointments (doctor_id, appointment_date, appointment_time)
+      WHERE doctor_id IS NOT NULL AND status <> 'da_huy';
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ix_appointments_date ON appointments (appointment_date);`);
 }
 
 const ROLES = ['admin', 'patient', 'doctor', 'staff'];
