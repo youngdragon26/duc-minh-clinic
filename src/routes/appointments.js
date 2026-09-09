@@ -116,6 +116,22 @@ router.get('/mine', async (req, res) => {
   }
 });
 
+// Chi tiết 1 lịch hẹn — nhân viên/bác sĩ/admin xem mọi lịch hẹn, bệnh nhân chỉ xem của mình.
+router.get('/:id(\\d+)', async (req, res) => {
+  try {
+    const result = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [Number(req.params.id)]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy lịch hẹn.' });
+    const appt = result.rows[0];
+    if (!STAFF_ROLES.includes(req.user.role) && appt.patient_id !== req.user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền xem lịch hẹn này.' });
+    }
+    res.json({ appointment: publicAppointment(appt) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
 // Hàng đợi khám — chỉ Nhân viên/Bác sĩ/Admin xem được toàn bộ.
 router.get('/', requireRole(...STAFF_ROLES), async (req, res) => {
   try {

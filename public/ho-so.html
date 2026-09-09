@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hồ sơ khám bệnh — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:680px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:680px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:24px; line-height:1.6;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin-bottom:16px;}
+  .record-head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px;}
+  .record-head b{font-family:"Lora",serif; font-size:1.02rem;}
+  .record-head span{font-size:.8rem; color:var(--ink-muted);}
+  .field{margin-top:8px; font-size:.88rem; line-height:1.55;}
+  .field b{color:var(--ink-muted); font-weight:600; font-size:.76rem; text-transform:uppercase; letter-spacing:.03em; display:block; margin-bottom:2px;}
+  ul.rx{margin:4px 0 0; padding-left:18px; font-size:.86rem; line-height:1.7;}
+  .empty{color:var(--ink-muted); font-size:.9rem;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/dat-lich.html" class="back">← Đặt lịch khám</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Hồ sơ khám bệnh</h1>
+  <p class="sub">Lịch sử khám và đơn thuốc đã được bác sĩ kê cho bạn.</p>
+
+  <div class="card" id="needLoginCard" hidden>
+    <p style="margin:0 0 12px;">Bạn cần đăng nhập để xem hồ sơ khám bệnh.</p>
+    <a href="/tai-khoan.html" class="back" style="text-decoration:underline;">Đăng nhập / Đăng ký →</a>
+  </div>
+
+  <div id="list"></div>
+  <div class="card empty" id="emptyCard" hidden>Bạn chưa có hồ sơ khám bệnh nào.</div>
+</div>
+
+<script>
+  const API = '';
+  const token = localStorage.getItem('dm_token');
+
+  async function api(path) {
+    const res = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  (async function init() {
+    if (!token) { document.getElementById('needLoginCard').hidden = false; return; }
+    let records;
+    try {
+      records = (await api('/api/clinical/records/mine')).records;
+    } catch (e) {
+      document.getElementById('needLoginCard').hidden = false;
+      return;
+    }
+
+    const list = document.getElementById('list');
+    if (records.length === 0) {
+      document.getElementById('emptyCard').hidden = false;
+      return;
+    }
+
+    list.innerHTML = records.map(r => `
+      <div class="card">
+        <div class="record-head">
+          <b>${r.specialty}</b>
+          <span>${new Date(r.date).toLocaleDateString('vi-VN')} · BS. ${r.doctorName}</span>
+        </div>
+        ${r.symptoms ? `<div class="field"><b>Triệu chứng</b>${r.symptoms}</div>` : ''}
+        <div class="field"><b>Chẩn đoán</b>${r.diagnosis}</div>
+        ${r.notes ? `<div class="field"><b>Ghi chú</b>${r.notes}</div>` : ''}
+        <div class="field">
+          <b>Đơn thuốc</b>
+          ${r.items.length
+            ? `<ul class="rx">${r.items.map(it => `<li>${it.medicineName} — ${it.dosage} (SL: ${it.quantity} ${it.unit})</li>`).join('')}</ul>`
+            : 'Không kê đơn thuốc.'}
+        </div>
+      </div>
+    `).join('');
+  })();
+</script>
+</body>
+</html>

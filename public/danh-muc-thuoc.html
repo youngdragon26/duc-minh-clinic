@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Danh mục thuốc — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --accent-warm:#dd9636; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --accent-warm:#f0b25a; --err:#ff8a80;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:860px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:860px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:12px; line-height:1.6;}
+  .notice{
+    background:color-mix(in srgb, var(--accent-warm) 16%, var(--surface));
+    border:1px solid var(--accent-warm); border-radius:10px; padding:12px 14px;
+    font-size:.82rem; color:var(--ink); margin-bottom:24px; line-height:1.55;
+  }
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
+  input, select, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  textarea{resize:vertical; min-height:60px;}
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  button.primary{
+    margin-top:16px; padding:10px 18px; border:none; border-radius:8px;
+    background:var(--accent-deep); color:#fff; font-weight:600; cursor:pointer; font-size:.88rem; font-family:inherit;
+  }
+  button.primary:hover{background:var(--accent);}
+  button.ghost{padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.78rem; color:var(--ink); font-family:inherit;}
+  button.ghost:hover{border-color:var(--accent);}
+  .msg{margin-top:10px; font-size:.85rem;}
+  .msg.err{color:var(--err);}
+  .msg.ok{color:var(--accent-deep);}
+  table{width:100%; border-collapse:collapse; margin-top:14px; font-size:.85rem;}
+  th, td{text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--ink-muted); font-weight:600; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;}
+  .table-scroll{overflow-x:auto;}
+  .pill{padding:2px 9px; border-radius:20px; font-size:.72rem; font-weight:600; white-space:nowrap; display:inline-block;}
+  .pill.nhe{background:#fdf0d0; color:#8a5a00;}
+  .pill.trung_binh{background:#ffe1c2; color:#9a4a00;}
+  .pill.nghiem_trong{background:#f3d9d6; color:#8f2c22;}
+  .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
+  [hidden]{display:none !important;}
+  @media (max-width:560px){ .grid2{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/tai-khoan.html" class="back">← Về trang quản trị</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Danh mục thuốc &amp; tương tác thuốc</h1>
+  <p class="sub">Dành cho Quản trị viên — bác sĩ dùng danh mục này khi kê đơn.</p>
+  <div class="notice">
+    ⚠ Dữ liệu tương tác thuốc ở đây do phòng khám tự nhập, <b>không phải nguồn dược lý đã được thẩm định</b>.
+    Chỉ nhập những tương tác bạn đã xác minh từ tài liệu y khoa đáng tin cậy — hệ thống chỉ hỗ trợ nhắc nhở,
+    không thay thế trách nhiệm chuyên môn của bác sĩ.
+  </div>
+
+  <div class="card" id="noAccessCard" hidden>
+    <p style="margin:0;">Bạn không có quyền truy cập trang này (chỉ dành cho Quản trị viên).</p>
+  </div>
+
+  <div id="content" hidden>
+    <div class="card">
+      <b>Thêm thuốc mới</b>
+      <form id="medForm">
+        <div class="grid2">
+          <div>
+            <label>Tên thuốc</label>
+            <input type="text" id="medName" required>
+          </div>
+          <div>
+            <label>Đơn vị</label>
+            <input type="text" id="medUnit" placeholder="viên, gói, chai..." value="viên">
+          </div>
+        </div>
+        <button class="primary" type="submit">Thêm thuốc</button>
+        <div class="msg" id="medMsg"></div>
+      </form>
+
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Tên thuốc</th><th>Đơn vị</th><th></th></tr></thead>
+          <tbody id="medBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="medEmpty" hidden>Chưa có thuốc nào trong danh mục.</div>
+    </div>
+
+    <div class="card">
+      <b>Thêm quy tắc tương tác thuốc</b>
+      <form id="interactionForm">
+        <div class="grid2">
+          <div>
+            <label>Thuốc A</label>
+            <select id="medA" required></select>
+          </div>
+          <div>
+            <label>Thuốc B</label>
+            <select id="medB" required></select>
+          </div>
+        </div>
+        <label>Mức độ</label>
+        <select id="severity">
+          <option value="nhe">Nhẹ</option>
+          <option value="trung_binh">Trung bình</option>
+          <option value="nghiem_trong">Nghiêm trọng</option>
+        </select>
+        <label>Mô tả tương tác</label>
+        <textarea id="description" placeholder="Ví dụ: tăng nguy cơ chảy máu khi dùng chung..." required></textarea>
+        <button class="primary" type="submit">Thêm quy tắc</button>
+        <div class="msg" id="interactionMsg"></div>
+      </form>
+
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Thuốc A</th><th>Thuốc B</th><th>Mức độ</th><th>Mô tả</th><th></th></tr></thead>
+          <tbody id="interactionBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="interactionEmpty" hidden>Chưa có quy tắc tương tác nào.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  const token = localStorage.getItem('dm_token');
+  const SEVERITY_LABELS = { nhe: 'Nhẹ', trung_binh: 'Trung bình', nghiem_trong: 'Nghiêm trọng' };
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        ...(opts.headers || {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  let medicines = [];
+
+  async function loadMedicines() {
+    const { medicines: list } = await api('/api/clinical/medicines');
+    medicines = list;
+
+    const body = document.getElementById('medBody');
+    document.getElementById('medEmpty').hidden = list.length > 0;
+    body.innerHTML = list.map(m => `
+      <tr>
+        <td>${m.name}</td>
+        <td>${m.unit}</td>
+        <td><button class="ghost del-med" data-id="${m.id}">Xoá</button></td>
+      </tr>
+    `).join('');
+    body.querySelectorAll('.del-med').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Xoá thuốc này khỏi danh mục?')) return;
+        try {
+          await api('/api/clinical/medicines/' + btn.dataset.id, { method: 'DELETE' });
+          loadMedicines();
+          loadInteractions();
+        } catch (e) { alert(e.message); }
+      });
+    });
+
+    const opts = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    document.getElementById('medA').innerHTML = opts;
+    document.getElementById('medB').innerHTML = opts;
+  }
+
+  async function loadInteractions() {
+    const { interactions } = await api('/api/clinical/interactions');
+    const body = document.getElementById('interactionBody');
+    document.getElementById('interactionEmpty').hidden = interactions.length > 0;
+    body.innerHTML = interactions.map(i => `
+      <tr>
+        <td>${i.medicineAName}</td>
+        <td>${i.medicineBName}</td>
+        <td><span class="pill ${i.severity}">${SEVERITY_LABELS[i.severity]}</span></td>
+        <td>${i.description}</td>
+        <td><button class="ghost del-int" data-id="${i.id}">Xoá</button></td>
+      </tr>
+    `).join('');
+    body.querySelectorAll('.del-int').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Xoá quy tắc tương tác này?')) return;
+        try {
+          await api('/api/clinical/interactions/' + btn.dataset.id, { method: 'DELETE' });
+          loadInteractions();
+        } catch (e) { alert(e.message); }
+      });
+    });
+  }
+
+  document.getElementById('medForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('medMsg');
+    msg.textContent = ''; msg.className = 'msg';
+    try {
+      await api('/api/clinical/medicines', {
+        method: 'POST',
+        body: JSON.stringify({ name: document.getElementById('medName').value, unit: document.getElementById('medUnit').value }),
+      });
+      e.target.reset();
+      document.getElementById('medUnit').value = 'viên';
+      loadMedicines();
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    }
+  });
+
+  document.getElementById('interactionForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('interactionMsg');
+    msg.textContent = ''; msg.className = 'msg';
+    try {
+      await api('/api/clinical/interactions', {
+        method: 'POST',
+        body: JSON.stringify({
+          medicineAId: document.getElementById('medA').value,
+          medicineBId: document.getElementById('medB').value,
+          severity: document.getElementById('severity').value,
+          description: document.getElementById('description').value,
+        }),
+      });
+      document.getElementById('description').value = '';
+      loadInteractions();
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    }
+  });
+
+  (async function init() {
+    if (!token) { document.getElementById('noAccessCard').hidden = false; return; }
+    try {
+      const { user } = await api('/api/auth/me');
+      if (user.role !== 'admin') { document.getElementById('noAccessCard').hidden = false; return; }
+    } catch (e) {
+      document.getElementById('noAccessCard').hidden = false; return;
+    }
+    document.getElementById('content').hidden = false;
+    await loadMedicines();
+    await loadInteractions();
+  })();
+</script>
+</body>
+</html>

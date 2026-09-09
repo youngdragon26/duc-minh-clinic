@@ -136,6 +136,7 @@
   const fDate = document.getElementById('fDate');
   const fStatus = document.getElementById('fStatus');
   fDate.value = new Date().toISOString().slice(0, 10);
+  let myRole = null;
 
   async function loadQueue() {
     const params = new URLSearchParams();
@@ -156,9 +157,12 @@
         <td><span class="pill ${a.status}">${STATUS_LABELS[a.status] || a.status}</span></td>
         <td class="muted">${a.note || '—'}</td>
         <td>
-          <select class="role-select status-select" data-id="${a.id}">
-            ${Object.keys(STATUS_LABELS).map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`).join('')}
-          </select>
+          <div class="row-actions">
+            <select class="role-select status-select" data-id="${a.id}">
+              ${Object.keys(STATUS_LABELS).map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`).join('')}
+            </select>
+            ${myRole === 'doctor' && a.status !== 'da_huy' ? `<a class="ghost" style="text-decoration:none; display:inline-block;" href="/kham-benh.html?appointmentId=${a.id}">Khám →</a>` : ''}
+          </div>
         </td>
       </tr>
     `).join('');
@@ -194,6 +198,7 @@
         document.getElementById('noAccessCard').hidden = false;
         return;
       }
+      myRole = user.role;
     } catch (e) {
       document.getElementById('noAccessCard').hidden = false;
       return;

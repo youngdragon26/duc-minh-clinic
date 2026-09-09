@@ -235,10 +235,13 @@
     whoMeta.textContent = me.email + ' · ' + roleLabel(me.role) + (me.specialty ? ' · ' + me.specialty : '');
 
     const quickLinks = document.getElementById('quickLinks');
-    if (['staff', 'doctor', 'admin'].includes(me.role)) {
-      quickLinks.innerHTML = '<a class="ghost" style="text-decoration:none; display:inline-block;" href="/hang-doi.html">Hàng đợi khám →</a>';
+    const link = (href, label) => `<a class="ghost" style="text-decoration:none; display:inline-block;" href="${href}">${label}</a>`;
+    if (me.role === 'admin') {
+      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/danh-muc-thuoc.html', 'Danh mục thuốc →');
+    } else if (['staff', 'doctor'].includes(me.role)) {
+      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →');
     } else {
-      quickLinks.innerHTML = '<a class="ghost" style="text-decoration:none; display:inline-block;" href="/dat-lich.html">Đặt lịch khám →</a>';
+      quickLinks.innerHTML = link('/dat-lich.html', 'Đặt lịch khám →') + link('/ho-so.html', 'Hồ sơ khám bệnh →');
     }
 
     if (me.role === 'admin') {

@@ -7,6 +7,7 @@ const { init } = require('./db');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const appointmentRoutes = require('./routes/appointments');
+const clinicalRoutes = require('./routes/clinical');
 
 if (!process.env.JWT_SECRET) {
   console.error('Thiếu JWT_SECRET trong file .env — xem .env.example.');
@@ -21,6 +22,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api/clinical', clinicalRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

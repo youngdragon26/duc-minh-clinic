@@ -61,6 +61,54 @@ async function init() {
       WHERE doctor_id IS NOT NULL AND status <> 'da_huy';
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_appointments_date ON appointments (appointment_date);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS medicines (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      unit TEXT NOT NULL DEFAULT 'viên',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS drug_interactions (
+      id SERIAL PRIMARY KEY,
+      medicine_a_id INTEGER NOT NULL REFERENCES medicines(id) ON DELETE CASCADE,
+      medicine_b_id INTEGER NOT NULL REFERENCES medicines(id) ON DELETE CASCADE,
+      severity TEXT NOT NULL CHECK (severity IN ('nhe','trung_binh','nghiem_trong')),
+      description TEXT NOT NULL,
+      CHECK (medicine_a_id <> medicine_b_id)
+    );
+  `);
+  // 1 cặp thuốc chỉ có 1 quy tắc tương tác, không phân biệt thứ tự nhập A/B.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_drug_interactions_pair
+      ON drug_interactions (LEAST(medicine_a_id, medicine_b_id), GREATEST(medicine_a_id, medicine_b_id));
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS medical_records (
+      id SERIAL PRIMARY KEY,
+      appointment_id INTEGER NOT NULL UNIQUE REFERENCES appointments(id) ON DELETE CASCADE,
+      patient_id INTEGER NOT NULL REFERENCES users(id),
+      doctor_id INTEGER NOT NULL REFERENCES users(id),
+      symptoms TEXT,
+      diagnosis TEXT NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prescription_items (
+      id SERIAL PRIMARY KEY,
+      medical_record_id INTEGER NOT NULL REFERENCES medical_records(id) ON DELETE CASCADE,
+      medicine_id INTEGER NOT NULL REFERENCES medicines(id),
+      dosage TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1
+    );
+  `);
 }
 
 const ROLES = ['admin', 'patient', 'doctor', 'staff'];

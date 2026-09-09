@@ -29,4 +29,14 @@ const APPOINTMENT_STATUS_LABELS = {
   da_huy: 'Đã huỷ',
 };
 
-module.exports = { SPECIALTIES, APPOINTMENT_STATUSES, APPOINTMENT_STATUS_LABELS };
+const INTERACTION_SEVERITIES = ['nhe', 'trung_binh', 'nghiem_trong'];
+const INTERACTION_SEVERITY_LABELS = {
+  nhe: 'Nhẹ',
+  trung_binh: 'Trung bình',
+  nghiem_trong: 'Nghiêm trọng',
+};
+
+module.exports = {
+  SPECIALTIES, APPOINTMENT_STATUSES, APPOINTMENT_STATUS_LABELS,
+  INTERACTION_SEVERITIES, INTERACTION_SEVERITY_LABELS,
+};
