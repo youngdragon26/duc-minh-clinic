@@ -156,14 +156,16 @@ async function retrieveKnowledge(query, k = 4) {
 router.get('/_debug-chat-error', async (req, res) => {
   const client = getClient();
   if (!client) return res.json({ error: 'no client' });
+  const modelName = req.query.model || CHAT_MODEL;
   try {
-    const model = client.getGenerativeModel({ model: CHAT_MODEL });
+    const model = client.getGenerativeModel({ model: modelName });
     const chat = model.startChat({ history: [] });
     const result = await chat.sendMessage('xin chào');
-    return res.json({ ok: true, text: result.response.text() });
+    return res.json({ ok: true, model: modelName, text: result.response.text() });
   } catch (e) {
     return res.json({
       ok: false,
+      model: modelName,
       message: e.message,
       status: e.status,
       statusText: e.statusText,
