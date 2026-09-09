@@ -144,31 +144,39 @@
   .hero-meta div b{display:block; font-family:"Lora",serif; font-size:1.5rem; color:var(--ink);}
   .hero-meta div span{font-size:.78rem; color:var(--ink-muted);}
 
-  .hero-photo{position:relative;}
-  .photo-frame{
+  .hero-chat{position:relative;}
+  .chat-card{
     aspect-ratio:4/5; border-radius:18px; overflow:hidden;
-    background:
-      radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 60%),
-      linear-gradient(150deg, var(--surface-2), var(--surface));
+    background:var(--surface);
     border:1px solid var(--line);
-    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px;
+    display:flex; flex-direction:column;
     box-shadow:var(--shadow);
-    text-align:center; padding:24px;
   }
-  .photo-frame img{width:100%; height:100%; object-fit:cover; position:absolute; inset:0;}
-  .photo-frame .ph-label{font-size:.8rem; color:var(--ink-muted); max-width:22ch;}
-  .photo-frame .ph-mark{
-    font-family:"Lora",serif; font-style:italic; color:var(--accent-deep); font-size:1.1rem;
+  .chat-head{
+    background:var(--ink); color:#fff; padding:16px 18px; display:flex; align-items:center; justify-content:space-between; gap:10px;
   }
-  :root[data-theme="dark"] .photo-frame .ph-mark, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .photo-frame .ph-mark{ color:var(--accent);} }
-  .photo-caption{
-    position:absolute; left:20px; right:20px; bottom:20px;
-    background:var(--surface); border:1px solid var(--line); border-radius:12px;
-    padding:14px 18px; box-shadow:var(--shadow);
-    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  :root[data-theme="dark"] .chat-head, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .chat-head{ background:#081714;} }
+  .chat-head .who b{display:block; font-family:"Lora",serif; font-size:.98rem;}
+  .chat-head .who span{font-size:.72rem; color:#9fd6c9;}
+  .chat-body{
+    flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px;
+    background:
+      radial-gradient(120% 60% at 15% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+      var(--surface-2);
   }
-  .photo-caption .who{font-weight:600; font-size:.88rem;}
-  .photo-caption .role{font-size:.76rem; color:var(--ink-muted);}
+  .chat-quick{display:flex; gap:6px; flex-wrap:wrap; padding:0 18px 12px; background:var(--surface-2);}
+  .chat-input{display:flex; gap:8px; padding:14px; border-top:1px solid var(--line); background:var(--surface);}
+  .chat-input input{
+    flex:1; border:1px solid var(--line); border-radius:9px; padding:10px 12px;
+    font-family:inherit; font-size:.86rem; background:var(--ground); color:var(--ink);
+  }
+  .chat-input input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .chat-input button{
+    border:none; background:var(--accent-deep); color:var(--on-accent); border-radius:9px;
+    padding:0 16px; font-weight:600; font-size:.86rem; cursor:pointer; font-family:inherit;
+  }
+  .chat-input button:hover{background:var(--accent);}
+  .chat-input button:disabled{opacity:.6; cursor:default;}
 
   /* ---------- feature strip (no icons) ---------- */
   .features{padding:8px 0 64px;}
@@ -228,68 +236,22 @@
     font-size:.78rem; color:#7fa196;
   }
 
-  /* ---------- AI assistant widget ---------- */
-  .ai-toggle{
-    position:fixed; right:24px; bottom:24px; z-index:60;
-    width:60px; height:60px; border-radius:50%;
-    background:var(--accent-deep); color:var(--on-accent);
-    border:none; cursor:pointer; box-shadow:var(--shadow);
-    display:flex; align-items:center; justify-content:center;
-    font-family:"Lora",serif; font-weight:600; font-size:.92rem; letter-spacing:.02em;
-  }
-  .ai-toggle:hover{background:var(--accent);}
-  .ai-toggle .dot{
-    position:absolute; top:5px; right:5px; width:10px; height:10px; border-radius:50%;
-    background:var(--accent-warm); border:2px solid var(--surface);
-  }
-
-  .ai-panel{
-    position:fixed; right:24px; bottom:96px; z-index:60;
-    width:min(360px, calc(100vw - 48px)); height:min(480px, calc(100vh - 160px));
-    background:var(--surface); border:1px solid var(--line); border-radius:16px;
-    box-shadow:var(--shadow); display:flex; flex-direction:column; overflow:hidden;
-    opacity:0; transform:translateY(12px) scale(.98); pointer-events:none;
-    transition:opacity .18s ease, transform .18s ease;
-  }
-  .ai-panel.open{opacity:1; transform:translateY(0) scale(1); pointer-events:auto;}
-  .ai-head{
-    background:var(--ink); color:#fff; padding:16px 18px; display:flex; align-items:center; gap:10px; justify-content:space-between;
-  }
-  :root[data-theme="dark"] .ai-head, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .ai-head{ background:#081714;} }
-  .ai-head .who b{display:block; font-family:"Lora",serif; font-size:.98rem;}
-  .ai-head .who span{font-size:.72rem; color:#9fd6c9;}
-  .ai-close{background:none; border:none; color:#cfe4dd; font-size:1.1rem; cursor:pointer; line-height:1; padding:4px;}
-  .ai-body{flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; background:var(--ground);}
-  .msg{max-width:82%; padding:10px 13px; border-radius:12px; font-size:.86rem; line-height:1.5; white-space:pre-wrap;}
+  /* ---------- chat bubbles (dùng chung cho khung chat trong hero) ---------- */
+  .msg{max-width:85%; padding:10px 13px; border-radius:12px; font-size:.86rem; line-height:1.5; white-space:pre-wrap;}
   .msg.bot{background:var(--surface); border:1px solid var(--line); align-self:flex-start; border-bottom-left-radius:3px;}
   .msg.me{background:var(--accent); color:var(--on-accent); align-self:flex-end; border-bottom-right-radius:3px;}
-  .msg.bot.thinking{color:var(--ink-muted); font-style:italic;}
-  .msg.bot.err{border-color:var(--accent-warm);}
-  .ai-quick{display:flex; gap:6px; flex-wrap:wrap; padding:0 16px 12px; background:var(--ground);}
   .chip{
     font-size:.74rem; padding:6px 11px; border-radius:20px; border:1px solid var(--line);
-    background:var(--surface); color:var(--ink-muted); cursor:pointer;
+    background:var(--surface); color:var(--ink-muted); cursor:pointer; font-family:inherit;
   }
   .chip:hover{border-color:var(--accent); color:var(--ink);}
   .chip:disabled{opacity:.5; cursor:default;}
-  .ai-input{display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:var(--surface);}
-  .ai-input input{
-    flex:1; border:1px solid var(--line); border-radius:9px; padding:10px 12px;
-    font-family:inherit; font-size:.86rem; background:var(--ground); color:var(--ink);
-  }
-  .ai-input input:focus{outline:2px solid var(--accent); outline-offset:1px;}
-  .ai-input button{
-    border:none; background:var(--accent-deep); color:var(--on-accent); border-radius:9px;
-    padding:0 16px; font-weight:600; font-size:.86rem; cursor:pointer;
-  }
-  .ai-input button:hover{background:var(--accent);}
-  .ai-input button:disabled{opacity:.6; cursor:default;}
 
   @media (max-width:860px){
     .utility-left{gap:14px;}
     .nav-links{display:none;}
     .hero .wrap{grid-template-columns:1fr;}
-    .hero-photo{order:-1;}
+    .hero-chat{order:-1;}
     .features .grid{grid-template-columns:1fr;}
     .about .wrap{grid-template-columns:1fr;}
     .spec-grid{grid-template-columns:1fr 1fr;}
@@ -356,18 +318,22 @@
         </div>
       </div>
 
-      <div class="hero-photo">
-        <div class="photo-frame">
-          <!-- Thay bằng ảnh thật: đổi div.photo-frame này thành
-               <img src="/img/doi-ngu.jpg" alt="Đội ngũ phòng khám Đức Minh"> -->
-          <span class="ph-mark">Đa Khoa Đức Minh</span>
-          <span class="ph-label">Vị trí dành cho ảnh đội ngũ 3 thành viên phòng khám — gửi mình file ảnh để chèn vào đây.</span>
-          <div class="photo-caption">
-            <div>
-              <div class="who">Đội ngũ sáng lập</div>
-              <div class="role">Phòng khám Đa khoa Đức Minh</div>
-            </div>
+      <div class="hero-chat">
+        <div class="chat-card">
+          <div class="chat-head">
+            <div class="who"><b>Trợ lý AI Đức Minh</b><span>Hỏi ngay, trả lời tức thì</span></div>
           </div>
+          <div class="chat-body" id="heroChatBody">
+            <div class="msg bot">Xin chào! Mình là trợ lý của phòng khám Đức Minh. Hỏi mình về giờ làm việc, chuyên khoa phù hợp hoặc cách đặt lịch khám nhé.</div>
+          </div>
+          <div class="chat-quick">
+            <button class="chip" data-q="Giờ làm việc của phòng khám?">Giờ làm việc?</button>
+            <button class="chip" data-q="Tôi bị đau họng mấy ngày nay, nên khám khoa nào?">Đau họng khám khoa nào?</button>
+          </div>
+          <form class="chat-input" id="heroChatForm">
+            <input id="heroChatInput" type="text" placeholder="Nhập câu hỏi của bạn..." autocomplete="off">
+            <button type="submit" id="heroChatSend">Gửi</button>
+          </form>
         </div>
       </div>
     </div>
@@ -389,7 +355,7 @@
         <div class="feature">
           <div class="rule"></div>
           <h3>Trợ lý AI hỗ trợ 24/7</h3>
-          <p>Giải đáp nhanh các câu hỏi thường gặp và gợi ý chuyên khoa phù hợp trước khi bạn đặt lịch. Thử ở góc phải bên dưới.</p>
+          <p>Giải đáp nhanh các câu hỏi thường gặp và gợi ý chuyên khoa phù hợp trước khi bạn đặt lịch. Thử ngay khung chat bên phải.</p>
         </div>
       </div>
     </div>
@@ -462,39 +428,13 @@
   <div class="f-bottom">© 2026 Phòng khám Đa khoa Đức Minh. Mọi thông tin trên trang chỉ mang tính minh họa giao diện.</div>
 </footer>
 
-<button class="ai-toggle" id="aiToggle" aria-label="Mở trợ lý AI">AI<span class="dot"></span></button>
-<div class="ai-panel" id="aiPanel" role="dialog" aria-label="Trợ lý AI Đức Minh">
-  <div class="ai-head">
-    <div class="who"><b>Trợ lý AI Đức Minh</b><span id="aiStatus">Chế độ hỏi nhanh</span></div>
-    <button class="ai-close" id="aiClose" aria-label="Đóng">✕</button>
-  </div>
-  <div class="ai-body" id="aiBody">
-    <div class="msg bot">Xin chào! Mình là trợ lý của phòng khám Đức Minh. Mình có thể giúp bạn xem giờ làm việc, gợi ý chuyên khoa phù hợp hoặc hướng dẫn đặt lịch khám. Với các vấn đề sức khỏe cụ thể, bạn vẫn nên đến khám trực tiếp để bác sĩ chẩn đoán chính xác nhé.</div>
-  </div>
-  <div class="ai-quick">
-    <button class="chip" data-q="Giờ làm việc của phòng khám?">Giờ làm việc?</button>
-    <button class="chip" data-q="Đặt lịch khám thế nào?">Đặt lịch thế nào?</button>
-    <button class="chip" data-q="Tôi bị đau họng mấy ngày nay, nên khám khoa nào?">Đau họng khám khoa nào?</button>
-  </div>
-  <form class="ai-input" id="aiForm">
-    <input id="aiInput" type="text" placeholder="Nhập câu hỏi của bạn..." autocomplete="off">
-    <button type="submit" id="aiSend">Gửi</button>
-  </form>
-</div>
-
 <script>
 (function(){
-  const toggle = document.getElementById('aiToggle');
-  const panel = document.getElementById('aiPanel');
-  const closeBtn = document.getElementById('aiClose');
-  const body = document.getElementById('aiBody');
-  const form = document.getElementById('aiForm');
-  const input = document.getElementById('aiInput');
-  const sendBtn = document.getElementById('aiSend');
+  const body = document.getElementById('heroChatBody');
+  const form = document.getElementById('heroChatForm');
+  const input = document.getElementById('heroChatInput');
+  const sendBtn = document.getElementById('heroChatSend');
   const chips = Array.from(document.querySelectorAll('.chip'));
-
-  toggle.addEventListener('click', () => panel.classList.toggle('open'));
-  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
 
   function addMsg(text, who){
     const el = document.createElement('div');
