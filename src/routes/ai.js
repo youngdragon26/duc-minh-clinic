@@ -5,25 +5,17 @@ const { SPECIALTIES } = require('../constants');
 
 const router = express.Router();
 
-const CHAT_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-haiku-4-5-20251001';
-const SUMMARY_MODEL = process.env.ANTHROPIC_SUMMARY_MODEL || 'claude-sonnet-5';
+const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.0-flash';
+const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-2.0-flash';
 
-let anthropicClient;
+let genAI;
 function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!anthropicClient) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!process.env.GEMINI_API_KEY) return null;
+  if (!genAI) {
+    const { GoogleGenerativeAI } = require('@google/generative-ai');
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
-  return anthropicClient;
-}
-
-function replyText(response) {
-  return (response.content || [])
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim();
+  return genAI;
 }
 
 // Ngữ cảnh "RAG" lấy trực tiếp từ CSDL thật của phòng khám (giá khám, bác sĩ đang
@@ -63,7 +55,7 @@ async function buildClinicContext() {
 router.post('/chat', async (req, res) => {
   const client = getClient();
   if (!client) {
-    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu ANTHROPIC_API_KEY).' });
+    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
   }
   try {
     const { message, history } = req.body || {};
@@ -83,20 +75,20 @@ router.post('/chat', async (req, res) => {
       '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0975 755 333.',
     ].join('\n');
 
+    // Gemini dùng vai "model" thay vì "assistant", và lịch sử phải bắt đầu bằng "user".
     const turns = Array.isArray(history)
       ? history
           .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
           .slice(-10)
+          .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }))
       : [];
+    while (turns.length && turns[0].role !== 'user') turns.shift();
 
-    const response = await client.messages.create({
-      model: CHAT_MODEL,
-      max_tokens: 400,
-      system: systemPrompt,
-      messages: [...turns, { role: 'user', content: message.trim() }],
-    });
+    const model = client.getGenerativeModel({ model: CHAT_MODEL, systemInstruction: systemPrompt });
+    const chat = model.startChat({ history: turns });
+    const result = await chat.sendMessage(message.trim());
+    const text = result.response.text().trim();
 
-    const text = replyText(response);
     res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0975 755 333 để được hỗ trợ nhé.' });
   } catch (e) {
     console.error(e);
@@ -110,7 +102,7 @@ router.use(authenticate);
 router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async (req, res) => {
   const client = getClient();
   if (!client) {
-    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu ANTHROPIC_API_KEY).' });
+    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
   }
   try {
     const patientId = Number(req.body?.patientId);
@@ -140,18 +132,15 @@ router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async
       })
       .join('\n\n');
 
-    const response = await client.messages.create({
-      model: SUMMARY_MODEL,
-      max_tokens: 500,
-      system:
-        'Bạn hỗ trợ bác sĩ tại phòng khám tóm tắt nhanh bệnh sử một bệnh nhân trước khi khám. ' +
-        'Viết bằng tiếng Việt, súc tích, dạng gạch đầu dòng, nêu bật các lần khám gần đây, chẩn đoán lặp lại (nếu có), ' +
-        'và các thuốc đã dùng đáng chú ý (đặc biệt nếu có thể liên quan tới lần khám tới). ' +
-        'Chỉ dùng dữ liệu được cung cấp, không suy đoán hay bổ sung thông tin y khoa khác.',
-      messages: [{ role: 'user', content: 'Lịch sử khám bệnh:\n\n' + historyText }],
-    });
+    const systemPrompt =
+      'Bạn hỗ trợ bác sĩ tại phòng khám tóm tắt nhanh bệnh sử một bệnh nhân trước khi khám. ' +
+      'Viết bằng tiếng Việt, súc tích, dạng gạch đầu dòng, nêu bật các lần khám gần đây, chẩn đoán lặp lại (nếu có), ' +
+      'và các thuốc đã dùng đáng chú ý (đặc biệt nếu có thể liên quan tới lần khám tới). ' +
+      'Chỉ dùng dữ liệu được cung cấp, không suy đoán hay bổ sung thông tin y khoa khác.';
 
-    res.json({ summary: replyText(response) });
+    const model = client.getGenerativeModel({ model: SUMMARY_MODEL, systemInstruction: systemPrompt });
+    const result = await model.generateContent('Lịch sử khám bệnh:\n\n' + historyText);
+    res.json({ summary: result.response.text().trim() });
   } catch (e) {
     console.error(e);
     res.status(502).json({ error: 'Không kết nối được tới dịch vụ AI, thử lại sau.' });

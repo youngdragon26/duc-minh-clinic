@@ -79,15 +79,16 @@ Ai đăng ký công khai (không biết mã) sẽ luôn thành tài khoản **b�
 
 ---
 
-## Bước 6 — Bật AI thật (chatbot + tóm tắt bệnh sử cho bác sĩ)
+## Bước 6 — Bật AI thật miễn phí (chatbot + tóm tắt bệnh sử cho bác sĩ)
 
-Mặc định 2 tính năng AI này **tắt** (chatbot dùng bộ trả lời từ khoá dự phòng, nút "Tóm tắt AI" báo lỗi "chưa cấu hình"). Để bật thật:
+Dùng **Google Gemini** — có gói miễn phí thật sự, không cần thẻ thanh toán. Mặc định 2 tính năng AI này **tắt** (chatbot dùng bộ trả lời từ khoá dự phòng, nút "Tóm tắt AI" báo lỗi "chưa cấu hình"). Để bật thật:
 
-1. Vào https://console.anthropic.com → tạo tài khoản → mục **API Keys** → tạo 1 key mới (dạng `sk-ant-...`).
-2. Vào Render → service `duc-minh-clinic` → **Environment** → thêm biến `ANTHROPIC_API_KEY` = key vừa tạo → Save.
-3. Render tự deploy lại. Vào trang chủ thử hỏi khung chat, hoặc đăng nhập bác sĩ vào `/kham-benh.html` bấm "Tóm tắt AI bệnh sử".
+1. Vào https://aistudio.google.com/apikey → đăng nhập bằng tài khoản Gmail bất kỳ (không cần thẻ).
+2. Bấm **Create API key** → chọn hoặc tạo 1 project bất kỳ → copy key (dạng `AIzaSy...`).
+3. Vào Render → service `duc-minh-clinic` → **Environment** → thêm biến `GEMINI_API_KEY` = key vừa tạo → Save.
+4. Render tự deploy lại. Vào trang chủ thử hỏi khung chat, hoặc đăng nhập bác sĩ vào `/kham-benh.html` bấm "Tóm tắt AI bệnh sử".
 
-**Lưu ý:** đây là dịch vụ trả phí theo lượng dùng của Anthropic (không đắt cho quy mô 1 phòng khám nhỏ, nhưng không miễn phí hoàn toàn) — bạn cần thẻ thanh toán trên tài khoản Anthropic. Không dán key này vào đây hay gửi qua chat — chỉ nhập trực tiếp trong Render.
+**Lưu ý:** gói miễn phí của Gemini có giới hạn số lượt hỏi/phút — đủ dùng cho 1 phòng khám nhỏ, nếu sau này đông người dùng cùng lúc có thể cần nâng cấp. Không dán key này vào chat hay chia sẻ công khai — chỉ nhập trực tiếp trong Render.
 
 Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiếp từ CSDL thật của phòng khám — không tự bịa thông tin y khoa. Tóm tắt bệnh sử chỉ dùng đúng dữ liệu hồ sơ khám đã lưu, không suy đoán thêm.
 
@@ -112,7 +113,7 @@ Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiế
 | GET / PUT | `/api/billing/service-prices` | Xem: nhân viên/bác sĩ/admin; Sửa: admin | Giá khám theo chuyên khoa |
 | POST / GET | `/api/billing/invoices` | Lập: nhân viên/admin | Lập hoá đơn cho lịch hẹn đã khám xong |
 | PATCH | `/api/billing/invoices/:id/status` | Nhân viên/admin | Xác nhận đã thu tiền |
-| POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `ANTHROPIC_API_KEY`) |
+| POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `GEMINI_API_KEY`) |
 | POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 
 Các API cần đăng nhập thì gửi kèm header `Authorization: Bearer <token>`.
