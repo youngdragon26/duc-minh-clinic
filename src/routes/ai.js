@@ -152,6 +152,28 @@ async function retrieveKnowledge(query, k = 4) {
   }
 }
 
+// TẠM THỜI: debug lỗi 503 thật từ Gemini — xoá ngay sau khi chẩn đoán xong.
+router.get('/_debug-chat-error', async (req, res) => {
+  const client = getClient();
+  if (!client) return res.json({ error: 'no client' });
+  try {
+    const model = client.getGenerativeModel({ model: CHAT_MODEL });
+    const chat = model.startChat({ history: [] });
+    const result = await chat.sendMessage('xin chào');
+    return res.json({ ok: true, text: result.response.text() });
+  } catch (e) {
+    return res.json({
+      ok: false,
+      message: e.message,
+      status: e.status,
+      statusText: e.statusText,
+      name: e.name,
+      errorDetails: e.errorDetails || null,
+      stack: String(e.stack || '').split('\n').slice(0, 5),
+    });
+  }
+});
+
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
