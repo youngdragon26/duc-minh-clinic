@@ -130,10 +130,15 @@ async function init() {
       document_id INTEGER NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
       chunk_index INTEGER NOT NULL,
       content TEXT NOT NULL,
-      embedding vector(768),
+      embedding vector(3072),
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // gemini-embedding-001 sinh vector 3072 chiều — sửa lại cho CSDL đã tồn tại
+  // từ trước khi biết đúng số chiều (bảng khi đó chưa có dữ liệu nào).
+  await pool.query(`DROP INDEX IF EXISTS ix_kb_chunks_embedding;`);
+  await pool.query(`ALTER TABLE kb_chunks ALTER COLUMN embedding TYPE vector(3072);`);
 
   // ANN index (HNSW) cho similarity search — vẫn hoạt động tốt kể cả khi dữ
   // liệu còn ít, sẽ phát huy tác dụng khi cơ sở tri thức lớn dần.

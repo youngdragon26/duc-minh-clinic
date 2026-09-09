@@ -7,18 +7,6 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 
 const router = express.Router();
 
-// TAM THOI: route chan doan de kiem tra so chieu vector thuc te cua model embedding.
-// XOA route nay sau khi xac dinh xong.
-router.get('/_debug-embed-dims', async (req, res) => {
-  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'no key' });
-  try {
-    const values = await embedText('xin chao', 'RETRIEVAL_DOCUMENT');
-    res.json({ dims: values.length, sample: values.slice(0, 5) });
-  } catch (e) {
-    res.status(500).json({ error: e.message, status: e.status });
-  }
-});
-
 // Chatbot dùng function calling (tra lịch trống) — model 3.6 mới đổi vai trò
 // "function response" khiến bản SDK hiện tại (@google/generative-ai) bị lỗi 400
 // "Role 'function' is not supported", nên tạm dùng bản 2.5 ổn định hơn cho phần này.
