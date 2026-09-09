@@ -7,6 +7,23 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 
 const router = express.Router();
 
+// TAM THOI: route chan doan de tim dung ten model embedding con ho tro.
+// XOA route nay sau khi xac dinh xong model dung.
+router.get('/_debug-models', async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'no key' });
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + process.env.GEMINI_API_KEY);
+    const data = await r.json();
+    const models = (data.models || []).map((m) => ({
+      name: m.name,
+      methods: m.supportedGenerationMethods,
+    }));
+    res.json({ models });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Chatbot dùng function calling (tra lịch trống) — model 3.6 mới đổi vai trò
 // "function response" khiến bản SDK hiện tại (@google/generative-ai) bị lỗi 400
 // "Role 'function' is not supported", nên tạm dùng bản 2.5 ổn định hơn cho phần này.
