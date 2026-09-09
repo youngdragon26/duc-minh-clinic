@@ -326,7 +326,7 @@
       <li><a href="#hotro">Hỗ trợ</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="/tai-khoan.html" class="link-quiet">Đăng nhập</a>
+      <a href="/tai-khoan.html" class="link-quiet" id="navAccount">Đăng nhập</a>
       <a href="/tai-khoan.html" class="btn btn-primary">Đặt lịch khám</a>
     </div>
   </nav>
@@ -550,6 +550,24 @@
     });
   });
 })();
+</script>
+
+<script>
+  // Trang chủ chỉ đọc token đã lưu (từ lần đăng nhập ở /tai-khoan.html) để đổi
+  // chữ "Đăng nhập" thành tên người dùng — không xử lý đăng nhập tại đây.
+  (async function(){
+    const token = localStorage.getItem('dm_token');
+    const navAccount = document.getElementById('navAccount');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) throw new Error('unauthorized');
+      const { user } = await res.json();
+      navAccount.textContent = 'Xin chào, ' + user.name;
+    } catch (e) {
+      localStorage.removeItem('dm_token');
+    }
+  })();
 </script>
 
 </body>
