@@ -1,11 +1,17 @@
-# Đa Khoa Đức Minh — Website + tài khoản
+# Đa Khoa Đức Minh — Website + hệ thống quản lý phòng khám
 
-Một web Node.js/Express thật, phục vụ:
-- **Trang chủ** (`public/index.html`) — landing page giới thiệu phòng khám.
-- **Trang đăng nhập/đăng ký** (`public/tai-khoan.html`) — tách riêng như yêu cầu.
-- **API tài khoản** (`/api/auth/...`, `/api/admin/...`) — mật khẩu mã hoá bcrypt, đăng nhập bằng JWT, CSDL **PostgreSQL thật** (không phải SQLite nữa, để không mất dữ liệu khi deploy công khai và server khởi động lại).
+Một web Node.js/Express thật, đã triển khai công khai tại **https://duc-minh-clinic.onrender.com**, gồm:
 
-Mục tiêu bạn đang hướng tới: **một link duy nhất, ai có link cũng vào được, tự đăng ký tài khoản, và Vũ là admin xem/sửa được danh sách tài khoản.** Dưới đây là các bước để làm điều đó.
+- **Trang chủ** (`/`) — landing page giới thiệu phòng khám, có khung chat AI.
+- **Tài khoản** (`/tai-khoan.html`) — đăng ký/đăng nhập, 4 vai trò: Bệnh nhân, Bác sĩ, Nhân viên, Quản trị viên.
+- **Đặt lịch khám** (`/dat-lich.html`) — bệnh nhân chọn chuyên khoa/bác sĩ/giờ, xem lịch của mình.
+- **Hàng đợi khám** (`/hang-doi.html`) — nhân viên/bác sĩ/admin xem và cập nhật trạng thái lịch hẹn.
+- **Khám bệnh** (`/kham-benh.html`) — bác sĩ ghi chẩn đoán, kê đơn thuốc, có cảnh báo tương tác thuốc và tóm tắt AI bệnh sử.
+- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn.
+- **Danh mục thuốc** (`/danh-muc-thuoc.html`) — admin quản lý thuốc, giá thuốc, quy tắc tương tác, giá khám theo chuyên khoa.
+- **Hoá đơn** (`/hoa-don.html`) — nhân viên/admin lập hoá đơn và xác nhận thu tiền.
+
+CSDL **PostgreSQL thật** (Neon, miễn phí) — không mất dữ liệu khi deploy công khai và server khởi động lại.
 
 ---
 
@@ -73,21 +79,44 @@ Ai đăng ký công khai (không biết mã) sẽ luôn thành tài khoản **b�
 
 ---
 
+## Bước 6 — Bật AI thật (chatbot + tóm tắt bệnh sử cho bác sĩ)
+
+Mặc định 2 tính năng AI này **tắt** (chatbot dùng bộ trả lời từ khoá dự phòng, nút "Tóm tắt AI" báo lỗi "chưa cấu hình"). Để bật thật:
+
+1. Vào https://console.anthropic.com → tạo tài khoản → mục **API Keys** → tạo 1 key mới (dạng `sk-ant-...`).
+2. Vào Render → service `duc-minh-clinic` → **Environment** → thêm biến `ANTHROPIC_API_KEY` = key vừa tạo → Save.
+3. Render tự deploy lại. Vào trang chủ thử hỏi khung chat, hoặc đăng nhập bác sĩ vào `/kham-benh.html` bấm "Tóm tắt AI bệnh sử".
+
+**Lưu ý:** đây là dịch vụ trả phí theo lượng dùng của Anthropic (không đắt cho quy mô 1 phòng khám nhỏ, nhưng không miễn phí hoàn toàn) — bạn cần thẻ thanh toán trên tài khoản Anthropic. Không dán key này vào đây hay gửi qua chat — chỉ nhập trực tiếp trong Render.
+
+Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiếp từ CSDL thật của phòng khám — không tự bịa thông tin y khoa. Tóm tắt bệnh sử chỉ dùng đúng dữ liệu hồ sơ khám đã lưu, không suy đoán thêm.
+
+---
+
 ## API
 
 | Method | Endpoint | Ai gọi được | Việc làm |
 |---|---|---|---|
-| POST | `/api/auth/register` | Ai cũng gọi được | Tạo tài khoản mới (`name`, `email`, `phone`, `password`, `adminCode?`) |
-| POST | `/api/auth/login` | Ai cũng gọi được | Đăng nhập (`email`, `password`) → trả về `token` |
-| GET | `/api/auth/me` | Đã đăng nhập | Xem thông tin tài khoản đang đăng nhập |
-| GET | `/api/admin/users` | Chỉ admin | Danh sách toàn bộ tài khoản |
-| PATCH | `/api/admin/users/:id/role` | Chỉ admin | Đổi vai trò một tài khoản (`role`: `admin`/`patient`) |
-| DELETE | `/api/admin/users/:id` | Chỉ admin | Xoá một tài khoản |
+| POST | `/api/auth/register` | Ai cũng gọi được | Tạo tài khoản mới (mặc định vai trò Bệnh nhân; `adminCode` đúng thì thành Admin) |
+| POST | `/api/auth/login` | Ai cũng gọi được | Đăng nhập → trả về `token` |
+| GET | `/api/auth/me` | Đã đăng nhập | Thông tin tài khoản đang đăng nhập |
+| GET / POST | `/api/admin/users` | Chỉ admin | Danh sách / tạo tài khoản mới (kể cả Bác sĩ, Nhân viên) |
+| PATCH / DELETE | `/api/admin/users/:id` | Chỉ admin | Đổi vai trò / xoá tài khoản |
+| POST / GET | `/api/appointments` | Bệnh nhân đặt; Nhân viên/Bác sĩ/Admin xem hàng đợi | Đặt lịch khám / xem hàng đợi theo ngày |
+| GET | `/api/appointments/mine` | Bệnh nhân | Lịch hẹn của chính mình |
+| PATCH | `/api/appointments/:id/status` | Theo vai trò | Đổi trạng thái lịch hẹn (bệnh nhân chỉ tự huỷ được) |
+| GET / POST / PATCH / DELETE | `/api/clinical/medicines` | Xem: ai cũng được; Sửa: admin | Danh mục thuốc + giá |
+| GET / POST / DELETE | `/api/clinical/interactions` | Xem: ai cũng được; Sửa: admin | Quy tắc tương tác thuốc |
+| POST | `/api/clinical/records` | Bác sĩ | Tạo hồ sơ khám + đơn thuốc, tự hoàn thành lịch hẹn |
+| GET | `/api/clinical/records/mine` | Bệnh nhân | Lịch sử khám của chính mình |
+| GET / PUT | `/api/billing/service-prices` | Xem: nhân viên/bác sĩ/admin; Sửa: admin | Giá khám theo chuyên khoa |
+| POST / GET | `/api/billing/invoices` | Lập: nhân viên/admin | Lập hoá đơn cho lịch hẹn đã khám xong |
+| PATCH | `/api/billing/invoices/:id/status` | Nhân viên/admin | Xác nhận đã thu tiền |
+| POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `ANTHROPIC_API_KEY`) |
+| POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 
 Các API cần đăng nhập thì gửi kèm header `Authorization: Bearer <token>`.
 
 ## Vì sao không dùng bản thiết kế trên Claude Artifact cho việc này?
 
-Trang mình từng publish trên Claude Artifact bị nền tảng **chặn mọi kết nối mạng ra ngoài** (không gọi API được) — nên nó không thể nối tới backend/CSDL thật. Vì vậy toàn bộ giao diện (trang chủ + trang đăng nhập) đã được chuyển hẳn vào đây, chạy chung với backend, để deploy một link duy nhất dùng thật được.
-
-Khung "Trợ lý AI" trên trang chủ ở bản này dùng bộ trả lời theo từ khoá (không gọi mô hình AI thật), vì lý do tương tự: trang web thường không có sẵn quyền gọi Claude như bên Artifact. Muốn có AI thật ở đây, cần thêm một route backend gọi API của một nhà cung cấp LLM (ví dụ Anthropic API) rồi nối vào khung chat — nói với mình khi bạn muốn làm phần này.
+Trang mình từng publish trên Claude Artifact bị nền tảng **chặn mọi kết nối mạng ra ngoài** (không gọi API được) — nên nó không thể nối tới backend/CSDL thật. Vì vậy toàn bộ giao diện đã được chuyển hẳn vào đây, chạy chung với backend, để deploy một link duy nhất dùng thật được.

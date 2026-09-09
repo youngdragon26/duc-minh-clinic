@@ -90,6 +90,8 @@
         <div><b id="patientName"></b><br><span id="patientMeta"></span></div>
         <span id="apptMeta"></span>
       </div>
+      <button type="button" class="ghost" id="summarizeBtn" style="margin-top:10px;">✨ Tóm tắt AI bệnh sử</button>
+      <div class="warn-box" id="summaryBox" hidden style="border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, var(--surface));"></div>
     </div>
 
     <div class="card" id="doneCard" hidden>
@@ -256,6 +258,25 @@
     document.getElementById('patientName').textContent = appt.patientName;
     document.getElementById('patientMeta').textContent = (appt.patientPhone || '—') + ' · ' + appt.specialty;
     document.getElementById('apptMeta').textContent = appt.date.slice(0, 10) + ' · ' + appt.time;
+
+    document.getElementById('summarizeBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('summarizeBtn');
+      const box = document.getElementById('summaryBox');
+      btn.disabled = true;
+      box.hidden = false;
+      box.innerHTML = '<i>Đang tóm tắt...</i>';
+      try {
+        const { summary } = await api('/api/ai/summarize-patient', {
+          method: 'POST',
+          body: JSON.stringify({ patientId: appt.patientId }),
+        });
+        box.innerHTML = '<b>✨ Tóm tắt AI bệnh sử:</b><div style="white-space:pre-wrap; margin-top:6px;">' + summary + '</div>';
+      } catch (e) {
+        box.innerHTML = e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     const { medicines: list } = await api('/api/clinical/medicines');
     medicines = list;

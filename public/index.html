@@ -472,21 +472,47 @@
     return 'Mình chưa có thông tin chính xác cho câu hỏi này. Bạn có thể gọi trực tiếp hotline 0975 755 333 để được tư vấn kỹ hơn nhé.';
   }
 
+  // Lịch sử hội thoại gửi kèm mỗi lần hỏi, để AI thật trả lời có ngữ cảnh.
+  const chatHistory = [];
+
+  async function askAI(q){
+    sendBtn.disabled = true;
+    const thinkingEl = addMsg('Đang trả lời...', 'bot');
+    thinkingEl.style.fontStyle = 'italic';
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: q, history: chatHistory }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi AI');
+      thinkingEl.textContent = data.reply;
+      thinkingEl.style.fontStyle = 'normal';
+      chatHistory.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
+    } catch (e) {
+      // AI chưa cấu hình hoặc lỗi mạng -> dùng bộ trả lời theo từ khoá làm phương án dự phòng.
+      thinkingEl.textContent = answer(q);
+      thinkingEl.style.fontStyle = 'normal';
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const q = input.value.trim();
     if (!q) return;
     addMsg(q, 'me');
     input.value = '';
-    sendBtn.disabled = true;
-    setTimeout(() => { addMsg(answer(q), 'bot'); sendBtn.disabled = false; }, 300);
+    askAI(q);
   });
 
   chips.forEach(chip => {
     chip.addEventListener('click', () => {
       const q = chip.dataset.q;
       addMsg(q, 'me');
-      setTimeout(() => addMsg(answer(q), 'bot'), 300);
+      askAI(q);
     });
   });
 })();
