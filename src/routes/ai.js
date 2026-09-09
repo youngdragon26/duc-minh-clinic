@@ -154,30 +154,6 @@ async function retrieveKnowledge(query, k = 4) {
   }
 }
 
-// TẠM THỜI: kiểm tra SDK mới + function calling hoạt động đúng — xoá sau khi xác nhận.
-router.get('/_debug-tool-call', async (req, res) => {
-  const client = getClient();
-  if (!client) return res.json({ error: 'no client' });
-  const modelName = req.query.model || CHAT_MODEL;
-  try {
-    const chat = client.chats.create({
-      model: modelName,
-      config: { tools: [{ functionDeclarations: [checkSlotsDeclaration] }] },
-    });
-    let result = await chat.sendMessage({ message: 'Nội tổng quát ngày mai còn giờ trống không?' });
-    const calls = result.functionCalls;
-    if (!calls || !calls.length) {
-      return res.json({ ok: true, model: modelName, calledTool: false, text: result.text });
-    }
-    const call = calls[0];
-    const toolResult = await checkAvailableSlots(call.args);
-    result = await chat.sendMessage({ message: [{ functionResponse: { name: call.name, response: toolResult } }] });
-    return res.json({ ok: true, model: modelName, calledTool: true, args: call.args, text: result.text });
-  } catch (e) {
-    return res.json({ ok: false, model: modelName, message: e.message, status: e.status });
-  }
-});
-
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
