@@ -109,6 +109,41 @@ async function init() {
       quantity INTEGER NOT NULL DEFAULT 1
     );
   `);
+
+  await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
+
+  // Giá khám theo từng chuyên khoa — admin thiết lập trong "Bảng giá dịch vụ".
+  // Không có dòng cho 1 chuyên khoa nghĩa là CHƯA thiết lập giá (khác với giá 0đ = miễn phí).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS service_prices (
+      specialty TEXT PRIMARY KEY,
+      price INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id SERIAL PRIMARY KEY,
+      appointment_id INTEGER NOT NULL UNIQUE REFERENCES appointments(id) ON DELETE CASCADE,
+      patient_id INTEGER NOT NULL REFERENCES users(id),
+      created_by INTEGER NOT NULL REFERENCES users(id),
+      total_amount INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'chua_thanh_toan' CHECK (status IN ('chua_thanh_toan','da_thanh_toan')),
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS invoice_items (
+      id SERIAL PRIMARY KEY,
+      invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      unit_price INTEGER NOT NULL DEFAULT 0,
+      subtotal INTEGER NOT NULL DEFAULT 0
+    );
+  `);
 }
 
 const ROLES = ['admin', 'patient', 'doctor', 'staff'];

@@ -237,8 +237,10 @@
     const quickLinks = document.getElementById('quickLinks');
     const link = (href, label) => `<a class="ghost" style="text-decoration:none; display:inline-block;" href="${href}">${label}</a>`;
     if (me.role === 'admin') {
-      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/danh-muc-thuoc.html', 'Danh mục thuốc →');
-    } else if (['staff', 'doctor'].includes(me.role)) {
+      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/danh-muc-thuoc.html', 'Danh mục thuốc →') + link('/hoa-don.html', 'Hoá đơn →');
+    } else if (me.role === 'staff') {
+      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/hoa-don.html', 'Hoá đơn →');
+    } else if (me.role === 'doctor') {
       quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →');
     } else {
       quickLinks.innerHTML = link('/dat-lich.html', 'Đặt lịch khám →') + link('/ho-so.html', 'Hồ sơ khám bệnh →');

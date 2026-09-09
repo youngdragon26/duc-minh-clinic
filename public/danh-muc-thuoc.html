@@ -104,17 +104,30 @@
             <input type="text" id="medUnit" placeholder="viên, gói, chai..." value="viên">
           </div>
         </div>
+        <label>Giá bán (đ / đơn vị)</label>
+        <input type="number" id="medPrice" min="0" step="1000" value="0">
         <button class="primary" type="submit">Thêm thuốc</button>
         <div class="msg" id="medMsg"></div>
       </form>
 
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Tên thuốc</th><th>Đơn vị</th><th></th></tr></thead>
+          <thead><tr><th>Tên thuốc</th><th>Đơn vị</th><th>Giá bán</th><th></th></tr></thead>
           <tbody id="medBody"></tbody>
         </table>
       </div>
       <div class="empty" id="medEmpty" hidden>Chưa có thuốc nào trong danh mục.</div>
+    </div>
+
+    <div class="card">
+      <b>Bảng giá khám theo chuyên khoa</b>
+      <p class="hint">Bắt buộc thiết lập trước khi Nhân viên có thể lập hoá đơn cho lịch hẹn thuộc chuyên khoa đó.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chuyên khoa</th><th>Giá khám (đ)</th><th></th></tr></thead>
+          <tbody id="servicePriceBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card">
@@ -184,6 +197,7 @@
       <tr>
         <td>${m.name}</td>
         <td>${m.unit}</td>
+        <td><input type="number" class="med-price" data-id="${m.id}" min="0" step="1000" value="${m.price}" style="width:110px;"></td>
         <td><button class="ghost del-med" data-id="${m.id}">Xoá</button></td>
       </tr>
     `).join('');
@@ -195,6 +209,13 @@
           loadMedicines();
           loadInteractions();
         } catch (e) { alert(e.message); }
+      });
+    });
+    body.querySelectorAll('.med-price').forEach(input => {
+      input.addEventListener('change', async () => {
+        try {
+          await api('/api/clinical/medicines/' + input.dataset.id, { method: 'PATCH', body: JSON.stringify({ price: input.value }) });
+        } catch (e) { alert(e.message); loadMedicines(); }
       });
     });
 
@@ -234,15 +255,42 @@
     try {
       await api('/api/clinical/medicines', {
         method: 'POST',
-        body: JSON.stringify({ name: document.getElementById('medName').value, unit: document.getElementById('medUnit').value }),
+        body: JSON.stringify({
+          name: document.getElementById('medName').value,
+          unit: document.getElementById('medUnit').value,
+          price: document.getElementById('medPrice').value,
+        }),
       });
       e.target.reset();
       document.getElementById('medUnit').value = 'viên';
+      document.getElementById('medPrice').value = 0;
       loadMedicines();
     } catch (err) {
       msg.textContent = err.message; msg.className = 'msg err';
     }
   });
+
+  async function loadServicePrices() {
+    const { prices } = await api('/api/billing/service-prices');
+    const body = document.getElementById('servicePriceBody');
+    body.innerHTML = prices.map(p => `
+      <tr>
+        <td>${p.specialty}</td>
+        <td><input type="number" class="svc-price" data-specialty="${p.specialty}" min="0" step="1000" value="${p.price ?? 0}" style="width:130px;"></td>
+        <td>${p.configured ? '' : '<span class="hint">Chưa thiết lập</span>'}</td>
+      </tr>
+    `).join('');
+    body.querySelectorAll('.svc-price').forEach(input => {
+      input.addEventListener('change', async () => {
+        try {
+          await api('/api/billing/service-prices/' + encodeURIComponent(input.dataset.specialty), {
+            method: 'PUT', body: JSON.stringify({ price: input.value }),
+          });
+          loadServicePrices();
+        } catch (e) { alert(e.message); }
+      });
+    });
+  }
 
   document.getElementById('interactionForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -276,6 +324,7 @@
     document.getElementById('content').hidden = false;
     await loadMedicines();
     await loadInteractions();
+    await loadServicePrices();
   })();
 </script>
 </body>

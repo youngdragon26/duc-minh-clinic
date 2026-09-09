@@ -9,7 +9,8 @@ router.use(authenticate);
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 
 const APPT_SELECT = `
-  SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name
+  SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name,
+         EXISTS(SELECT 1 FROM invoices i WHERE i.appointment_id = a.id) AS has_invoice
   FROM appointments a
   JOIN users p ON p.id = a.patient_id
   LEFT JOIN users d ON d.id = a.doctor_id
@@ -28,6 +29,7 @@ function publicAppointment(a) {
     time: a.appointment_time,
     status: a.status,
     note: a.note,
+    hasInvoice: a.has_invoice,
     createdAt: a.created_at,
   };
 }

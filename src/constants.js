@@ -36,7 +36,14 @@ const INTERACTION_SEVERITY_LABELS = {
   nghiem_trong: 'Nghiêm trọng',
 };
 
+const INVOICE_STATUSES = ['chua_thanh_toan', 'da_thanh_toan'];
+const INVOICE_STATUS_LABELS = {
+  chua_thanh_toan: 'Chưa thanh toán',
+  da_thanh_toan: 'Đã thanh toán',
+};
+
 module.exports = {
   SPECIALTIES, APPOINTMENT_STATUSES, APPOINTMENT_STATUS_LABELS,
   INTERACTION_SEVERITIES, INTERACTION_SEVERITY_LABELS,
+  INVOICE_STATUSES, INVOICE_STATUS_LABELS,
 };

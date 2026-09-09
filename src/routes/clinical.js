@@ -12,7 +12,7 @@ const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 
 router.get('/medicines', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, unit, created_at AS "createdAt" FROM medicines ORDER BY name');
+    const result = await pool.query('SELECT id, name, unit, price, created_at AS "createdAt" FROM medicines ORDER BY name');
     res.json({ medicines: result.rows });
   } catch (e) {
     console.error(e);
@@ -22,15 +22,34 @@ router.get('/medicines', async (req, res) => {
 
 router.post('/medicines', requireAdmin, async (req, res) => {
   try {
-    const { name, unit } = req.body || {};
+    const { name, unit, price } = req.body || {};
     if (!name) return res.status(400).json({ error: 'Thiếu tên thuốc.' });
+    const priceNum = Number(price) || 0;
+    if (priceNum < 0) return res.status(400).json({ error: 'Giá thuốc không hợp lệ.' });
     const existing = await pool.query('SELECT id FROM medicines WHERE name = $1', [name.trim()]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Thuốc này đã có trong danh mục.' });
     const result = await pool.query(
-      'INSERT INTO medicines (name, unit) VALUES ($1, $2) RETURNING id, name, unit, created_at AS "createdAt"',
-      [name.trim(), (unit && unit.trim()) || 'viên']
+      'INSERT INTO medicines (name, unit, price) VALUES ($1, $2, $3) RETURNING id, name, unit, price, created_at AS "createdAt"',
+      [name.trim(), (unit && unit.trim()) || 'viên', priceNum]
     );
     res.status(201).json({ medicine: result.rows[0] });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.patch('/medicines/:id', requireAdmin, async (req, res) => {
+  try {
+    const { price } = req.body || {};
+    const priceNum = Number(price);
+    if (!Number.isFinite(priceNum) || priceNum < 0) return res.status(400).json({ error: 'Giá thuốc không hợp lệ.' });
+    const result = await pool.query(
+      'UPDATE medicines SET price = $1 WHERE id = $2 RETURNING id, name, unit, price, created_at AS "createdAt"',
+      [priceNum, Number(req.params.id)]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy thuốc.' });
+    res.json({ medicine: result.rows[0] });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });

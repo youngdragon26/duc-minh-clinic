@@ -42,6 +42,10 @@
   .field b{color:var(--ink-muted); font-weight:600; font-size:.76rem; text-transform:uppercase; letter-spacing:.03em; display:block; margin-bottom:2px;}
   ul.rx{margin:4px 0 0; padding-left:18px; font-size:.86rem; line-height:1.7;}
   .empty{color:var(--ink-muted); font-size:.9rem;}
+  .pill{padding:2px 9px; border-radius:20px; font-size:.72rem; font-weight:600; white-space:nowrap; display:inline-block;}
+  .pill.chua_thanh_toan{background:#fdf0d0; color:#8a5a00;}
+  .pill.da_thanh_toan{background:#d7f0ea; color:var(--accent-deep);}
+  .money{font-variant-numeric:tabular-nums; font-weight:600;}
   [hidden]{display:none !important;}
 </style>
 </head>
@@ -71,6 +75,9 @@
   const API = '';
   const token = localStorage.getItem('dm_token');
 
+  const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
+  function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
+
   async function api(path) {
     const res = await fetch(API + path, {
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
@@ -78,6 +85,15 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
     return data;
+  }
+
+  async function invoiceHtml(appointmentId) {
+    try {
+      const { invoice } = await api('/api/billing/invoices/by-appointment/' + appointmentId);
+      return `<div class="field"><b>Hoá đơn</b><span class="money">${money(invoice.totalAmount)}</span> · <span class="pill ${invoice.status}">${STATUS_LABELS[invoice.status]}</span></div>`;
+    } catch (e) {
+      return '';
+    }
   }
 
   (async function init() {
@@ -96,7 +112,7 @@
       return;
     }
 
-    list.innerHTML = records.map(r => `
+    const cards = await Promise.all(records.map(async (r) => `
       <div class="card">
         <div class="record-head">
           <b>${r.specialty}</b>
@@ -111,8 +127,10 @@
             ? `<ul class="rx">${r.items.map(it => `<li>${it.medicineName} — ${it.dosage} (SL: ${it.quantity} ${it.unit})</li>`).join('')}</ul>`
             : 'Không kê đơn thuốc.'}
         </div>
+        ${await invoiceHtml(r.appointmentId)}
       </div>
-    `).join('');
+    `));
+    list.innerHTML = cards.join('');
   })();
 </script>
 </body>
