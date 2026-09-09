@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: duc-minh-clinic
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_REGISTER_CODE
+        sync: false
+      - key: DATABASE_URL
+        sync: false

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng nhập / Đăng ký — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --err:#ff8a80;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:520px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:520px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:24px; line-height:1.6;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  .tabs{display:flex; gap:8px; margin-bottom:18px;}
+  .tab{padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink-muted); cursor:pointer; font-size:.88rem; font-weight:600;}
+  .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
+  input{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  button.primary{
+    margin-top:18px; width:100%; padding:11px; border:none; border-radius:8px;
+    background:var(--accent-deep); color:#fff; font-weight:600; cursor:pointer; font-size:.92rem; font-family:inherit;
+  }
+  button.primary:hover{background:var(--accent);}
+  .msg{margin-top:10px; font-size:.85rem;}
+  .msg.err{color:var(--err);}
+  .session{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .session .who b{display:block; font-family:"Lora",serif;}
+  .session .who span{font-size:.8rem; color:var(--ink-muted);}
+  button.ghost{padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.85rem; color:var(--ink); font-family:inherit;}
+  button.ghost:hover{border-color:var(--accent);}
+  table{width:100%; border-collapse:collapse; margin-top:14px; font-size:.82rem;}
+  th, td{text-align:left; padding:8px 6px; border-bottom:1px solid var(--line);}
+  th{color:var(--ink-muted); font-weight:600; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;}
+  .pill{padding:2px 9px; border-radius:20px; font-size:.7rem; font-weight:600; white-space:nowrap;}
+  .pill.admin{background:#e9d7ff; color:#5b21b6;}
+  .pill.patient{background:#d7f0ea; color:var(--accent-deep);}
+  .row-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  .table-scroll{overflow-x:auto;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/" class="back">← Về trang chủ</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Đăng nhập / Đăng ký</h1>
+  <p class="sub">Mật khẩu được mã hoá (bcrypt), đăng nhập bằng JWT, dữ liệu lưu trong CSDL PostgreSQL thật — không mất khi server khởi động lại.</p>
+
+  <div class="card" id="sessionCard" hidden>
+    <div class="session">
+      <div class="who"><b id="whoName"></b><span id="whoMeta"></span></div>
+      <button class="ghost" id="logoutBtn">Đăng xuất</button>
+    </div>
+  </div>
+
+  <div class="card" id="authCard">
+    <div class="tabs">
+      <div class="tab active" data-tab="login">Đăng nhập</div>
+      <div class="tab" data-tab="register">Đăng ký</div>
+    </div>
+
+    <form id="loginForm">
+      <label>Email</label>
+      <input type="email" id="loginEmail" required autocomplete="username">
+      <label>Mật khẩu</label>
+      <input type="password" id="loginPassword" required autocomplete="current-password">
+      <button class="primary" type="submit">Đăng nhập</button>
+      <div class="msg" id="loginMsg"></div>
+    </form>
+
+    <form id="registerForm" hidden>
+      <label>Họ tên</label>
+      <input type="text" id="regName" required autocomplete="name">
+      <label>Email</label>
+      <input type="email" id="regEmail" required autocomplete="username">
+      <label>Số điện thoại</label>
+      <input type="tel" id="regPhone" autocomplete="tel">
+      <label>Mật khẩu (tối thiểu 6 ký tự)</label>
+      <input type="password" id="regPassword" required minlength="6" autocomplete="new-password">
+      <label>Mã quản trị (bỏ trống nếu đăng ký làm bệnh nhân)</label>
+      <input type="text" id="regAdminCode" placeholder="Chỉ nhân viên phòng khám mới có mã này">
+      <button class="primary" type="submit">Tạo tài khoản</button>
+      <div class="msg" id="registerMsg"></div>
+    </form>
+  </div>
+
+  <div class="card" id="adminCard" hidden>
+    <b>Danh sách tài khoản (chỉ admin)</b>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Ngày tạo</th><th></th></tr></thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  let token = localStorage.getItem('dm_token') || null;
+  let me = null;
+
+  const sessionCard = document.getElementById('sessionCard');
+  const authCard = document.getElementById('authCard');
+  const adminCard = document.getElementById('adminCard');
+  const whoName = document.getElementById('whoName');
+  const whoMeta = document.getElementById('whoMeta');
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('loginForm').hidden = tab.dataset.tab !== 'login';
+      document.getElementById('registerForm').hidden = tab.dataset.tab !== 'register';
+    });
+  });
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        ...(opts.headers || {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  function roleLabel(role) {
+    return role === 'admin' ? 'Quản trị viên' : 'Bệnh nhân';
+  }
+
+  async function refreshSession() {
+    if (!token) { renderLoggedOut(); return; }
+    try {
+      const { user } = await api('/api/auth/me');
+      me = user;
+      renderLoggedIn();
+    } catch (e) {
+      token = null; localStorage.removeItem('dm_token');
+      renderLoggedOut();
+    }
+  }
+
+  function renderLoggedOut() {
+    sessionCard.hidden = true;
+    authCard.hidden = false;
+    adminCard.hidden = true;
+  }
+
+  async function renderLoggedIn() {
+    sessionCard.hidden = false;
+    authCard.hidden = true;
+    whoName.textContent = me.name;
+    whoMeta.textContent = me.email + ' · ' + roleLabel(me.role);
+    if (me.role === 'admin') {
+      adminCard.hidden = false;
+      await loadUsers();
+    } else {
+      adminCard.hidden = true;
+    }
+  }
+
+  async function loadUsers() {
+    const { users } = await api('/api/admin/users');
+    const body = document.getElementById('usersBody');
+    body.innerHTML = users.map(u => `
+      <tr data-id="${u.id}">
+        <td>${u.name}</td>
+        <td>${u.email}</td>
+        <td>${u.phone || '—'}</td>
+        <td><span class="pill ${u.role}">${roleLabel(u.role)}</span></td>
+        <td>${new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
+        <td>
+          <div class="row-actions">
+          ${u.id === me.id ? '' : `
+            <button class="ghost toggle-role" data-id="${u.id}" data-role="${u.role === 'admin' ? 'patient' : 'admin'}">
+              ${u.role === 'admin' ? 'Hạ quyền' : 'Cấp admin'}
+            </button>
+            <button class="ghost delete-user" data-id="${u.id}">Xoá</button>
+          `}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('.toggle-role').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/admin/users/${btn.dataset.id}/role`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role: btn.dataset.role }),
+        });
+        loadUsers();
+      });
+    });
+    body.querySelectorAll('.delete-user').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Xoá tài khoản này?')) return;
+        await api(`/api/admin/users/${btn.dataset.id}`, { method: 'DELETE' });
+        loadUsers();
+      });
+    });
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('loginMsg');
+    msg.textContent = ''; msg.className = 'msg';
+    try {
+      const { token: t, user } = await api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: document.getElementById('loginEmail').value,
+          password: document.getElementById('loginPassword').value,
+        }),
+      });
+      token = t; me = user;
+      localStorage.setItem('dm_token', token);
+      renderLoggedIn();
+    } catch (e) {
+      msg.textContent = e.message; msg.className = 'msg err';
+    }
+  });
+
+  document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('registerMsg');
+    msg.textContent = ''; msg.className = 'msg';
+    try {
+      const { token: t, user } = await api('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: document.getElementById('regName').value,
+          email: document.getElementById('regEmail').value,
+          phone: document.getElementById('regPhone').value,
+          password: document.getElementById('regPassword').value,
+          adminCode: document.getElementById('regAdminCode').value,
+        }),
+      });
+      token = t; me = user;
+      localStorage.setItem('dm_token', token);
+      renderLoggedIn();
+    } catch (e) {
+      msg.textContent = e.message; msg.className = 'msg err';
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    token = null; me = null;
+    localStorage.removeItem('dm_token');
+    renderLoggedOut();
+  });
+
+  refreshSession();
+</script>
+</body>
+</html>

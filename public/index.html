@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee;
+    --surface:#ffffff;
+    --surface-2:#f1ede3;
+    --ink:#142e29;
+    --ink-muted:#52685f;
+    --line:#dfdacc;
+    --accent:#0e8e7d;
+    --accent-deep:#0b6f62;
+    --accent-warm:#dd9636;
+    --accent-warm-deep:#b87720;
+    --on-accent:#f6fbf9;
+    --shadow: 0 18px 40px -22px rgba(20,46,41,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c;
+      --surface:#142e29;
+      --surface-2:#193732;
+      --ink:#ecece2;
+      --ink-muted:#9fb4ac;
+      --line:#26443d;
+      --accent:#38c8b1;
+      --accent-deep:#2ba892;
+      --accent-warm:#f0b25a;
+      --accent-warm-deep:#e0993a;
+      --on-accent:#08201c;
+      --shadow: 0 18px 40px -18px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0e1f1c;
+    --surface:#142e29;
+    --surface-2:#193732;
+    --ink:#ecece2;
+    --ink-muted:#9fb4ac;
+    --line:#26443d;
+    --accent:#38c8b1;
+    --accent-deep:#2ba892;
+    --accent-warm:#f0b25a;
+    --accent-warm-deep:#e0993a;
+    --on-accent:#08201c;
+    --shadow: 0 18px 40px -18px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{
+    font-family:"Lora",Georgia,"Times New Roman",serif;
+    font-weight:600;
+    margin:0;
+    text-wrap:balance;
+    color:var(--ink);
+  }
+  p{margin:0; color:var(--ink-muted); line-height:1.65;}
+  a{color:inherit;}
+  img{display:block; max-width:100%;}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+  .eyebrow{
+    font-size:.72rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent-deep);
+  }
+  :root[data-theme="dark"] .eyebrow, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .eyebrow{ color:var(--accent);} }
+
+  /* ---------- utility bar ---------- */
+  .utility{
+    background:var(--ink); color:var(--ground);
+  }
+  :root[data-theme="dark"] .utility, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .utility{ background:#081714; } }
+  .utility .wrap{
+    display:flex; align-items:center; justify-content:space-between; gap:20px;
+    padding-top:9px; padding-bottom:9px;
+    font-size:.8rem; font-weight:500; color:#d8ece7;
+  }
+  .utility-left{display:flex; gap:26px; flex-wrap:wrap;}
+  .utility a{text-decoration:none; opacity:.92;}
+  .utility a:hover{opacity:1;}
+  .utility strong{color:#fff; font-weight:600;}
+
+  /* ---------- nav ---------- */
+  header.site{
+    position:sticky; top:0; z-index:40;
+    background:color-mix(in srgb, var(--ground) 92%, transparent);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  nav.wrap{
+    display:flex; align-items:center; gap:32px;
+    padding-top:14px; padding-bottom:14px;
+  }
+  .brand{display:flex; align-items:baseline; gap:9px; text-decoration:none; margin-right:auto;}
+  .brand-mark{
+    font-family:"Lora",serif; font-weight:600; font-size:1.32rem; color:var(--ink);
+    letter-spacing:.01em;
+  }
+  .brand-mark em{color:var(--accent-deep); font-style:normal;}
+  :root[data-theme="dark"] .brand-mark em, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .brand-mark em{ color:var(--accent);} }
+  .brand-tag{font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted);}
+  .nav-links{display:flex; gap:26px; list-style:none; margin:0; padding:0;}
+  .nav-links a{font-size:.92rem; font-weight:500; text-decoration:none; color:var(--ink-muted);}
+  .nav-links a:hover{color:var(--ink);}
+  .nav-actions{display:flex; align-items:center; gap:16px;}
+  .link-quiet{font-size:.9rem; font-weight:600; text-decoration:none; color:var(--ink);}
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font-family:"Be Vietnam Pro",sans-serif; font-weight:600; font-size:.9rem;
+    padding:11px 20px; border-radius:8px; text-decoration:none; cursor:pointer;
+    border:1px solid transparent; white-space:nowrap;
+  }
+  .btn-primary{background:var(--accent); color:var(--on-accent);}
+  .btn-primary:hover{background:var(--accent-deep);}
+  .btn-outline{background:transparent; border-color:var(--line); color:var(--ink);}
+  .btn-outline:hover{border-color:var(--accent);}
+  .btn-warm{background:var(--accent-warm); color:#241300;}
+  .btn-warm:hover{background:var(--accent-warm-deep);}
+
+  /* ---------- hero ---------- */
+  .hero{padding:64px 0 56px;}
+  .hero .wrap{
+    display:grid; grid-template-columns:1fr .92fr; gap:56px; align-items:center;
+  }
+  .hero h1{font-size:clamp(2rem,3.6vw,2.9rem); line-height:1.14; margin-top:16px;}
+  .hero h1 em{color:var(--accent-deep); font-style:italic;}
+  :root[data-theme="dark"] .hero h1 em, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .hero h1 em{ color:var(--accent);} }
+  .hero .lede{font-size:1.02rem; max-width:46ch; margin-top:20px;}
+  .hero-actions{display:flex; gap:14px; margin-top:30px; flex-wrap:wrap;}
+  .hero-meta{display:flex; gap:28px; margin-top:34px; padding-top:26px; border-top:1px solid var(--line);}
+  .hero-meta div b{display:block; font-family:"Lora",serif; font-size:1.5rem; color:var(--ink);}
+  .hero-meta div span{font-size:.78rem; color:var(--ink-muted);}
+
+  .hero-photo{position:relative;}
+  .photo-frame{
+    aspect-ratio:4/5; border-radius:18px; overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 60%),
+      linear-gradient(150deg, var(--surface-2), var(--surface));
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px;
+    box-shadow:var(--shadow);
+    text-align:center; padding:24px;
+  }
+  .photo-frame img{width:100%; height:100%; object-fit:cover; position:absolute; inset:0;}
+  .photo-frame .ph-label{font-size:.8rem; color:var(--ink-muted); max-width:22ch;}
+  .photo-frame .ph-mark{
+    font-family:"Lora",serif; font-style:italic; color:var(--accent-deep); font-size:1.1rem;
+  }
+  :root[data-theme="dark"] .photo-frame .ph-mark, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .photo-frame .ph-mark{ color:var(--accent);} }
+  .photo-caption{
+    position:absolute; left:20px; right:20px; bottom:20px;
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:14px 18px; box-shadow:var(--shadow);
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .photo-caption .who{font-weight:600; font-size:.88rem;}
+  .photo-caption .role{font-size:.76rem; color:var(--ink-muted);}
+
+  /* ---------- feature strip (no icons) ---------- */
+  .features{padding:8px 0 64px;}
+  .features .grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:16px; overflow:hidden;
+  }
+  .feature{background:var(--surface); padding:30px 28px;}
+  .feature .rule{width:34px; height:3px; background:var(--accent); border-radius:2px; margin-bottom:18px;}
+  .feature:nth-child(3) .rule{background:var(--accent-warm);}
+  .feature h3{font-size:1.08rem;}
+  .feature p{margin-top:9px; font-size:.9rem;}
+
+  /* ---------- about / quick facts ---------- */
+  .about{padding:64px 0;}
+  .about .wrap{display:grid; grid-template-columns:1.1fr .8fr; gap:56px; align-items:start;}
+  .about h2{font-size:1.9rem; margin-bottom:18px;}
+  .about p + p{margin-top:14px;}
+  .about p{font-size:.98rem; max-width:56ch;}
+
+  .facts{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:6px;
+    box-shadow:var(--shadow);
+  }
+  .fact-row{
+    display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+    padding:16px 18px; border-bottom:1px solid var(--line);
+  }
+  .fact-row:last-child{border-bottom:none;}
+  .fact-row .k{font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-muted);}
+  .fact-row .v{font-weight:600; text-align:right; font-family:"Lora",serif; font-size:1.02rem;}
+  .fact-row .v a{text-decoration:none; color:var(--accent-deep);}
+  :root[data-theme="dark"] .fact-row .v a, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .fact-row .v a{ color:var(--accent);} }
+
+  /* ---------- specialties ---------- */
+  .specialties{padding:8px 0 72px;}
+  .section-head{display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:30px; flex-wrap:wrap;}
+  .section-head h2{font-size:1.9rem;}
+  .spec-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  .spec-card{
+    background:var(--surface); border:1px solid var(--line); border-top:3px solid var(--accent);
+    border-radius:12px; padding:22px 22px 20px;
+  }
+  .spec-card:nth-child(3n+2){border-top-color:var(--accent-warm);}
+  .spec-card:nth-child(3n){border-top-color:var(--accent-deep);}
+  .spec-card h3{font-size:1.02rem; margin-bottom:8px;}
+  .spec-card p{font-size:.86rem;}
+
+  /* ---------- footer ---------- */
+  footer{background:var(--ink); color:#cfe4dd; padding:44px 0 26px;}
+  :root[data-theme="dark"] footer, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) footer{ background:#081714; } }
+  footer .wrap{display:flex; justify-content:space-between; gap:30px; flex-wrap:wrap;}
+  footer .f-brand{font-family:"Lora",serif; font-size:1.2rem; color:#fff; margin-bottom:10px;}
+  footer .f-col{font-size:.85rem; line-height:1.9; color:#a9c6bd;}
+  footer .f-bottom{
+    max-width:1180px; margin:34px auto 0; padding:18px 28px 0; border-top:1px solid #223e37;
+    font-size:.78rem; color:#7fa196;
+  }
+
+  /* ---------- AI assistant widget ---------- */
+  .ai-toggle{
+    position:fixed; right:24px; bottom:24px; z-index:60;
+    width:60px; height:60px; border-radius:50%;
+    background:var(--accent-deep); color:var(--on-accent);
+    border:none; cursor:pointer; box-shadow:var(--shadow);
+    display:flex; align-items:center; justify-content:center;
+    font-family:"Lora",serif; font-weight:600; font-size:.92rem; letter-spacing:.02em;
+  }
+  .ai-toggle:hover{background:var(--accent);}
+  .ai-toggle .dot{
+    position:absolute; top:5px; right:5px; width:10px; height:10px; border-radius:50%;
+    background:var(--accent-warm); border:2px solid var(--surface);
+  }
+
+  .ai-panel{
+    position:fixed; right:24px; bottom:96px; z-index:60;
+    width:min(360px, calc(100vw - 48px)); height:min(480px, calc(100vh - 160px));
+    background:var(--surface); border:1px solid var(--line); border-radius:16px;
+    box-shadow:var(--shadow); display:flex; flex-direction:column; overflow:hidden;
+    opacity:0; transform:translateY(12px) scale(.98); pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+  }
+  .ai-panel.open{opacity:1; transform:translateY(0) scale(1); pointer-events:auto;}
+  .ai-head{
+    background:var(--ink); color:#fff; padding:16px 18px; display:flex; align-items:center; gap:10px; justify-content:space-between;
+  }
+  :root[data-theme="dark"] .ai-head, @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .ai-head{ background:#081714;} }
+  .ai-head .who b{display:block; font-family:"Lora",serif; font-size:.98rem;}
+  .ai-head .who span{font-size:.72rem; color:#9fd6c9;}
+  .ai-close{background:none; border:none; color:#cfe4dd; font-size:1.1rem; cursor:pointer; line-height:1; padding:4px;}
+  .ai-body{flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; background:var(--ground);}
+  .msg{max-width:82%; padding:10px 13px; border-radius:12px; font-size:.86rem; line-height:1.5; white-space:pre-wrap;}
+  .msg.bot{background:var(--surface); border:1px solid var(--line); align-self:flex-start; border-bottom-left-radius:3px;}
+  .msg.me{background:var(--accent); color:var(--on-accent); align-self:flex-end; border-bottom-right-radius:3px;}
+  .msg.bot.thinking{color:var(--ink-muted); font-style:italic;}
+  .msg.bot.err{border-color:var(--accent-warm);}
+  .ai-quick{display:flex; gap:6px; flex-wrap:wrap; padding:0 16px 12px; background:var(--ground);}
+  .chip{
+    font-size:.74rem; padding:6px 11px; border-radius:20px; border:1px solid var(--line);
+    background:var(--surface); color:var(--ink-muted); cursor:pointer;
+  }
+  .chip:hover{border-color:var(--accent); color:var(--ink);}
+  .chip:disabled{opacity:.5; cursor:default;}
+  .ai-input{display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:var(--surface);}
+  .ai-input input{
+    flex:1; border:1px solid var(--line); border-radius:9px; padding:10px 12px;
+    font-family:inherit; font-size:.86rem; background:var(--ground); color:var(--ink);
+  }
+  .ai-input input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .ai-input button{
+    border:none; background:var(--accent-deep); color:var(--on-accent); border-radius:9px;
+    padding:0 16px; font-weight:600; font-size:.86rem; cursor:pointer;
+  }
+  .ai-input button:hover{background:var(--accent);}
+  .ai-input button:disabled{opacity:.6; cursor:default;}
+
+  @media (max-width:860px){
+    .utility-left{gap:14px;}
+    .nav-links{display:none;}
+    .hero .wrap{grid-template-columns:1fr;}
+    .hero-photo{order:-1;}
+    .features .grid{grid-template-columns:1fr;}
+    .about .wrap{grid-template-columns:1fr;}
+    .spec-grid{grid-template-columns:1fr 1fr;}
+    footer .wrap{flex-direction:column;}
+  }
+  @media (max-width:480px){
+    .spec-grid{grid-template-columns:1fr;}
+    .hero-meta{flex-wrap:wrap; row-gap:16px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="utility">
+  <div class="wrap">
+    <div class="utility-left">
+      <span><strong>Thứ 2 – Thứ 7</strong> · 7:00 – 21:00</span>
+      <span>Hotline: <strong>0975 755 333</strong></span>
+      <span>Phường Túc Duyên, TP. Thái Nguyên</span>
+    </div>
+    <a href="#hotro">Hỗ trợ</a>
+  </div>
+</div>
+
+<header class="site">
+  <nav class="wrap">
+    <a href="#top" class="brand">
+      <span class="brand-mark">Đa Khoa <em>Đức Minh</em></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#gioithieu">Giới thiệu</a></li>
+      <li><a href="#dichvu">Dịch vụ</a></li>
+      <li><a href="#chuyenkhoa">Chuyên khoa</a></li>
+      <li><a href="#hotro">Hỗ trợ</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="/tai-khoan.html" class="link-quiet">Đăng nhập</a>
+      <a href="/tai-khoan.html" class="btn btn-primary">Đặt lịch khám</a>
+    </div>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-text">
+        <div class="eyebrow">Phòng khám đa khoa · Phường Túc Duyên, Thái Nguyên</div>
+        <h1>Chăm sóc sức khỏe tận tâm,<br><em>ngay tại khu phố của bạn.</em></h1>
+        <p class="lede">
+          Phòng khám Đa khoa Đức Minh là địa chỉ khám chữa bệnh quen thuộc của người dân
+          phường Túc Duyên và các khu vực lân cận tại Thái Nguyên. Với đội ngũ bác sĩ giàu
+          kinh nghiệm, quy trình khám tinh gọn và hệ thống đặt lịch trực tuyến, chúng tôi
+          mong muốn mang lại trải nghiệm khám chữa bệnh nhanh chóng, minh bạch và thuận tiện
+          nhất cho mọi gia đình.
+        </p>
+        <div class="hero-actions">
+          <a href="/tai-khoan.html" class="btn btn-primary">Đặt lịch khám</a>
+          <a href="tel:0975755333" class="btn btn-outline">Gọi ngay 0975 755 333</a>
+        </div>
+        <div class="hero-meta">
+          <div><b>13+</b><span>năm phục vụ khu phố</span></div>
+          <div><b>6</b><span>chuyên khoa khám thường xuyên</span></div>
+          <div><b>7:00–21:00</b><span>tất cả các ngày trong tuần</span></div>
+        </div>
+      </div>
+
+      <div class="hero-photo">
+        <div class="photo-frame">
+          <!-- Thay bằng ảnh thật: đổi div.photo-frame này thành
+               <img src="/img/doi-ngu.jpg" alt="Đội ngũ phòng khám Đức Minh"> -->
+          <span class="ph-mark">Đa Khoa Đức Minh</span>
+          <span class="ph-label">Vị trí dành cho ảnh đội ngũ 3 thành viên phòng khám — gửi mình file ảnh để chèn vào đây.</span>
+          <div class="photo-caption">
+            <div>
+              <div class="who">Đội ngũ sáng lập</div>
+              <div class="role">Phòng khám Đa khoa Đức Minh</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="wrap">
+      <div class="grid">
+        <div class="feature">
+          <div class="rule"></div>
+          <h3>Đội ngũ bác sĩ tận tâm</h3>
+          <p>Trực tiếp thăm khám, giải thích rõ ràng và đồng hành cùng bạn sau mỗi lần khám, không rập khuôn quy trình.</p>
+        </div>
+        <div class="feature">
+          <div class="rule"></div>
+          <h3>Đặt lịch chỉ trong 30 giây</h3>
+          <p>Chọn chuyên khoa, khung giờ và xác nhận ngay trên điện thoại — không cần gọi điện chờ đợi.</p>
+        </div>
+        <div class="feature">
+          <div class="rule"></div>
+          <h3>Trợ lý AI hỗ trợ 24/7</h3>
+          <p>Giải đáp nhanh các câu hỏi thường gặp và gợi ý chuyên khoa phù hợp trước khi bạn đặt lịch. Thử ở góc phải bên dưới.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="about" id="gioithieu">
+    <div class="wrap">
+      <div>
+        <div class="eyebrow">Giới thiệu</div>
+        <h2>Một phòng khám của khu phố, cho khu phố</h2>
+        <p>
+          Ra đời từ nhu cầu khám chữa bệnh thuận tiện cho người dân phường Túc Duyên, chúng tôi
+          xây dựng phòng khám với mục tiêu đơn giản: đến khám nhanh, được tư vấn kỹ, và không
+          phải chờ đợi lâu. Mỗi bệnh nhân được thăm khám trực tiếp bởi bác sĩ chuyên khoa, có hồ
+          sơ khám bệnh lưu trữ đầy đủ cho những lần tái khám sau này.
+        </p>
+        <p>
+          Bên cạnh khám chữa bệnh trực tiếp, hệ thống đặt lịch trực tuyến và trợ lý AI hỗ trợ
+          giúp bệnh nhân tra cứu thông tin, đặt lịch và nhận gợi ý chuyên khoa mà không cần gọi
+          điện thoại chờ tổng đài.
+        </p>
+      </div>
+      <div class="facts">
+        <div class="fact-row"><span class="k">Địa chỉ</span><span class="v">Phường Túc Duyên,<br>TP. Thái Nguyên</span></div>
+        <div class="fact-row"><span class="k">Hotline</span><span class="v"><a href="tel:0975755333">0975 755 333</a></span></div>
+        <div class="fact-row"><span class="k">Giờ làm việc</span><span class="v">7:00 – 21:00</span></div>
+        <div class="fact-row"><span class="k">Ngày mở cửa</span><span class="v">Thứ 2 – Thứ 7</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="specialties" id="chuyenkhoa">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">Chuyên khoa</div>
+          <h2>Khám theo đúng nhu cầu của bạn</h2>
+        </div>
+        <a href="/tai-khoan.html" class="link-quiet">Xem toàn bộ dịch vụ →</a>
+      </div>
+      <div class="spec-grid">
+        <div class="spec-card"><h3>Nội tổng quát</h3><p>Khám sức khỏe định kỳ, tầm soát và điều trị các bệnh lý nội khoa thường gặp.</p></div>
+        <div class="spec-card"><h3>Nhi khoa</h3><p>Theo dõi phát triển, tiêm chủng và điều trị các bệnh thường gặp ở trẻ nhỏ.</p></div>
+        <div class="spec-card"><h3>Tai – Mũi – Họng</h3><p>Khám và điều trị các vấn đề hô hấp trên, viêm xoang, viêm họng mãn tính.</p></div>
+        <div class="spec-card"><h3>Da liễu</h3><p>Tư vấn và điều trị các vấn đề về da, dị ứng, mụn và chăm sóc da theo lứa tuổi.</p></div>
+        <div class="spec-card"><h3>Sản phụ khoa</h3><p>Khám phụ khoa định kỳ, theo dõi thai kỳ và tư vấn sức khỏe sinh sản.</p></div>
+        <div class="spec-card"><h3>Răng – Hàm – Mặt</h3><p>Khám, cạo vôi và tư vấn điều trị các vấn đề răng miệng cơ bản.</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="hotro">
+  <div class="wrap">
+    <div>
+      <div class="f-brand">Đa Khoa Đức Minh</div>
+      <div class="f-col">Phòng khám Đa khoa Đức Minh<br>Phường Túc Duyên, TP. Thái Nguyên</div>
+    </div>
+    <div class="f-col">
+      Hotline: 0975 755 333<br>
+      Giờ làm việc: 7:00 – 21:00<br>
+      Thứ 2 – Thứ 7
+    </div>
+    <div class="f-col">
+      Giới thiệu · Dịch vụ<br>
+      Chuyên khoa · <a href="/tai-khoan.html">Đăng nhập / Đăng ký</a><br>
+      Trợ lý AI hỗ trợ
+    </div>
+  </div>
+  <div class="f-bottom">© 2026 Phòng khám Đa khoa Đức Minh. Mọi thông tin trên trang chỉ mang tính minh họa giao diện.</div>
+</footer>
+
+<button class="ai-toggle" id="aiToggle" aria-label="Mở trợ lý AI">AI<span class="dot"></span></button>
+<div class="ai-panel" id="aiPanel" role="dialog" aria-label="Trợ lý AI Đức Minh">
+  <div class="ai-head">
+    <div class="who"><b>Trợ lý AI Đức Minh</b><span id="aiStatus">Chế độ hỏi nhanh</span></div>
+    <button class="ai-close" id="aiClose" aria-label="Đóng">✕</button>
+  </div>
+  <div class="ai-body" id="aiBody">
+    <div class="msg bot">Xin chào! Mình là trợ lý của phòng khám Đức Minh. Mình có thể giúp bạn xem giờ làm việc, gợi ý chuyên khoa phù hợp hoặc hướng dẫn đặt lịch khám. Với các vấn đề sức khỏe cụ thể, bạn vẫn nên đến khám trực tiếp để bác sĩ chẩn đoán chính xác nhé.</div>
+  </div>
+  <div class="ai-quick">
+    <button class="chip" data-q="Giờ làm việc của phòng khám?">Giờ làm việc?</button>
+    <button class="chip" data-q="Đặt lịch khám thế nào?">Đặt lịch thế nào?</button>
+    <button class="chip" data-q="Tôi bị đau họng mấy ngày nay, nên khám khoa nào?">Đau họng khám khoa nào?</button>
+  </div>
+  <form class="ai-input" id="aiForm">
+    <input id="aiInput" type="text" placeholder="Nhập câu hỏi của bạn..." autocomplete="off">
+    <button type="submit" id="aiSend">Gửi</button>
+  </form>
+</div>
+
+<script>
+(function(){
+  const toggle = document.getElementById('aiToggle');
+  const panel = document.getElementById('aiPanel');
+  const closeBtn = document.getElementById('aiClose');
+  const body = document.getElementById('aiBody');
+  const form = document.getElementById('aiForm');
+  const input = document.getElementById('aiInput');
+  const sendBtn = document.getElementById('aiSend');
+  const chips = Array.from(document.querySelectorAll('.chip'));
+
+  toggle.addEventListener('click', () => panel.classList.toggle('open'));
+  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+
+  function addMsg(text, who){
+    const el = document.createElement('div');
+    el.className = 'msg ' + who;
+    el.textContent = text;
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+    return el;
+  }
+
+  // Trang web thường (ngoài Claude Artifact) không có window.claude, nên khung
+  // chat này luôn dùng bộ trả lời theo từ khoá dưới đây. Muốn AI thật (LLM) trả
+  // lời ở đây, cần thêm 1 route gọi API LLM ở backend rồi thay hàm answer() này
+  // bằng một lệnh gọi fetch tới route đó.
+  function answer(q){
+    const s = q.toLowerCase();
+    if (s.includes('giờ') || s.includes('mấy giờ') || s.includes('làm việc')){
+      return 'Phòng khám mở cửa từ 7:00 đến 21:00, các ngày Thứ 2 – Thứ 7.';
+    }
+    if (s.includes('đặt lịch') || s.includes('hẹn')){
+      return 'Bạn bấm nút "Đặt lịch khám" ở đầu trang để đăng nhập/đăng ký, sau đó chọn chuyên khoa và khung giờ trống.';
+    }
+    if (s.includes('họng') || s.includes('ho') || s.includes('mũi')){
+      return 'Với triệu chứng này bạn nên khám ở chuyên khoa Tai – Mũi – Họng nhé.';
+    }
+    if (s.includes('da') || s.includes('mụn') || s.includes('dị ứng')){
+      return 'Trường hợp này phù hợp với chuyên khoa Da liễu của phòng khám.';
+    }
+    if (s.includes('trẻ') || s.includes('bé') || s.includes('con')){
+      return 'Bạn có thể đưa bé đến khám tại chuyên khoa Nhi của phòng khám nhé.';
+    }
+    if (s.includes('địa chỉ') || s.includes('ở đâu')){
+      return 'Phòng khám ở phường Túc Duyên, TP. Thái Nguyên. Hotline: 0975 755 333.';
+    }
+    return 'Mình chưa có thông tin chính xác cho câu hỏi này. Bạn có thể gọi trực tiếp hotline 0975 755 333 để được tư vấn kỹ hơn nhé.';
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    addMsg(q, 'me');
+    input.value = '';
+    sendBtn.disabled = true;
+    setTimeout(() => { addMsg(answer(q), 'bot'); sendBtn.disabled = false; }, 300);
+  });
+
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const q = chip.dataset.q;
+      addMsg(q, 'me');
+      setTimeout(() => addMsg(answer(q), 'bot'), 300);
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
