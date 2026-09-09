@@ -28,12 +28,16 @@ function getClient() {
 
 // Gemini bản miễn phí đôi khi báo 503 "quá tải" hoặc 429 "quá nhiều yêu cầu" —
 // đây là lỗi tạm thời phía Google, nên thử lại vài lần trước khi báo lỗi cho người dùng.
+// Riêng lỗi hết hạn ngạch NGÀY (RESOURCE_EXHAUSTED/PerDay) thì thử lại vô ích
+// (phải đợi qua ngày mới hết), nên báo lỗi ngay thay vì làm người dùng chờ.
 async function withRetry(fn, retries = 2, delayMs = 900) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (e) {
-      const retryable = e && (e.status === 503 || e.status === 429);
+      const msg = String((e && e.message) || '');
+      const isDailyQuota = e && e.status === 429 && (msg.includes('PerDay') || msg.includes('RESOURCE_EXHAUSTED'));
+      const retryable = !isDailyQuota && e && (e.status === 503 || e.status === 429);
       if (!retryable || attempt >= retries) throw e;
       await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
     }
@@ -41,6 +45,16 @@ async function withRetry(fn, retries = 2, delayMs = 900) {
 }
 
 function aiErrorResponse(e) {
+  const msg = String((e && e.message) || '');
+  // Gói Gemini miễn phí giới hạn 20 request/ngày/model — hết hạn ngạch NGÀY,
+  // không phải quá tải tạm thời, nên phải báo khác với lỗi 503 thông thường
+  // (không nên khuyên "thử lại sau ít phút" vì thực tế phải đợi qua ngày mới).
+  if (e && e.status === 429 && (msg.includes('PerDay') || msg.includes('RESOURCE_EXHAUSTED'))) {
+    return {
+      status: 503,
+      error: 'Trợ lý AI đã đạt giới hạn miễn phí hôm nay, vui lòng thử lại vào ngày mai hoặc gọi hotline 0975 755 333 để được hỗ trợ.',
+    };
+  }
   if (e && (e.status === 503 || e.status === 429)) {
     return { status: 503, error: 'Dịch vụ AI đang quá tải, vui lòng thử lại sau ít phút.' };
   }
