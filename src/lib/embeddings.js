@@ -1,7 +1,7 @@
 // Bọc lại API embedding của Gemini — dùng chung cho cả bước Indexing (nhúng
 // tài liệu, taskType RETRIEVAL_DOCUMENT) và Retrieval (nhúng câu hỏi, taskType
 // RETRIEVAL_QUERY). Model text-embedding-004 sinh vector 768 chiều.
-const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004';
+const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
 
 let genAI;
 function getClient() {

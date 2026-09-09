@@ -7,20 +7,15 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 
 const router = express.Router();
 
-// TAM THOI: route chan doan de tim dung ten model embedding con ho tro.
-// XOA route nay sau khi xac dinh xong model dung.
-router.get('/_debug-models', async (req, res) => {
+// TAM THOI: route chan doan de kiem tra so chieu vector thuc te cua model embedding.
+// XOA route nay sau khi xac dinh xong.
+router.get('/_debug-embed-dims', async (req, res) => {
   if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'no key' });
   try {
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + process.env.GEMINI_API_KEY);
-    const data = await r.json();
-    const models = (data.models || []).map((m) => ({
-      name: m.name,
-      methods: m.supportedGenerationMethods,
-    }));
-    res.json({ models });
+    const values = await embedText('xin chao', 'RETRIEVAL_DOCUMENT');
+    res.json({ dims: values.length, sample: values.slice(0, 5) });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message, status: e.status });
   }
 });
 
