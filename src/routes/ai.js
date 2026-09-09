@@ -176,18 +176,6 @@ async function retrieveKnowledge(query, k = 4) {
   }
 }
 
-// TẠM THỜI: xem kết quả retrieval thô (không gọi generateContent, không tốn quota chat) — xoá sau khi chẩn đoán xong.
-router.get('/_debug-retrieve', async (req, res) => {
-  try {
-    const q = req.query.q;
-    if (!q) return res.json({ error: 'thiếu ?q=' });
-    const hits = await retrieveKnowledge(String(q), 6);
-    res.json({ query: q, hits });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
-
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
@@ -225,6 +213,7 @@ router.post('/chat', async (req, res) => {
       '',
       'Quy tắc:',
       '- Ưu tiên dùng thông tin trong "Tài liệu tham khảo" ở trên nếu liên quan tới câu hỏi; nếu tài liệu không liên quan thì bỏ qua, không nhắc tới nó.',
+      '- Nếu 1 tài liệu tham khảo có tiêu đề đúng tên 1 chuyên khoa và nội dung khớp với triệu chứng khách mô tả, PHẢI gợi ý đúng chuyên khoa đó — KHÔNG tự đổi sang chuyên khoa khác dựa theo suy luận/kiến thức riêng của bạn.',
       '- Gợi ý chuyên khoa nên khám dựa trên triệu chứng khách mô tả, KHÔNG tự chẩn đoán bệnh thay bác sĩ.',
       '- Chỉ được nêu tên thuốc/liều dùng/cách xử lý khi thông tin đó có sẵn trong "Tài liệu tham khảo" ở trên — TUYỆT ĐỐI KHÔNG tự bịa thêm tên thuốc hay liều dùng ngoài tài liệu. Khi nêu, luôn trích dẫn (Nguồn: ...) và kèm câu nhắc đây chỉ là thông tin tham khảo, cần đến khám bác sĩ nếu triệu chứng không đỡ hoặc nặng hơn.',
       '- Với trẻ em: luôn hỏi rõ tuổi/cân nặng trước khi nêu bất kỳ thông tin liều dùng nào từ tài liệu tham khảo, và luôn khuyên nên để bác sĩ khám trực tiếp thay vì tự dùng thuốc tại nhà.',
@@ -247,6 +236,11 @@ router.post('/chat', async (req, res) => {
       config: {
         systemInstruction: systemPrompt,
         tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+        // Nhiệt độ thấp để AI bám sát tài liệu tham khảo thay vì tự suy luận
+        // lệch (đã có trường hợp thật: tài liệu ghi rõ "Da liễu" nhưng AI vẫn
+        // trả lời "Tai – Mũi – Họng" — lỗi ở bước sinh câu trả lời, không phải
+        // do tìm sai tài liệu).
+        temperature: 0.3,
       },
       history: turns,
     });
