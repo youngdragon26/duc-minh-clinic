@@ -69,15 +69,19 @@ async function buildClinicContext() {
     pool.query("SELECT name, specialty FROM users WHERE role = 'doctor' ORDER BY specialty, name"),
   ]);
   const priceMap = Object.fromEntries(prices.rows.map((r) => [r.specialty, r.price]));
+  // Bác sĩ specialty = NULL là "bác sĩ tổng quát", phụ trách được mọi chuyên khoa
+  // nên được liệt kê ở tất cả các dòng, không dồn vào 1 nhóm riêng.
+  const generalDoctors = doctors.rows.filter((d) => !d.specialty).map((d) => d.name);
   const bySpecialty = {};
   for (const d of doctors.rows) {
-    const key = d.specialty || 'Chưa xếp chuyên khoa';
-    if (!bySpecialty[key]) bySpecialty[key] = [];
-    bySpecialty[key].push(d.name);
+    if (!d.specialty) continue;
+    if (!bySpecialty[d.specialty]) bySpecialty[d.specialty] = [];
+    bySpecialty[d.specialty].push(d.name);
   }
   const specialtyLines = SPECIALTIES.map((s) => {
     const price = priceMap[s] != null ? priceMap[s].toLocaleString('vi-VN') + 'đ' : 'chưa niêm yết';
-    const docs = bySpecialty[s] && bySpecialty[s].length ? bySpecialty[s].join(', ') : 'chưa có bác sĩ phụ trách';
+    const docNames = [...(bySpecialty[s] || []), ...generalDoctors];
+    const docs = docNames.length ? docNames.join(', ') : 'chưa có bác sĩ phụ trách';
     return `- ${s}: giá khám ${price}; bác sĩ: ${docs}`;
   }).join('\n');
 
@@ -121,7 +125,11 @@ async function checkAvailableSlots({ specialty, date }) {
     return { error: 'Ngày không hợp lệ, cần đúng định dạng YYYY-MM-DD.' };
   }
 
-  const doctorsRes = await pool.query("SELECT id, name FROM users WHERE role = 'doctor' AND specialty = $1 ORDER BY name", [specialty]);
+  // specialty = NULL nghĩa là "bác sĩ tổng quát" phụ trách được mọi chuyên khoa.
+  const doctorsRes = await pool.query(
+    "SELECT id, name FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL) ORDER BY name",
+    [specialty]
+  );
   if (doctorsRes.rows.length === 0) {
     return { specialty, date, available: false, message: `Chuyên khoa ${specialty} hiện chưa có bác sĩ phụ trách.` };
   }

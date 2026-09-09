@@ -35,6 +35,8 @@ function publicAppointment(a) {
 }
 
 // Danh sách bác sĩ (lọc theo chuyên khoa) để bệnh nhân chọn khi đặt lịch.
+// Bác sĩ có specialty = NULL được coi là "bác sĩ tổng quát" phụ trách được mọi
+// chuyên khoa, nên hiện diện ở mọi kết quả lọc theo chuyên khoa.
 router.get('/doctors', async (req, res) => {
   try {
     const { specialty } = req.query;
@@ -42,7 +44,7 @@ router.get('/doctors', async (req, res) => {
     let sql = "SELECT id, name, specialty FROM users WHERE role = 'doctor'";
     if (specialty) {
       params.push(specialty);
-      sql += ` AND specialty = $${params.length}`;
+      sql += ` AND (specialty = $${params.length} OR specialty IS NULL)`;
     }
     sql += ' ORDER BY name';
     const result = await pool.query(sql, params);
