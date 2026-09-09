@@ -1,9 +1,12 @@
 const express = require('express');
-const { pool } = require('../db');
+const bcrypt = require('bcryptjs');
+const { pool, ROLES } = require('../db');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate, requireAdmin);
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function publicUser(u) {
   return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, createdAt: u.created_at };
@@ -19,11 +22,47 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// Admin tạo trực tiếp tài khoản Bác sĩ/Nhân viên/Bệnh nhân/Admin — không qua
+// form đăng ký công khai, để không ai tự phong mình làm bác sĩ/nhân viên.
+router.post('/users', async (req, res) => {
+  try {
+    const { name, email, phone, password, role } = req.body || {};
+
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ error: 'Thiếu họ tên, email, mật khẩu hoặc vai trò.' });
+    }
+    if (!EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: 'Email không hợp lệ.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự.' });
+    }
+    if (!ROLES.includes(role)) {
+      return res.status(400).json({ error: 'Vai trò không hợp lệ.' });
+    }
+
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Email này đã được đăng ký.' });
+    }
+
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name.trim(), email.toLowerCase(), phone || null, passwordHash, role]
+    );
+    res.status(201).json({ user: publicUser(result.rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
 router.patch('/users/:id/role', async (req, res) => {
   try {
     const { role } = req.body || {};
-    if (!['admin', 'patient'].includes(role)) {
-      return res.status(400).json({ error: 'Vai trò không hợp lệ (chỉ admin hoặc patient).' });
+    if (!ROLES.includes(role)) {
+      return res.status(400).json({ error: 'Vai trò không hợp lệ.' });
     }
     const id = Number(req.params.id);
     if (id === req.user.id && role !== 'admin') {

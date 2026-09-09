@@ -26,6 +26,16 @@ async function init() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Mở rộng vai trò cho CSDL đã tồn tại từ trước (chỉ có admin/patient) —
+  // ALTER này chạy lại mỗi lần khởi động nhưng vô hại vì luôn cùng một kết quả.
+  await pool.query(`
+    ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+    ALTER TABLE users ADD CONSTRAINT users_role_check
+      CHECK (role IN ('admin','patient','doctor','staff'));
+  `);
 }
 
-module.exports = { pool, init };
+const ROLES = ['admin', 'patient', 'doctor', 'staff'];
+
+module.exports = { pool, init, ROLES };

@@ -39,8 +39,10 @@
   .tab{padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink-muted); cursor:pointer; font-size:.88rem; font-weight:600;}
   .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
   label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
-  input{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
-  input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  input, select{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  input:focus, select:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .hint{font-size:.76rem; color:var(--ink-muted); margin-top:4px;}
+  hr.sep{border:none; border-top:1px solid var(--line); margin:22px 0;}
   button.primary{
     margin-top:18px; width:100%; padding:11px; border:none; border-radius:8px;
     background:var(--accent-deep); color:#fff; font-weight:600; cursor:pointer; font-size:.92rem; font-family:inherit;
@@ -59,7 +61,10 @@
   .pill{padding:2px 9px; border-radius:20px; font-size:.7rem; font-weight:600; white-space:nowrap;}
   .pill.admin{background:#e9d7ff; color:#5b21b6;}
   .pill.patient{background:#d7f0ea; color:var(--accent-deep);}
-  .row-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  .pill.doctor{background:#dbe8ff; color:#1d4ed8;}
+  .pill.staff{background:#ffe9cc; color:#9a5b00;}
+  .role-select{padding:5px 8px; font-size:.78rem; border-radius:6px; width:auto;}
+  .row-actions{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
   .table-scroll{overflow-x:auto;}
   [hidden]{display:none !important;}
 </style>
@@ -116,7 +121,31 @@
   </div>
 
   <div class="card" id="adminCard" hidden>
-    <b>Danh sách tài khoản (chỉ admin)</b>
+    <b>Tạo tài khoản mới</b>
+    <p class="hint">Dùng để tạo tài khoản Bác sĩ / Nhân viên — 2 vai trò này không có form đăng ký công khai.</p>
+    <form id="createUserForm">
+      <label>Họ tên</label>
+      <input type="text" id="newName" required>
+      <label>Email</label>
+      <input type="email" id="newEmail" required>
+      <label>Số điện thoại</label>
+      <input type="tel" id="newPhone">
+      <label>Mật khẩu tạm (tối thiểu 6 ký tự)</label>
+      <input type="password" id="newPassword" required minlength="6">
+      <label>Vai trò</label>
+      <select id="newRole">
+        <option value="doctor">Bác sĩ</option>
+        <option value="staff">Nhân viên</option>
+        <option value="patient">Bệnh nhân</option>
+        <option value="admin">Quản trị viên</option>
+      </select>
+      <button class="primary" type="submit">Tạo tài khoản</button>
+      <div class="msg" id="createUserMsg"></div>
+    </form>
+
+    <hr class="sep">
+
+    <b>Danh sách tài khoản</b>
     <div class="table-scroll">
       <table>
         <thead><tr><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Ngày tạo</th><th></th></tr></thead>
@@ -160,8 +189,9 @@
     return data;
   }
 
+  const ROLE_LABELS = { admin: 'Quản trị viên', patient: 'Bệnh nhân', doctor: 'Bác sĩ', staff: 'Nhân viên' };
   function roleLabel(role) {
-    return role === 'admin' ? 'Quản trị viên' : 'Bệnh nhân';
+    return ROLE_LABELS[role] || role;
   }
 
   async function refreshSession() {
@@ -208,9 +238,9 @@
         <td>
           <div class="row-actions">
           ${u.id === me.id ? '' : `
-            <button class="ghost toggle-role" data-id="${u.id}" data-role="${u.role === 'admin' ? 'patient' : 'admin'}">
-              ${u.role === 'admin' ? 'Hạ quyền' : 'Cấp admin'}
-            </button>
+            <select class="role-select" data-id="${u.id}">
+              ${Object.keys(ROLE_LABELS).map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('')}
+            </select>
             <button class="ghost delete-user" data-id="${u.id}">Xoá</button>
           `}
           </div>
@@ -218,13 +248,18 @@
       </tr>
     `).join('');
 
-    body.querySelectorAll('.toggle-role').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        await api(`/api/admin/users/${btn.dataset.id}/role`, {
-          method: 'PATCH',
-          body: JSON.stringify({ role: btn.dataset.role }),
-        });
-        loadUsers();
+    body.querySelectorAll('.role-select').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        try {
+          await api(`/api/admin/users/${sel.dataset.id}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role: sel.value }),
+          });
+          loadUsers();
+        } catch (e) {
+          alert(e.message);
+          loadUsers();
+        }
       });
     });
     body.querySelectorAll('.delete-user').forEach(btn => {
@@ -274,6 +309,29 @@
       token = t; me = user;
       localStorage.setItem('dm_token', token);
       renderLoggedIn();
+    } catch (e) {
+      msg.textContent = e.message; msg.className = 'msg err';
+    }
+  });
+
+  document.getElementById('createUserForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('createUserMsg');
+    msg.textContent = ''; msg.className = 'msg';
+    try {
+      await api('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: document.getElementById('newName').value,
+          email: document.getElementById('newEmail').value,
+          phone: document.getElementById('newPhone').value,
+          password: document.getElementById('newPassword').value,
+          role: document.getElementById('newRole').value,
+        }),
+      });
+      e.target.reset();
+      msg.textContent = 'Đã tạo tài khoản.';
+      loadUsers();
     } catch (e) {
       msg.textContent = e.message; msg.className = 'msg err';
     }
