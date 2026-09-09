@@ -5,8 +5,8 @@ const { SPECIALTIES } = require('../constants');
 
 const router = express.Router();
 
-const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.0-flash';
-const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-2.0-flash';
+const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
+const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.6-flash';
 
 let genAI;
 function getClient() {
