@@ -18,6 +18,27 @@ function getClient() {
   return genAI;
 }
 
+// Gemini bản miễn phí đôi khi báo 503 "quá tải" hoặc 429 "quá nhiều yêu cầu" —
+// đây là lỗi tạm thời phía Google, nên thử lại vài lần trước khi báo lỗi cho người dùng.
+async function withRetry(fn, retries = 2, delayMs = 900) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const retryable = e && (e.status === 503 || e.status === 429);
+      if (!retryable || attempt >= retries) throw e;
+      await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+    }
+  }
+}
+
+function aiErrorResponse(e) {
+  if (e && (e.status === 503 || e.status === 429)) {
+    return { status: 503, error: 'Dịch vụ AI đang quá tải, vui lòng thử lại sau ít phút.' };
+  }
+  return { status: 502, error: 'Không kết nối được tới dịch vụ AI, thử lại sau.' };
+}
+
 // Ngữ cảnh "RAG" lấy trực tiếp từ CSDL thật của phòng khám (giá khám, bác sĩ đang
 // có theo từng chuyên khoa) — không bịa thêm kiến thức y khoa bên ngoài.
 async function buildClinicContext() {
@@ -148,7 +169,7 @@ router.post('/chat', async (req, res) => {
     });
     const chat = model.startChat({ history: turns });
 
-    let result = await chat.sendMessage(message.trim());
+    let result = await withRetry(() => chat.sendMessage(message.trim()));
     let calls = result.response.functionCalls();
     let rounds = 0;
     while (calls && calls.length > 0 && rounds < 3) {
@@ -162,7 +183,7 @@ router.post('/chat', async (req, res) => {
         }
         responseParts.push({ functionResponse: { name: call.name, response: output } });
       }
-      result = await chat.sendMessage(responseParts);
+      result = await withRetry(() => chat.sendMessage(responseParts));
       calls = result.response.functionCalls();
       rounds++;
     }
@@ -171,7 +192,8 @@ router.post('/chat', async (req, res) => {
     res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0975 755 333 để được hỗ trợ nhé.' });
   } catch (e) {
     console.error(e);
-    res.status(502).json({ error: 'Không kết nối được tới dịch vụ AI, thử lại sau.' });
+    const { status, error } = aiErrorResponse(e);
+    res.status(status).json({ error });
   }
 });
 
@@ -218,11 +240,12 @@ router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async
       'Chỉ dùng dữ liệu được cung cấp, không suy đoán hay bổ sung thông tin y khoa khác.';
 
     const model = client.getGenerativeModel({ model: SUMMARY_MODEL, systemInstruction: systemPrompt });
-    const result = await model.generateContent('Lịch sử khám bệnh:\n\n' + historyText);
+    const result = await withRetry(() => model.generateContent('Lịch sử khám bệnh:\n\n' + historyText));
     res.json({ summary: result.response.text().trim() });
   } catch (e) {
     console.error(e);
-    res.status(502).json({ error: 'Không kết nối được tới dịch vụ AI, thử lại sau.' });
+    const { status, error } = aiErrorResponse(e);
+    res.status(status).json({ error });
   }
 });
 
