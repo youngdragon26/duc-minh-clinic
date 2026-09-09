@@ -7,19 +7,21 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 
 const router = express.Router();
 
-// Chatbot dùng function calling (tra lịch trống) — model 3.6 mới đổi vai trò
-// "function response" khiến bản SDK hiện tại (@google/generative-ai) bị lỗi 400
-// "Role 'function' is not supported", nên tạm dùng bản 2.5 ổn định hơn cho phần này.
-const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash';
-// Tóm tắt bệnh sử không dùng tool, gemini-3.6-flash chạy tốt (đã test) và mạnh hơn.
+// SDK @google/generative-ai (cũ) hardcode role "function" cho function response,
+// không tương thích với model 3.x (chỉ nhận SYSTEM/USER/MODEL/...) — đây là lý do
+// trước đây phải ép dùng model 2.5 cho phần chat (có tool). Google cũng đã khai tử
+// hẳn @google/generative-ai. Đã chuyển sang SDK @google/genai (mới, còn bảo trì),
+// SDK này tự gộp function response vào role "user" nên dùng được model 3.x cho cả
+// phần có tool calling.
+const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
 const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.6-flash';
 
 let genAI;
 function getClient() {
   if (!process.env.GEMINI_API_KEY) return null;
   if (!genAI) {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const { GoogleGenAI } = require('@google/genai');
+    genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   }
   return genAI;
 }
@@ -152,50 +154,25 @@ async function retrieveKnowledge(query, k = 4) {
   }
 }
 
-// TẠM THỜI: debug lỗi 503 thật từ Gemini — xoá ngay sau khi chẩn đoán xong.
-router.get('/_debug-chat-error', async (req, res) => {
-  const client = getClient();
-  if (!client) return res.json({ error: 'no client' });
-  const modelName = req.query.model || CHAT_MODEL;
-  try {
-    const model = client.getGenerativeModel({ model: modelName });
-    const chat = model.startChat({ history: [] });
-    const result = await chat.sendMessage('xin chào');
-    return res.json({ ok: true, model: modelName, text: result.response.text() });
-  } catch (e) {
-    return res.json({
-      ok: false,
-      model: modelName,
-      message: e.message,
-      status: e.status,
-      statusText: e.statusText,
-      name: e.name,
-      errorDetails: e.errorDetails || null,
-      stack: String(e.stack || '').split('\n').slice(0, 5),
-    });
-  }
-});
-
-// TẠM THỜI: kiểm tra model có dùng được function calling (tool) không.
+// TẠM THỜI: kiểm tra SDK mới + function calling hoạt động đúng — xoá sau khi xác nhận.
 router.get('/_debug-tool-call', async (req, res) => {
   const client = getClient();
   if (!client) return res.json({ error: 'no client' });
   const modelName = req.query.model || CHAT_MODEL;
   try {
-    const model = client.getGenerativeModel({
+    const chat = client.chats.create({
       model: modelName,
-      tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+      config: { tools: [{ functionDeclarations: [checkSlotsDeclaration] }] },
     });
-    const chat = model.startChat({ history: [] });
-    let result = await chat.sendMessage('Nội tổng quát ngày mai còn giờ trống không?');
-    const calls = result.response.functionCalls();
+    let result = await chat.sendMessage({ message: 'Nội tổng quát ngày mai còn giờ trống không?' });
+    const calls = result.functionCalls;
     if (!calls || !calls.length) {
-      return res.json({ ok: true, model: modelName, calledTool: false, text: result.response.text() });
+      return res.json({ ok: true, model: modelName, calledTool: false, text: result.text });
     }
     const call = calls[0];
     const toolResult = await checkAvailableSlots(call.args);
-    result = await chat.sendMessage([{ functionResponse: { name: call.name, response: toolResult } }]);
-    return res.json({ ok: true, model: modelName, calledTool: true, args: call.args, text: result.response.text() });
+    result = await chat.sendMessage({ message: [{ functionResponse: { name: call.name, response: toolResult } }] });
+    return res.json({ ok: true, model: modelName, calledTool: true, args: call.args, text: result.text });
   } catch (e) {
     return res.json({ ok: false, model: modelName, message: e.message, status: e.status });
   }
@@ -255,15 +232,17 @@ router.post('/chat', async (req, res) => {
       : [];
     while (turns.length && turns[0].role !== 'user') turns.shift();
 
-    const model = client.getGenerativeModel({
+    const chat = client.chats.create({
       model: CHAT_MODEL,
-      systemInstruction: systemPrompt,
-      tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+      config: {
+        systemInstruction: systemPrompt,
+        tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+      },
+      history: turns,
     });
-    const chat = model.startChat({ history: turns });
 
-    let result = await withRetry(() => chat.sendMessage(message.trim()));
-    let calls = result.response.functionCalls();
+    let result = await withRetry(() => chat.sendMessage({ message: message.trim() }));
+    let calls = result.functionCalls;
     let rounds = 0;
     while (calls && calls.length > 0 && rounds < 3) {
       const responseParts = [];
@@ -276,12 +255,12 @@ router.post('/chat', async (req, res) => {
         }
         responseParts.push({ functionResponse: { name: call.name, response: output } });
       }
-      result = await withRetry(() => chat.sendMessage(responseParts));
-      calls = result.response.functionCalls();
+      result = await withRetry(() => chat.sendMessage({ message: responseParts }));
+      calls = result.functionCalls;
       rounds++;
     }
 
-    const text = result.response.text().trim();
+    const text = (result.text || '').trim();
     res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0975 755 333 để được hỗ trợ nhé.' });
   } catch (e) {
     console.error(e);
@@ -409,9 +388,12 @@ router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async
       'và các thuốc đã dùng đáng chú ý (đặc biệt nếu có thể liên quan tới lần khám tới). ' +
       'Chỉ dùng dữ liệu được cung cấp, không suy đoán hay bổ sung thông tin y khoa khác.';
 
-    const model = client.getGenerativeModel({ model: SUMMARY_MODEL, systemInstruction: systemPrompt });
-    const result = await withRetry(() => model.generateContent('Lịch sử khám bệnh:\n\n' + historyText));
-    res.json({ summary: result.response.text().trim() });
+    const result = await withRetry(() => client.models.generateContent({
+      model: SUMMARY_MODEL,
+      contents: 'Lịch sử khám bệnh:\n\n' + historyText,
+      config: { systemInstruction: systemPrompt },
+    }));
+    res.json({ summary: (result.text || '').trim() });
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);
