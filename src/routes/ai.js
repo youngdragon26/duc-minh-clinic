@@ -51,6 +51,58 @@ async function buildClinicContext() {
   ].join('\n');
 }
 
+const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(2, '0') + ':00'); // 07:00 - 20:00
+
+// Tool Gemini có thể tự gọi để tra cứu khung giờ còn trống THẬT trong CSDL —
+// không để mô hình tự đoán/bịa ra lịch trống.
+const checkSlotsDeclaration = {
+  name: 'check_available_slots',
+  description:
+    'Kiểm tra các khung giờ khám còn trống của phòng khám cho 1 chuyên khoa vào 1 ngày cụ thể. ' +
+    'Dùng khi bệnh nhân hỏi về lịch trống, muốn biết còn giờ nào có thể đặt, hoặc hỏi có bác sĩ nào rảnh không.',
+  parameters: {
+    type: 'object',
+    properties: {
+      specialty: { type: 'string', description: 'Tên chuyên khoa, phải khớp đúng 1 trong các chuyên khoa đã liệt kê ở trên.' },
+      date: { type: 'string', description: 'Ngày muốn kiểm tra, định dạng YYYY-MM-DD. Tự tính ra ngày cụ thể nếu khách nói "hôm nay"/"ngày mai"/"thứ 6 tuần này".' },
+    },
+    required: ['specialty', 'date'],
+  },
+};
+
+async function checkAvailableSlots({ specialty, date }) {
+  if (!SPECIALTIES.includes(specialty)) {
+    return { error: `Chuyên khoa không hợp lệ. Các chuyên khoa hiện có: ${SPECIALTIES.join(', ')}` };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+    return { error: 'Ngày không hợp lệ, cần đúng định dạng YYYY-MM-DD.' };
+  }
+
+  const doctorsRes = await pool.query("SELECT id, name FROM users WHERE role = 'doctor' AND specialty = $1 ORDER BY name", [specialty]);
+  if (doctorsRes.rows.length === 0) {
+    return { specialty, date, available: false, message: `Chuyên khoa ${specialty} hiện chưa có bác sĩ phụ trách.` };
+  }
+
+  const doctorIds = doctorsRes.rows.map((d) => d.id);
+  const bookedRes = await pool.query(
+    `SELECT doctor_id, appointment_time FROM appointments
+     WHERE appointment_date = $1 AND status <> 'da_huy' AND doctor_id = ANY($2::int[])`,
+    [date, doctorIds]
+  );
+  const bookedByDoctor = {};
+  for (const row of bookedRes.rows) {
+    if (!bookedByDoctor[row.doctor_id]) bookedByDoctor[row.doctor_id] = new Set();
+    bookedByDoctor[row.doctor_id].add(row.appointment_time);
+  }
+
+  const doctors = doctorsRes.rows.map((d) => {
+    const booked = bookedByDoctor[d.id] || new Set();
+    return { doctorName: d.name, freeSlots: FIXED_SLOTS.filter((s) => !booked.has(s)) };
+  });
+
+  return { specialty, date, available: doctors.some((d) => d.freeSlots.length > 0), doctors };
+}
+
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
 router.post('/chat', async (req, res) => {
   const client = getClient();
@@ -64,15 +116,20 @@ router.post('/chat', async (req, res) => {
     }
 
     const context = await buildClinicContext();
+    const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
     const systemPrompt = [
-      'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu), thân thiện, bằng tiếng Việt.',
+      'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
+      `Hôm nay là ngày ${todayVN} (giờ Việt Nam).`,
       '',
       context,
+      '',
+      'Bạn có công cụ check_available_slots để tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
       '',
       'Quy tắc:',
       '- Chỉ gợi ý chuyên khoa nên khám dựa trên triệu chứng khách mô tả, KHÔNG chẩn đoán bệnh, KHÔNG kê đơn hay tên thuốc cụ thể.',
       '- Nếu triệu chứng nghe nghiêm trọng/cấp cứu (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...), khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.',
       '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0975 755 333.',
+      '- Sau khi báo lịch trống, nhắc khách đặt lịch tại /dat-lich.html (cần đăng nhập/đăng ký ở /tai-khoan.html trước).',
     ].join('\n');
 
     // Gemini dùng vai "model" thay vì "assistant", và lịch sử phải bắt đầu bằng "user".
@@ -84,11 +141,33 @@ router.post('/chat', async (req, res) => {
       : [];
     while (turns.length && turns[0].role !== 'user') turns.shift();
 
-    const model = client.getGenerativeModel({ model: CHAT_MODEL, systemInstruction: systemPrompt });
+    const model = client.getGenerativeModel({
+      model: CHAT_MODEL,
+      systemInstruction: systemPrompt,
+      tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+    });
     const chat = model.startChat({ history: turns });
-    const result = await chat.sendMessage(message.trim());
-    const text = result.response.text().trim();
 
+    let result = await chat.sendMessage(message.trim());
+    let calls = result.response.functionCalls();
+    let rounds = 0;
+    while (calls && calls.length > 0 && rounds < 3) {
+      const responseParts = [];
+      for (const call of calls) {
+        let output;
+        if (call.name === 'check_available_slots') {
+          output = await checkAvailableSlots(call.args || {});
+        } else {
+          output = { error: 'Công cụ không được hỗ trợ.' };
+        }
+        responseParts.push({ functionResponse: { name: call.name, response: output } });
+      }
+      result = await chat.sendMessage(responseParts);
+      calls = result.response.functionCalls();
+      rounds++;
+    }
+
+    const text = result.response.text().trim();
     res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0975 755 333 để được hỗ trợ nhé.' });
   } catch (e) {
     console.error(e);
