@@ -288,23 +288,6 @@ router.post('/chat', async (req, res) => {
 
 router.use(authenticate);
 
-// TẠM THỜI: xem thử vài con số đầu của 1 vector thật — minh hoạ cho người dùng. Xoá sau khi dùng xong.
-router.get('/_debug-vector-sample', requireAdmin, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT content, embedding FROM kb_chunks LIMIT 1');
-    if (!result.rows.length) return res.json({ error: 'chưa có chunk nào' });
-    const row = result.rows[0];
-    const values = JSON.parse(row.embedding); // pgvector trả dạng chuỗi "[0.1,0.2,...]"
-    res.json({
-      contentPreview: row.content.slice(0, 80),
-      totalDimensions: values.length,
-      first10: values.slice(0, 10),
-    });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
-
 // ---------- Quản lý cơ sở tri thức (Indexing phase) — chỉ admin ----------
 
 router.get('/kb', requireAdmin, async (req, res) => {
