@@ -155,14 +155,14 @@ async function checkAvailableSlots({ specialty, date }) {
 }
 
 // ---------- RAG: Retrieval phase ----------
-// Nhúng câu hỏi thành vector, tìm các đoạn tri thức gần nhất bằng cosine similarity
-// (toán tử <=> của pgvector), kèm tên tài liệu nguồn để model có thể trích dẫn.
+// Nhúng 1 câu truy vấn thành vector, tìm các đoạn tri thức gần nhất bằng cosine
+// similarity (toán tử <=> của pgvector), kèm tên tài liệu nguồn để model trích dẫn.
 async function retrieveKnowledge(query, k = 4) {
   try {
     const queryVector = await embedText(query, 'RETRIEVAL_QUERY');
     const literal = toVectorLiteral(queryVector);
     const result = await pool.query(
-      `SELECT c.content, d.title, 1 - (c.embedding <=> $1::vector) AS similarity
+      `SELECT c.id AS chunk_id, c.content, d.title, 1 - (c.embedding <=> $1::vector) AS similarity
        FROM kb_chunks c JOIN kb_documents d ON d.id = c.document_id
        WHERE c.embedding IS NOT NULL
        ORDER BY c.embedding <=> $1::vector
@@ -174,6 +174,78 @@ async function retrieveKnowledge(query, k = 4) {
     console.error('Retrieval error:', e);
     return []; // Retrieval lỗi không nên làm sập cả chatbot — chỉ mất phần ngữ cảnh bổ sung.
   }
+}
+
+// ---------- RAG nâng cao: Multi-Query + HyDE ----------
+// Multi-Query: sinh thêm vài cách hỏi khác cho cùng 1 ý, để không phụ thuộc vào đúng
+// 1 cách diễn đạt của người dùng — vd "khó chịu ở tai" và "đau tai, ù tai" ý giống
+// nhau nhưng vector có thể không đủ gần nếu chỉ tìm với đúng câu gốc.
+// HyDE (Hypothetical Document Embeddings): sinh 1 "câu trả lời giả định" rồi dùng
+// vector của câu đó để tìm — vì tài liệu thật viết văn phong mô tả/khẳng định, khác
+// văn phong câu hỏi, nên so 2 đoạn cùng văn phong mô tả thường cho vector gần nhau
+// hơn là so câu hỏi với tài liệu.
+// Gộp chung 2 kỹ thuật vào ĐÚNG 1 lượt gọi generateContent (không tách riêng) để đỡ
+// tốn thêm quota — vẫn tốn thêm đúng 1 lượt gọi AI mỗi câu hỏi so với bản gốc.
+async function expandQuery(message) {
+  const client = getClient();
+  if (!client) return { queries: [], hypotheticalAnswer: null };
+  try {
+    const result = await withRetry(() =>
+      client.models.generateContent({
+        model: CHAT_MODEL,
+        contents: `Câu hỏi gốc của bệnh nhân: "${message}"`,
+        config: {
+          systemInstruction: [
+            'Bạn hỗ trợ cải thiện tìm kiếm cho 1 chatbot phòng khám. Với câu hỏi gốc được cung cấp:',
+            '1. Viết lại thành 3 cách hỏi khác nhau, giữ nguyên ý nghĩa nhưng dùng từ ngữ/cách diễn đạt khác.',
+            '2. Viết 1 đoạn "câu trả lời giả định" ngắn (2-3 câu) — hình dung nếu có 1 tài liệu y tế trả lời',
+            '   đúng câu hỏi này thì nó sẽ viết như thế nào, không cần đúng sự thật, chỉ cần đúng văn phong.',
+          ].join('\n'),
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'object',
+            properties: {
+              queries: { type: 'array', items: { type: 'string' } },
+              hypotheticalAnswer: { type: 'string' },
+            },
+            required: ['queries', 'hypotheticalAnswer'],
+          },
+        },
+      })
+    );
+    const parsed = JSON.parse(result.text || '{}');
+    return {
+      queries: Array.isArray(parsed.queries) ? parsed.queries.filter((q) => typeof q === 'string').slice(0, 3) : [],
+      hypotheticalAnswer: typeof parsed.hypotheticalAnswer === 'string' ? parsed.hypotheticalAnswer : null,
+    };
+  } catch (e) {
+    console.error('Query expansion error:', e);
+    // Lỗi (kể cả hết quota) thì rơi về tìm kiếm với đúng câu hỏi gốc — không chặn chatbot.
+    return { queries: [], hypotheticalAnswer: null };
+  }
+}
+
+// Chạy retrieval cho câu hỏi gốc + các biến thể Multi-Query + câu trả lời giả định
+// HyDE, rồi gộp lại: 1 đoạn tri thức có thể được nhiều câu truy vấn cùng tìm thấy,
+// chỉ giữ lại điểm tương đồng CAO NHẤT của nó, sau đó lấy top-k chung cuộc.
+async function retrieveKnowledgeExpanded(message, k = 4) {
+  const { queries, hypotheticalAnswer } = await expandQuery(message);
+  const searchTexts = [message, ...queries];
+  if (hypotheticalAnswer) searchTexts.push(hypotheticalAnswer);
+
+  const resultsPerText = await Promise.all(searchTexts.map((text) => retrieveKnowledge(text, k)));
+
+  const bestByChunk = new Map();
+  for (const rows of resultsPerText) {
+    for (const row of rows) {
+      const existing = bestByChunk.get(row.chunk_id);
+      if (!existing || row.similarity > existing.similarity) {
+        bestByChunk.set(row.chunk_id, row);
+      }
+    }
+  }
+
+  return [...bestByChunk.values()].sort((a, b) => b.similarity - a.similarity).slice(0, k);
 }
 
 // Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
@@ -190,7 +262,7 @@ router.post('/chat', async (req, res) => {
 
     const [context, retrieved] = await Promise.all([
       buildClinicContext(),
-      retrieveKnowledge(message.trim()),
+      retrieveKnowledgeExpanded(message.trim()),
     ]);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 
