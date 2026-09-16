@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoá đơn — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --err:#ff8a80;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:900px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:900px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:24px; line-height:1.6;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  .card h2{font-family:"Lora",serif; font-size:1.05rem; margin:0 0 4px;}
+  table{width:100%; border-collapse:collapse; margin-top:12px; font-size:.85rem;}
+  th, td{text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--ink-muted); font-weight:600; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;}
+  .table-scroll{overflow-x:auto;}
+  button.ghost{padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;}
+  button.ghost:hover{border-color:var(--accent);}
+  .pill{padding:2px 9px; border-radius:20px; font-size:.72rem; font-weight:600; white-space:nowrap; display:inline-block;}
+  .pill.chua_thanh_toan{background:#fdf0d0; color:#8a5a00;}
+  .pill.da_thanh_toan{background:#d7f0ea; color:var(--accent-deep);}
+  select{padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:.86rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
+  .money{font-variant-numeric:tabular-nums; font-weight:600;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/hang-doi.html" class="back">← Về hàng đợi khám</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Hoá đơn</h1>
+  <p class="sub">Lập hoá đơn cho lịch hẹn đã khám xong và xác nhận thu tiền.</p>
+
+  <div class="card" id="noAccessCard" hidden>
+    <p style="margin:0;">Bạn không có quyền truy cập trang này (chỉ dành cho Nhân viên, Quản trị viên).</p>
+  </div>
+
+  <div id="content" hidden>
+    <div class="card">
+      <h2>Lịch hẹn chờ lập hoá đơn</h2>
+      <p class="sub" style="margin:4px 0 0;">Chỉ hiện các lịch hẹn đã Hoàn thành khám nhưng chưa có hoá đơn.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Ngày</th><th>Giờ</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th></th></tr></thead>
+          <tbody id="pendingBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="pendingEmpty" hidden>Không có lịch hẹn nào đang chờ lập hoá đơn.</div>
+    </div>
+
+    <div class="card">
+      <h2>Danh sách hoá đơn</h2>
+      <select id="fStatus" style="margin-top:10px;">
+        <option value="">Tất cả trạng thái</option>
+        <option value="chua_thanh_toan">Chưa thanh toán</option>
+        <option value="da_thanh_toan">Đã thanh toán</option>
+      </select>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Ngày khám</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th>Tổng tiền</th><th>Trạng thái</th><th></th></tr></thead>
+          <tbody id="invoiceBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="invoiceEmpty" hidden>Chưa có hoá đơn nào.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  const token = localStorage.getItem('dm_token');
+  const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
+
+  function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  async function loadPending() {
+    const { appointments } = await api('/api/appointments?status=hoan_thanh');
+    const pending = appointments.filter(a => !a.hasInvoice);
+    const body = document.getElementById('pendingBody');
+    document.getElementById('pendingEmpty').hidden = pending.length > 0;
+    body.innerHTML = pending.map(a => `
+      <tr>
+        <td>${a.date.slice(0, 10)}</td>
+        <td>${a.time}</td>
+        <td>${a.patientName}</td>
+        <td>${a.specialty}</td>
+        <td><button class="ghost create-invoice" data-id="${a.id}">Lập hoá đơn</button></td>
+      </tr>
+    `).join('');
+    body.querySelectorAll('.create-invoice').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api('/api/billing/invoices', { method: 'POST', body: JSON.stringify({ appointmentId: Number(btn.dataset.id) }) });
+          loadPending();
+          loadInvoices();
+        } catch (e) { alert(e.message); }
+      });
+    });
+  }
+
+  async function loadInvoices() {
+    const status = document.getElementById('fStatus').value;
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    const { invoices } = await api('/api/billing/invoices?' + params.toString());
+    const body = document.getElementById('invoiceBody');
+    document.getElementById('invoiceEmpty').hidden = invoices.length > 0;
+    body.innerHTML = invoices.map(inv => `
+      <tr>
+        <td>${inv.date.slice(0, 10)}</td>
+        <td>${inv.patientName}</td>
+        <td>${inv.specialty}</td>
+        <td class="money">${money(inv.totalAmount)}</td>
+        <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span></td>
+        <td>${inv.status === 'chua_thanh_toan' ? `<button class="ghost mark-paid" data-id="${inv.id}">Xác nhận đã thu tiền</button>` : ''}</td>
+      </tr>
+    `).join('');
+    body.querySelectorAll('.mark-paid').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/api/billing/invoices/${btn.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'da_thanh_toan' }) });
+          loadInvoices();
+        } catch (e) { alert(e.message); }
+      });
+    });
+  }
+
+  document.getElementById('fStatus').addEventListener('change', loadInvoices);
+
+  (async function init() {
+    if (!token) { document.getElementById('noAccessCard').hidden = false; return; }
+    try {
+      const { user } = await api('/api/auth/me');
+      if (!['staff', 'admin'].includes(user.role)) { document.getElementById('noAccessCard').hidden = false; return; }
+    } catch (e) { document.getElementById('noAccessCard').hidden = false; return; }
+    document.getElementById('content').hidden = false;
+    await loadPending();
+    await loadInvoices();
+  })();
+</script>
+</body>
+</html>
