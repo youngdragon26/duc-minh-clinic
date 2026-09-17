@@ -258,7 +258,12 @@
   const CANCELLABLE = ['cho_xac_nhan', 'da_xac_nhan'];
   const GENDER_LABELS = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
   const DAY_NAMES = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-  const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(2, '0') + ':00'); // 07:00 - 20:00
+  // 07:00 - 20:30, mỗi 30 phút 1 slot — phải khớp đúng FIXED_SLOTS ở src/lib/availability.js.
+  const FIXED_SLOTS = Array.from({ length: 28 }, (_, i) => {
+    const h = 7 + Math.floor(i / 2);
+    const m = i % 2 === 0 ? '00' : '30';
+    return String(h).padStart(2, '0') + ':' + m;
+  });
   const MAX_WEEKS_AHEAD = 4; // tuần này + 3 tuần tới (~1 tháng) cho tự đặt online
 
   function esc(s) {
@@ -286,7 +291,7 @@
 
   const todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
   const todayDate = new Date(todayISO + 'T00:00:00');
-  const nowHourVN = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }));
+  const nowTimeVN = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false });
 
   const maxWeekStart = addDays(startOfWeek(todayDate), (MAX_WEEKS_AHEAD - 1) * 7);
 
@@ -486,7 +491,7 @@
           </td>`;
         }
 
-        const isPastSlot = date < todayISO || (date === todayISO && Number(time.slice(0, 2)) <= nowHourVN);
+        const isPastSlot = date < todayISO || (date === todayISO && time <= nowTimeVN);
         if (isPastSlot) {
           return `<td class="slot past" data-date="${date}" data-time="${time}">—</td>`;
         }

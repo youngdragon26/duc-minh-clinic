@@ -224,6 +224,23 @@
   .spec-card:nth-child(3n){border-top-color:var(--accent-deep);}
   .spec-card h3{font-size:1.02rem; margin-bottom:8px;}
   .spec-card p{font-size:.86rem;}
+  .spec-card{cursor:pointer; text-align:left; width:100%; font-family:inherit;}
+  .spec-card:hover{border-color:var(--accent); box-shadow:var(--shadow);}
+  .spec-card .see-doctors{display:block; margin-top:12px; font-size:.8rem; font-weight:600; color:var(--accent-deep);}
+
+  /* ---------- modal bác sĩ theo chuyên khoa ---------- */
+  .modal-overlay{position:fixed; inset:0; background:rgba(20,46,41,.45); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100;}
+  .modal-box{background:var(--surface); border-radius:14px; padding:22px 24px; max-width:480px; width:100%; max-height:82vh; overflow:auto; box-shadow:var(--shadow);}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px;}
+  .modal-head h3{font-size:1.1rem;}
+  .modal-close{border:none; background:var(--surface-2); color:var(--ink); width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:.95rem; line-height:1;}
+  .doc-card{padding:14px 0; border-top:1px solid var(--line);}
+  .doc-card:first-child{border-top:none; padding-top:0;}
+  .doc-card b{display:block; font-family:"Lora",serif; font-size:1rem; margin-bottom:4px;}
+  .doc-card .doc-meta{font-size:.82rem; color:var(--ink-muted); margin-bottom:6px;}
+  .doc-card .doc-meta a{color:var(--accent-deep); text-decoration:none; font-weight:600;}
+  .doc-card p{font-size:.86rem; line-height:1.55;}
+  .modal-empty{font-size:.88rem; color:var(--ink-muted);}
 
   /* ---------- footer ---------- */
   footer{background:var(--ink); color:#cfe4dd; padding:44px 0 26px;}
@@ -397,16 +414,26 @@
         <a href="/dat-lich.html" class="link-quiet">Xem toàn bộ dịch vụ →</a>
       </div>
       <div class="spec-grid">
-        <div class="spec-card"><h3>Nội tổng quát</h3><p>Khám sức khỏe định kỳ, tầm soát và điều trị các bệnh lý nội khoa thường gặp.</p></div>
-        <div class="spec-card"><h3>Nhi khoa</h3><p>Theo dõi phát triển, tiêm chủng và điều trị các bệnh thường gặp ở trẻ nhỏ.</p></div>
-        <div class="spec-card"><h3>Tai – Mũi – Họng</h3><p>Khám và điều trị các vấn đề hô hấp trên, viêm xoang, viêm họng mãn tính.</p></div>
-        <div class="spec-card"><h3>Da liễu</h3><p>Tư vấn và điều trị các vấn đề về da, dị ứng, mụn và chăm sóc da theo lứa tuổi.</p></div>
-        <div class="spec-card"><h3>Sản phụ khoa</h3><p>Khám phụ khoa định kỳ, theo dõi thai kỳ và tư vấn sức khỏe sinh sản.</p></div>
-        <div class="spec-card"><h3>Răng – Hàm – Mặt</h3><p>Khám, cạo vôi và tư vấn điều trị các vấn đề răng miệng cơ bản.</p></div>
+        <button type="button" class="spec-card" data-specialty="Nội tổng quát"><h3>Nội tổng quát</h3><p>Khám sức khỏe định kỳ, tầm soát và điều trị các bệnh lý nội khoa thường gặp.</p><span class="see-doctors">Xem bác sĩ phụ trách →</span></button>
+        <button type="button" class="spec-card" data-specialty="Nhi khoa"><h3>Nhi khoa</h3><p>Theo dõi phát triển, tiêm chủng và điều trị các bệnh thường gặp ở trẻ nhỏ.</p><span class="see-doctors">Xem bác sĩ phụ trách →</span></button>
+        <button type="button" class="spec-card" data-specialty="Tai – Mũi – Họng"><h3>Tai – Mũi – Họng</h3><p>Khám và điều trị các vấn đề hô hấp trên, viêm xoang, viêm họng mãn tính.</p><span class="see-doctors">Xem bác sĩ phụ trách →</span></button>
+        <button type="button" class="spec-card" data-specialty="Da liễu"><h3>Da liễu</h3><p>Tư vấn và điều trị các vấn đề về da, dị ứng, mụn và chăm sóc da theo lứa tuổi.</p><span class="see-doctors">Xem bác sĩ phụ trách →</span></button>
+        <button type="button" class="spec-card" data-specialty="Sản phụ khoa"><h3>Sản phụ khoa</h3><p>Khám phụ khoa định kỳ, theo dõi thai kỳ và tư vấn sức khỏe sinh sản.</p><span class="see-doctors">Xem bác sĩ phụ trách →</span></button>
+        <button type="button" class="spec-card" data-specialty="Răng – Hàm – Mặt"><h3>Răng – Hàm – Mặt</h3><p>Khám, cạo vôi và tư vấn điều trị các vấn đề răng miệng cơ bản.</p><span class="see-doctors">Xem bác sĩ phụ trách →</span></button>
       </div>
     </div>
   </section>
 </main>
+
+<div class="modal-overlay" id="docModalOverlay" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="docModalTitle"></h3>
+      <button type="button" class="modal-close" id="docModalClose">✕</button>
+    </div>
+    <div id="docModalBody"></div>
+  </div>
+</div>
 
 <footer id="hotro">
   <div class="wrap">
@@ -537,6 +564,56 @@
     } catch (e) {
       localStorage.removeItem('dm_token');
     }
+  })();
+</script>
+
+<script>
+  // Xem bác sĩ phụ trách 1 chuyên khoa — công khai, không cần đăng nhập, để
+  // khách vãng lai cũng xem được trước khi quyết định đặt lịch.
+  (function(){
+    function esc(s){
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    }
+
+    const overlay = document.getElementById('docModalOverlay');
+    const title = document.getElementById('docModalTitle');
+    const body = document.getElementById('docModalBody');
+
+    function openModal(){ overlay.hidden = false; }
+    function closeModal(){ overlay.hidden = true; }
+    document.getElementById('docModalClose').addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+    async function showDoctors(specialty){
+      title.textContent = specialty;
+      body.innerHTML = '<p class="modal-empty">Đang tải...</p>';
+      openModal();
+      try {
+        const res = await fetch('/api/appointments/public-doctors?specialty=' + encodeURIComponent(specialty));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Lỗi tải danh sách bác sĩ');
+        if (!data.doctors.length) {
+          body.innerHTML = '<p class="modal-empty">Chuyên khoa này hiện chưa có bác sĩ phụ trách. Vui lòng gọi hotline <a href="tel:0974755333">0974 755 333</a> để được tư vấn.</p>';
+          return;
+        }
+        body.innerHTML = data.doctors.map(d => `
+          <div class="doc-card">
+            <b>BS. ${esc(d.name)}</b>
+            <div class="doc-meta">
+              ${d.specialty ? esc(d.specialty) : 'Bác sĩ tổng quát (mọi chuyên khoa)'}
+              ${d.phone ? ' · <a href="tel:' + esc(d.phone) + '">' + esc(d.phone) + '</a>' : ''}
+            </div>
+            <p>${d.bio ? esc(d.bio).replace(/\n/g, '<br>') : 'Bác sĩ chưa cập nhật lý lịch.'}</p>
+          </div>
+        `).join('');
+      } catch (e) {
+        body.innerHTML = '<p class="modal-empty">Không tải được thông tin bác sĩ, vui lòng thử lại sau.</p>';
+      }
+    }
+
+    document.querySelectorAll('.spec-card[data-specialty]').forEach(card => {
+      card.addEventListener('click', () => showDoctors(card.dataset.specialty));
+    });
   })();
 </script>
 

@@ -146,7 +146,7 @@ const bookAppointmentDeclaration = {
       specialty: { type: 'string', description: 'Tên chuyên khoa, phải khớp đúng 1 trong các chuyên khoa đã liệt kê ở trên.' },
       doctorName: { type: 'string', description: 'Tên bác sĩ muốn khám, nếu khách có chỉ định cụ thể (không bắt buộc).' },
       date: { type: 'string', description: 'Ngày khám, định dạng YYYY-MM-DD.' },
-      time: { type: 'string', description: 'Giờ khám, định dạng HH:MM, trong khung 07:00-20:00 (mỗi giờ 1 slot).' },
+      time: { type: 'string', description: 'Giờ khám, định dạng HH:MM, trong khung 07:00-20:30, mỗi 30 phút 1 slot (vd 07:00, 07:30, 08:00...).' },
       fullName: { type: 'string', description: 'Họ tên người đi khám (có thể khác tên tài khoản, vd đặt hộ người thân).' },
       phone: { type: 'string', description: 'Số điện thoại liên hệ, 9-11 chữ số.' },
       age: { type: 'integer', description: 'Tuổi của người đi khám.' },

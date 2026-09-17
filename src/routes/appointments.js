@@ -6,9 +6,32 @@ const { createAppointment, updateAppointment, BookingError } = require('../lib/a
 const { getAvailableSlots } = require('../lib/availability');
 
 const router = express.Router();
-router.use(authenticate);
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
+
+// Danh sách bác sĩ theo chuyên khoa cho trang chủ (công khai, không cần đăng
+// nhập) — khách bấm vào 1 thẻ chuyên khoa là xem được ngay bác sĩ phụ trách,
+// SĐT liên hệ và lý lịch, trước khi quyết định đặt lịch. Đặt TRƯỚC
+// router.use(authenticate) bên dưới để route này không bắt buộc đăng nhập.
+router.get('/public-doctors', async (req, res) => {
+  try {
+    const { specialty } = req.query;
+    if (!specialty || !SPECIALTIES.includes(specialty)) {
+      return res.status(400).json({ error: 'Chuyên khoa không hợp lệ.' });
+    }
+    // specialty = NULL nghĩa là "bác sĩ tổng quát", phụ trách được mọi chuyên khoa.
+    const result = await pool.query(
+      "SELECT id, name, phone, specialty, bio FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL) ORDER BY specialty NULLS LAST, name",
+      [specialty]
+    );
+    res.json({ doctors: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.use(authenticate);
 
 const APPT_SELECT = `
   SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name, d.bio AS doctor_bio,
@@ -190,16 +213,42 @@ router.patch('/:id/status', async (req, res) => {
     const isStaffLike = STAFF_ROLES.includes(req.user.role);
     const isOwner = appt.patient_id === req.user.id;
 
-    // Nhân viên/bác sĩ/admin đổi được mọi trạng thái; bệnh nhân chỉ được tự huỷ
-    // lịch hẹn của chính mình, không đổi sang trạng thái khác.
+    // Bác sĩ chỉ được đổi trạng thái lịch hẹn ĐÃ CHỈ ĐỊNH cho chính mình — không
+    // được đụng vào lịch của bác sĩ khác. Lịch chưa chỉ định bác sĩ cụ thể thì bác
+    // sĩ cùng chuyên khoa (hoặc bác sĩ tổng quát) được "nhận ca": hành động đầu
+    // tiên trên lịch đó sẽ tự gán mình làm bác sĩ phụ trách luôn. Nhân viên/admin
+    // không bị giới hạn này, vẫn đổi được mọi lịch hẹn.
+    let autoAssignDoctorId = null;
+    if (req.user.role === 'doctor') {
+      if (appt.doctor_id) {
+        if (appt.doctor_id !== req.user.id) {
+          return res.status(403).json({ error: 'Lịch hẹn này đã được chỉ định cho bác sĩ khác.' });
+        }
+      } else {
+        const me = await pool.query('SELECT specialty FROM users WHERE id = $1', [req.user.id]);
+        const mySpecialty = me.rows[0]?.specialty;
+        if (mySpecialty && mySpecialty !== appt.specialty) {
+          return res.status(403).json({ error: 'Lịch hẹn này không thuộc chuyên khoa của bạn.' });
+        }
+        autoAssignDoctorId = req.user.id;
+      }
+    }
+
+    // Nhân viên/bác sĩ/admin đổi được mọi trạng thái (đã kiểm tra riêng ở trên
+    // với bác sĩ); bệnh nhân chỉ được tự huỷ lịch hẹn của chính mình.
     if (!isStaffLike && !(isOwner && status === 'da_huy')) {
       return res.status(403).json({ error: 'Bạn chỉ có thể huỷ lịch hẹn của chính mình.' });
     }
 
-    const updated = await pool.query('UPDATE appointments SET status = $1 WHERE id = $2 RETURNING id', [status, id]);
+    const updated = autoAssignDoctorId
+      ? await pool.query('UPDATE appointments SET status = $1, doctor_id = $2 WHERE id = $3 RETURNING id', [status, autoAssignDoctorId, id])
+      : await pool.query('UPDATE appointments SET status = $1 WHERE id = $2 RETURNING id', [status, id]);
     const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [updated.rows[0].id]);
     res.json({ appointment: publicAppointment(full.rows[0]) });
   } catch (e) {
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'Bạn đã có lịch hẹn khác trùng đúng khung giờ này.' });
+    }
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
   }

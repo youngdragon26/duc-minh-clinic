@@ -17,7 +17,7 @@ function signToken(user) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, createdAt: u.created_at };
+  return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, specialty: u.specialty, createdAt: u.created_at };
 }
 
 router.post('/register', async (req, res) => {

@@ -1,7 +1,12 @@
 const { pool } = require('../db');
 
-// Khung giờ khám cố định của phòng khám: 07:00 - 20:00, mỗi giờ 1 slot.
-const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(2, '0') + ':00');
+// Khung giờ khám cố định của phòng khám: 07:00 - 20:30, mỗi 30 phút 1 slot
+// (vd 07:00, 07:30, 08:00...) — không chỉ giới hạn ở giờ tròn.
+const FIXED_SLOTS = Array.from({ length: 28 }, (_, i) => {
+  const h = 7 + Math.floor(i / 2);
+  const m = i % 2 === 0 ? '00' : '30';
+  return String(h).padStart(2, '0') + ':' + m;
+});
 
 // Tra cứu khung giờ còn trống cho 1 chuyên khoa vào 1 ngày cụ thể — dùng chung
 // cho cả trang đặt lịch (lưới lịch) và tool đặt lịch của trợ lý AI, để 2 nơi
