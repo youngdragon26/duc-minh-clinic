@@ -42,8 +42,17 @@ const INVOICE_STATUS_LABELS = {
   da_thanh_toan: 'Đã thanh toán',
 };
 
+const GENDERS = ['nam', 'nu', 'khac'];
+const GENDER_LABELS = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
+
+// Hình thức thanh toán hoá đơn — ghi nhận khi nhân viên xác nhận đã thu tiền.
+const PAYMENT_METHODS = ['tien_mat', 'chuyen_khoan'];
+const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
+
 module.exports = {
   SPECIALTIES, APPOINTMENT_STATUSES, APPOINTMENT_STATUS_LABELS,
   INTERACTION_SEVERITIES, INTERACTION_SEVERITY_LABELS,
   INVOICE_STATUSES, INVOICE_STATUS_LABELS,
+  GENDERS, GENDER_LABELS,
+  PAYMENT_METHODS, PAYMENT_METHOD_LABELS,
 };

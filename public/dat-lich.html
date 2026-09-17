@@ -25,16 +25,17 @@
     -webkit-font-smoothing:antialiased;
   }
   header{border-bottom:1px solid var(--line);}
-  header .bar{max-width:640px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  header .bar{max-width:920px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
   .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
   .brand em{color:var(--accent-deep); font-style:normal;}
   .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
   .back:hover{color:var(--ink);}
 
-  .wrap{max-width:640px; margin:0 auto; padding:32px 20px 48px;}
-  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
-  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:24px; line-height:1.6;}
+  .wrap{max-width:920px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 20px;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  .card h2{font-family:"Lora",serif; font-size:1rem; margin:0 0 4px;}
+  .card .hint{color:var(--ink-muted); font-size:.82rem; margin:0 0 14px; line-height:1.5;}
   label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
   input, select, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
   textarea{resize:vertical; min-height:70px;}
@@ -51,6 +52,8 @@
   .msg.ok{color:var(--accent-deep);}
   button.ghost{padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;}
   button.ghost:hover{border-color:var(--accent);}
+  button.icon-btn{padding:6px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-size:.85rem; color:var(--ink); font-family:inherit; line-height:1;}
+  button.icon-btn:hover{border-color:var(--accent);}
   table{width:100%; border-collapse:collapse; margin-top:12px; font-size:.85rem;}
   th, td{text-align:left; padding:9px 6px; border-bottom:1px solid var(--line); vertical-align:top;}
   th{color:var(--ink-muted); font-weight:600; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;}
@@ -64,7 +67,32 @@
   .pill.da_huy{background:#f3d9d6; color:#8f2c22;}
   .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
   [hidden]{display:none !important;}
-  @media (max-width:520px){ .grid2{grid-template-columns:1fr;} }
+
+  /* ---------- Lưới lịch kiểu Google Calendar ---------- */
+  .cal-toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
+  .cal-nav{display:flex; align-items:center; gap:6px;}
+  .cal-label{font-family:"Lora",serif; font-weight:600; font-size:1rem;}
+  table.cal{min-width:700px; table-layout:fixed;}
+  table.cal th{text-align:center; padding:4px 2px 8px;}
+  table.cal th.timehead{width:56px;}
+  table.cal th .dname{display:block; font-size:.68rem;}
+  table.cal th .dnum{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; margin-top:3px; font-size:.92rem; font-weight:600; color:var(--ink);}
+  table.cal th.today .dnum{background:var(--accent-deep); color:#fff;}
+  table.cal td.timecol{color:var(--ink-muted); font-size:.7rem; white-space:nowrap; text-align:right; padding-right:8px; border-bottom:1px solid var(--line);}
+  table.cal td.slot{text-align:center; padding:3px; border:1px solid var(--line); border-top:none; border-left:none; vertical-align:middle;}
+  table.cal td.slot .slot-btn{border:none; background:transparent; color:var(--accent-deep); font-size:1.05rem; cursor:pointer; width:100%; padding:7px 0; border-radius:6px; font-family:inherit;}
+  table.cal td.slot.free .slot-btn:hover{background:var(--surface-2);}
+  table.cal td.slot.selected{background:var(--accent);}
+  table.cal td.slot.selected .slot-btn{color:#fff; font-weight:700;}
+  table.cal td.slot.busy{color:var(--ink-muted); font-size:.68rem;}
+  table.cal td.slot.past{color:var(--line); font-size:.68rem;}
+  table.cal td.slot .pill{width:100%; box-sizing:border-box; white-space:normal; line-height:1.3; cursor:pointer; border:none; text-align:center;}
+  .selected-readout{margin-top:14px; padding:10px 12px; border-radius:8px; background:var(--surface-2); font-size:.85rem;}
+  .selected-readout b{color:var(--accent-deep);}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:12px; font-size:.75rem; color:var(--ink-muted);}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend i{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  @media (max-width:640px){ .grid2{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -81,7 +109,6 @@
 
 <div class="wrap">
   <h1>Đặt lịch khám</h1>
-  <p class="sub">Chọn chuyên khoa, bác sĩ (nếu muốn) và khung giờ phù hợp — mất khoảng 30 giây.</p>
 
   <div class="card" id="needLoginCard" hidden>
     <p style="margin:0 0 12px;">Bạn cần đăng nhập để đặt lịch khám.</p>
@@ -90,23 +117,77 @@
 
   <div id="bookingArea" hidden>
     <div class="card">
+      <h2>Chuyên khoa</h2>
+      <div class="grid2">
+        <div>
+          <label>Chuyên khoa</label>
+          <select id="fSpecialty" required></select>
+        </div>
+        <div>
+          <label>Bác sĩ (không bắt buộc)</label>
+          <select id="fDoctor">
+            <option value="">Không chọn bác sĩ cụ thể</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Chọn ngày &amp; giờ khám</h2>
+      <p class="hint">Bấm vào một ô còn trống trên lịch để chọn khung giờ. Ô có màu là lịch hẹn bạn đã đặt.</p>
+
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button type="button" class="icon-btn" id="prevWeek">‹</button>
+          <button type="button" class="icon-btn" id="todayWeek">Hôm nay</button>
+          <button type="button" class="icon-btn" id="nextWeek">›</button>
+        </div>
+        <div class="cal-label" id="weekLabel"></div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="cal">
+          <thead><tr id="calHeadRow"></tr></thead>
+          <tbody id="calBody"></tbody>
+        </table>
+      </div>
+
+      <div class="legend">
+        <span><i style="background:var(--accent-deep);"></i> Đã chọn</span>
+        <span><i style="background:var(--surface-2); border:1px solid var(--line);"></i> Còn trống</span>
+        <span><i style="background:var(--line);"></i> Hết chỗ / đã qua giờ</span>
+        <span><i style="background:#fdf0d0;"></i> Lịch hẹn của bạn</span>
+      </div>
+
+      <div class="selected-readout" id="selectedReadout">Chưa chọn khung giờ nào.</div>
+    </div>
+
+    <div class="card">
+      <h2>Thông tin người khám</h2>
       <form id="bookForm">
-        <label>Chuyên khoa</label>
-        <select id="fSpecialty" required></select>
-
-        <label>Bác sĩ (không bắt buộc)</label>
-        <select id="fDoctor">
-          <option value="">Không chọn bác sĩ cụ thể</option>
-        </select>
-
         <div class="grid2">
           <div>
-            <label>Ngày khám</label>
-            <input type="date" id="fDate" required>
+            <label>Họ và tên người khám</label>
+            <input type="text" id="fName" placeholder="Nguyễn Văn A" required>
           </div>
           <div>
-            <label>Giờ khám</label>
-            <select id="fTime" required></select>
+            <label>Số điện thoại liên hệ</label>
+            <input type="tel" id="fPhone" placeholder="09xxxxxxxx" required>
+          </div>
+        </div>
+        <div class="grid2">
+          <div>
+            <label>Tuổi</label>
+            <input type="number" id="fAge" min="0" max="120" required>
+          </div>
+          <div>
+            <label>Giới tính</label>
+            <select id="fGender" required>
+              <option value="">— Chọn —</option>
+              <option value="nam">Nam</option>
+              <option value="nu">Nữ</option>
+              <option value="khac">Khác</option>
+            </select>
           </div>
         </div>
 
@@ -119,7 +200,7 @@
     </div>
 
     <div class="card">
-      <b>Lịch hẹn của tôi</b>
+      <b>Tất cả lịch hẹn của tôi</b>
       <div class="table-scroll">
         <table>
           <thead><tr><th>Ngày</th><th>Giờ</th><th>Chuyên khoa</th><th>Bác sĩ</th><th>Trạng thái</th><th></th></tr></thead>
@@ -141,6 +222,8 @@
     dang_kham: 'Đang khám', hoan_thanh: 'Hoàn thành', da_huy: 'Đã huỷ',
   };
   const CANCELLABLE = ['cho_xac_nhan', 'da_xac_nhan'];
+  const DAY_NAMES = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(2, '0') + ':00'); // 07:00 - 20:00
 
   async function api(path, opts = {}) {
     const res = await fetch(API + path, {
@@ -156,33 +239,179 @@
     return data;
   }
 
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function toISODate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+  function startOfWeek(d) { return addDays(d, -d.getDay()); } // tuần bắt đầu Chủ Nhật, giống Google Calendar
+
+  const todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const todayDate = new Date(todayISO + 'T00:00:00');
+  const nowHourVN = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }));
+
+  let weekStart = startOfWeek(todayDate);
+  let mineAppointments = [];
+  let availabilityByDate = {}; // { 'YYYY-MM-DD': { '07:00': true/false, ... } }
+  let selected = { date: null, time: null };
+
   const fSpecialty = document.getElementById('fSpecialty');
   const fDoctor = document.getElementById('fDoctor');
-  const fDate = document.getElementById('fDate');
-  const fTime = document.getElementById('fTime');
-
   fSpecialty.innerHTML = SPECIALTIES.map(s => `<option value="${s}">${s}</option>`).join('');
-
-  const timeSlots = [];
-  for (let h = 7; h <= 20; h++) timeSlots.push(String(h).padStart(2, '0') + ':00');
-  fTime.innerHTML = timeSlots.map(t => `<option value="${t}">${t}</option>`).join('');
-
-  const today = new Date().toISOString().slice(0, 10);
-  fDate.min = today;
-  fDate.value = today;
 
   async function loadDoctors() {
     const { doctors } = await api('/api/appointments/doctors?specialty=' + encodeURIComponent(fSpecialty.value));
     fDoctor.innerHTML = '<option value="">Không chọn bác sĩ cụ thể</option>' +
       doctors.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
   }
-  fSpecialty.addEventListener('change', loadDoctors);
+
+  function resetSelection() {
+    selected = { date: null, time: null };
+    document.getElementById('selectedReadout').textContent = 'Chưa chọn khung giờ nào.';
+  }
+
+  async function loadWeekAvailability() {
+    const specialty = fSpecialty.value;
+    const doctorId = fDoctor.value || null;
+    const dates = Array.from({ length: 7 }, (_, i) => toISODate(addDays(weekStart, i)));
+    availabilityByDate = {};
+    await Promise.all(dates.map(async (date) => {
+      if (date < todayISO) { availabilityByDate[date] = {}; return; }
+      try {
+        const params = new URLSearchParams({ specialty, date });
+        if (doctorId) params.set('doctorId', doctorId);
+        const { slots } = await api('/api/appointments/availability?' + params.toString());
+        availabilityByDate[date] = Object.fromEntries(slots.map(s => [s.time, s.available]));
+      } catch (e) {
+        availabilityByDate[date] = {};
+      }
+    }));
+  }
+
+  function renderCalHead() {
+    const row = document.getElementById('calHeadRow');
+    const dates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    row.innerHTML = '<th class="timehead"></th>' + dates.map(d => {
+      const iso = toISODate(d);
+      const isToday = iso === todayISO;
+      return `<th class="${isToday ? 'today' : ''}"><span class="dname">${DAY_NAMES[d.getDay()]}</span><span class="dnum">${d.getDate()}</span></th>`;
+    }).join('');
+
+    const first = dates[0], last = dates[6];
+    const sameMonth = first.getMonth() === last.getMonth();
+    const label = sameMonth
+      ? `${first.getDate()} – ${last.getDate()} Thg ${first.getMonth() + 1}, ${first.getFullYear()}`
+      : `${first.getDate()} Thg ${first.getMonth() + 1} – ${last.getDate()} Thg ${last.getMonth() + 1}, ${last.getFullYear()}`;
+    document.getElementById('weekLabel').textContent = label;
+  }
+
+  function renderCalBody() {
+    const dates = Array.from({ length: 7 }, (_, i) => toISODate(addDays(weekStart, i)));
+    const body = document.getElementById('calBody');
+
+    body.innerHTML = FIXED_SLOTS.map(time => {
+      const cells = dates.map(date => {
+        const mine = mineAppointments.find(a => a.date.slice(0, 10) === date && a.time === time && a.status !== 'da_huy');
+        if (mine) {
+          return `<td class="slot" data-date="${date}" data-time="${time}">
+            <span class="pill ${mine.status}" data-appt-id="${mine.id}">${mine.specialty}${mine.doctorName ? ' · ' + mine.doctorName : ''}</span>
+          </td>`;
+        }
+
+        const isPastSlot = date < todayISO || (date === todayISO && Number(time.slice(0, 2)) <= nowHourVN);
+        if (isPastSlot) {
+          return `<td class="slot past" data-date="${date}" data-time="${time}">—</td>`;
+        }
+
+        const available = (availabilityByDate[date] || {})[time];
+        if (available === false) {
+          return `<td class="slot busy" data-date="${date}" data-time="${time}">Hết chỗ</td>`;
+        }
+
+        const isSelected = selected.date === date && selected.time === time;
+        return `<td class="slot free${isSelected ? ' selected' : ''}" data-date="${date}" data-time="${time}">
+          <button type="button" class="slot-btn">${isSelected ? '✓' : '+'}</button>
+        </td>`;
+      }).join('');
+      return `<tr><td class="timecol">${time}</td>${cells}</tr>`;
+    }).join('');
+  }
+
+  function renderCal() {
+    renderCalHead();
+    renderCalBody();
+  }
+
+  document.getElementById('calBody').addEventListener('click', async (e) => {
+    const pill = e.target.closest('.pill[data-appt-id]');
+    if (pill) {
+      const id = pill.dataset.apptId;
+      const appt = mineAppointments.find(a => String(a.id) === id);
+      if (appt && CANCELLABLE.includes(appt.status)) {
+        if (confirm(`Huỷ lịch hẹn ${appt.specialty} lúc ${appt.time} ngày ${appt.date.slice(0, 10)}?`)) {
+          await api(`/api/appointments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'da_huy' }) });
+          await Promise.all([loadMine(), loadWeekAvailability()]);
+          renderCal();
+        }
+      } else if (appt) {
+        alert(`Lịch hẹn: ${appt.specialty}${appt.doctorName ? ' · BS. ' + appt.doctorName : ''} — trạng thái: ${STATUS_LABELS[appt.status] || appt.status}`);
+      }
+      return;
+    }
+
+    const cell = e.target.closest('td.slot.free');
+    if (!cell) return;
+    selected = { date: cell.dataset.date, time: cell.dataset.time };
+    const d = new Date(selected.date + 'T00:00:00');
+    document.getElementById('selectedReadout').innerHTML =
+      `Đã chọn: <b>${DAY_NAMES[d.getDay()]}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} lúc ${selected.time}</b>`;
+    renderCalBody();
+  });
+
+  document.getElementById('prevWeek').addEventListener('click', async () => {
+    weekStart = addDays(weekStart, -7);
+    resetSelection();
+    renderCal();
+    await loadWeekAvailability();
+    renderCal();
+  });
+  document.getElementById('nextWeek').addEventListener('click', async () => {
+    weekStart = addDays(weekStart, 7);
+    resetSelection();
+    renderCal();
+    await loadWeekAvailability();
+    renderCal();
+  });
+  document.getElementById('todayWeek').addEventListener('click', async () => {
+    weekStart = startOfWeek(todayDate);
+    resetSelection();
+    renderCal();
+    await loadWeekAvailability();
+    renderCal();
+  });
+
+  fSpecialty.addEventListener('change', async () => {
+    resetSelection();
+    await loadDoctors();
+    await loadWeekAvailability();
+    renderCal();
+  });
+  fDoctor.addEventListener('change', async () => {
+    resetSelection();
+    await loadWeekAvailability();
+    renderCal();
+  });
 
   document.getElementById('bookForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('bookMsg');
     const submitBtn = document.getElementById('bookSubmit');
     msg.textContent = ''; msg.className = 'msg';
+
+    if (!selected.date || !selected.time) {
+      msg.textContent = 'Vui lòng chọn 1 khung giờ trên lịch trước khi đặt.';
+      msg.className = 'msg err';
+      return;
+    }
+
     submitBtn.disabled = true;
     try {
       await api('/api/appointments', {
@@ -190,15 +419,21 @@
         body: JSON.stringify({
           specialty: fSpecialty.value,
           doctorId: fDoctor.value || null,
-          date: fDate.value,
-          time: fTime.value,
+          date: selected.date,
+          time: selected.time,
           note: document.getElementById('fNote').value,
+          contactName: document.getElementById('fName').value,
+          contactPhone: document.getElementById('fPhone').value,
+          age: Number(document.getElementById('fAge').value),
+          gender: document.getElementById('fGender').value,
         }),
       });
       msg.textContent = 'Đặt lịch thành công! Nhân viên sẽ xác nhận sớm.';
       msg.className = 'msg ok';
       document.getElementById('fNote').value = '';
-      loadMine();
+      resetSelection();
+      await Promise.all([loadMine(), loadWeekAvailability()]);
+      renderCal();
     } catch (err) {
       msg.textContent = err.message; msg.className = 'msg err';
     } finally {
@@ -208,12 +443,13 @@
 
   async function loadMine() {
     const { appointments } = await api('/api/appointments/mine');
+    mineAppointments = appointments;
     const body = document.getElementById('mineBody');
     const empty = document.getElementById('mineEmpty');
     empty.hidden = appointments.length > 0;
     body.innerHTML = appointments.map(a => `
       <tr>
-        <td>${a.date}</td>
+        <td>${a.date.slice(0, 10)}</td>
         <td>${a.time}</td>
         <td>${a.specialty}</td>
         <td>${a.doctorName || 'Chưa chỉ định'}</td>
@@ -229,7 +465,8 @@
           method: 'PATCH',
           body: JSON.stringify({ status: 'da_huy' }),
         });
-        loadMine();
+        await Promise.all([loadMine(), loadWeekAvailability()]);
+        renderCal();
       });
     });
   }
@@ -239,16 +476,23 @@
       document.getElementById('needLoginCard').hidden = false;
       return;
     }
+    let me;
     try {
-      await api('/api/auth/me');
+      me = (await api('/api/auth/me')).user;
     } catch (e) {
       localStorage.removeItem('dm_token');
       document.getElementById('needLoginCard').hidden = false;
       return;
     }
     document.getElementById('bookingArea').hidden = false;
+    document.getElementById('fName').value = me.name || '';
+    document.getElementById('fPhone').value = me.phone || '';
+
+    renderCal();
     await loadDoctors();
     await loadMine();
+    await loadWeekAvailability();
+    renderCal();
   })();
 </script>
 </body>

@@ -46,6 +46,9 @@
   .pill.chua_thanh_toan{background:#fdf0d0; color:#8a5a00;}
   .pill.da_thanh_toan{background:#d7f0ea; color:var(--accent-deep);}
   select{padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:.86rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  select.pay-method{padding:5px 7px; font-size:.78rem; margin-right:6px;}
+  .pay-actions{display:flex; align-items:center; flex-wrap:wrap; gap:0;}
+  .method-tag{color:var(--ink-muted); font-size:.78rem;}
   .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
   .money{font-variant-numeric:tabular-nums; font-weight:600;}
   [hidden]{display:none !important;}
@@ -90,7 +93,7 @@
       </select>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Ngày khám</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th>Tổng tiền</th><th>Trạng thái</th><th></th></tr></thead>
+          <thead><tr><th>Ngày khám</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th>Tổng tiền</th><th>Trạng thái</th><th>Hình thức TT</th><th></th></tr></thead>
           <tbody id="invoiceBody"></tbody>
         </table>
       </div>
@@ -103,6 +106,7 @@
   const API = '';
   const token = localStorage.getItem('dm_token');
   const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
+  const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
 
   function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
 
@@ -155,13 +159,26 @@
         <td>${inv.specialty}</td>
         <td class="money">${money(inv.totalAmount)}</td>
         <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span></td>
-        <td>${inv.status === 'chua_thanh_toan' ? `<button class="ghost mark-paid" data-id="${inv.id}">Xác nhận đã thu tiền</button>` : ''}</td>
+        <td>${inv.paymentMethod ? `<span class="method-tag">${PAYMENT_METHOD_LABELS[inv.paymentMethod]}</span>` : '—'}</td>
+        <td>${inv.status === 'chua_thanh_toan' ? `
+          <div class="pay-actions">
+            <select class="pay-method" data-id="${inv.id}">
+              <option value="tien_mat">Tiền mặt</option>
+              <option value="chuyen_khoan">Chuyển khoản</option>
+            </select>
+            <button class="ghost mark-paid" data-id="${inv.id}">Xác nhận đã thu tiền</button>
+          </div>
+        ` : ''}</td>
       </tr>
     `).join('');
     body.querySelectorAll('.mark-paid').forEach(btn => {
       btn.addEventListener('click', async () => {
+        const select = body.querySelector(`.pay-method[data-id="${btn.dataset.id}"]`);
         try {
-          await api(`/api/billing/invoices/${btn.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'da_thanh_toan' }) });
+          await api(`/api/billing/invoices/${btn.dataset.id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'da_thanh_toan', paymentMethod: select.value }),
+          });
           loadInvoices();
         } catch (e) { alert(e.message); }
       });

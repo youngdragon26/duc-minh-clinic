@@ -1,9 +1,11 @@
 const express = require('express');
 const { pool } = require('../db');
-const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
-const { SPECIALTIES } = require('../constants');
+const { authenticate, optionalAuthenticate, requireAdmin, requireRole } = require('../middleware/auth');
+const { SPECIALTIES, GENDERS } = require('../constants');
 const { chunkText } = require('../lib/chunk');
 const { embedText, toVectorLiteral } = require('../lib/embeddings');
+const { getAvailableSlots } = require('../lib/availability');
+const { createAppointment, BookingError } = require('../lib/appointmentService');
 
 const router = express.Router();
 
@@ -98,8 +100,6 @@ async function buildClinicContext() {
   ].join('\n');
 }
 
-const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(2, '0') + ':00'); // 07:00 - 20:00
-
 // Tool Gemini có thể tự gọi để tra cứu khung giờ còn trống THẬT trong CSDL —
 // không để mô hình tự đoán/bịa ra lịch trống.
 const checkSlotsDeclaration = {
@@ -125,33 +125,76 @@ async function checkAvailableSlots({ specialty, date }) {
     return { error: 'Ngày không hợp lệ, cần đúng định dạng YYYY-MM-DD.' };
   }
 
-  // specialty = NULL nghĩa là "bác sĩ tổng quát" phụ trách được mọi chuyên khoa.
-  const doctorsRes = await pool.query(
-    "SELECT id, name FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL) ORDER BY name",
-    [specialty]
-  );
-  if (doctorsRes.rows.length === 0) {
+  const { doctors } = await getAvailableSlots({ specialty, date });
+  if (doctors.length === 0) {
     return { specialty, date, available: false, message: `Chuyên khoa ${specialty} hiện chưa có bác sĩ phụ trách.` };
   }
-
-  const doctorIds = doctorsRes.rows.map((d) => d.id);
-  const bookedRes = await pool.query(
-    `SELECT doctor_id, appointment_time FROM appointments
-     WHERE appointment_date = $1 AND status <> 'da_huy' AND doctor_id = ANY($2::int[])`,
-    [date, doctorIds]
-  );
-  const bookedByDoctor = {};
-  for (const row of bookedRes.rows) {
-    if (!bookedByDoctor[row.doctor_id]) bookedByDoctor[row.doctor_id] = new Set();
-    bookedByDoctor[row.doctor_id].add(row.appointment_time);
-  }
-
-  const doctors = doctorsRes.rows.map((d) => {
-    const booked = bookedByDoctor[d.id] || new Set();
-    return { doctorName: d.name, freeSlots: FIXED_SLOTS.filter((s) => !booked.has(s)) };
-  });
-
   return { specialty, date, available: doctors.some((d) => d.freeSlots.length > 0), doctors };
+}
+
+// Tool Gemini gọi để ĐẶT LỊCH THẬT cho khách — chỉ nên gọi sau khi đã thu thập
+// đủ thông tin VÀ khách đã xác nhận rõ ràng bằng lời (xem quy tắc trong systemPrompt).
+const bookAppointmentDeclaration = {
+  name: 'book_appointment',
+  description:
+    'Đặt lịch khám CHÍNH THỨC vào hệ thống cho khách đang chat (khách phải đang đăng nhập). ' +
+    'CHỈ gọi công cụ này sau khi đã tóm tắt đầy đủ thông tin đặt lịch cho khách và khách đã xác nhận rõ ràng ' +
+    '(vd: "đúng rồi", "xác nhận", "ok đặt giúp mình") — TUYỆT ĐỐI KHÔNG tự gọi công cụ này khi khách chưa xác nhận.',
+  parameters: {
+    type: 'object',
+    properties: {
+      specialty: { type: 'string', description: 'Tên chuyên khoa, phải khớp đúng 1 trong các chuyên khoa đã liệt kê ở trên.' },
+      doctorName: { type: 'string', description: 'Tên bác sĩ muốn khám, nếu khách có chỉ định cụ thể (không bắt buộc).' },
+      date: { type: 'string', description: 'Ngày khám, định dạng YYYY-MM-DD.' },
+      time: { type: 'string', description: 'Giờ khám, định dạng HH:MM, trong khung 07:00-20:00 (mỗi giờ 1 slot).' },
+      fullName: { type: 'string', description: 'Họ tên người đi khám (có thể khác tên tài khoản, vd đặt hộ người thân).' },
+      phone: { type: 'string', description: 'Số điện thoại liên hệ, 9-11 chữ số.' },
+      age: { type: 'integer', description: 'Tuổi của người đi khám.' },
+      gender: { type: 'string', enum: GENDERS, description: 'Giới tính của người đi khám: nam, nu, hoặc khac.' },
+      note: { type: 'string', description: 'Lý do khám / triệu chứng, nếu khách có kể (không bắt buộc).' },
+    },
+    required: ['specialty', 'date', 'time', 'fullName', 'phone', 'age', 'gender'],
+  },
+};
+
+async function bookAppointmentTool(args, user) {
+  if (!user) {
+    return { error: 'Khách chưa đăng nhập nên chưa đặt lịch được. Hãy báo khách đăng nhập/đăng ký tại /tai-khoan.html rồi quay lại chat để đặt lịch tiếp.' };
+  }
+  try {
+    let doctorId = null;
+    if (args.doctorName) {
+      const doc = await pool.query(
+        "SELECT id, name FROM users WHERE role = 'doctor' AND name ILIKE $1 AND (specialty = $2 OR specialty IS NULL)",
+        ['%' + args.doctorName + '%', args.specialty]
+      );
+      if (doc.rows.length === 0) {
+        return { error: `Không tìm thấy bác sĩ tên "${args.doctorName}" thuộc chuyên khoa ${args.specialty}. Hỏi lại khách tên bác sĩ khác hoặc bỏ qua để không chỉ định bác sĩ cụ thể.` };
+      }
+      doctorId = doc.rows[0].id;
+    }
+    const appointmentId = await createAppointment({
+      patientId: user.id,
+      specialty: args.specialty,
+      doctorId,
+      date: args.date,
+      time: args.time,
+      note: args.note,
+      contactName: args.fullName,
+      contactPhone: args.phone,
+      age: args.age,
+      gender: args.gender,
+    });
+    return {
+      success: true,
+      appointmentId,
+      message: `Đặt lịch thành công (mã #${appointmentId}), trạng thái: chờ nhân viên xác nhận.`,
+    };
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    console.error(e);
+    return { error: 'Có lỗi hệ thống khi đặt lịch, hãy báo khách thử lại sau hoặc gọi hotline 0975 755 333.' };
+  }
 }
 
 // ---------- RAG: Retrieval phase ----------
@@ -260,8 +303,10 @@ async function retrieveKnowledgeExpanded(message, k = 4) {
   return [...bestByChunk.values()].sort((a, b) => b.similarity - a.similarity).slice(0, k);
 }
 
-// Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập.
-router.post('/chat', async (req, res) => {
+// Chatbot công khai cho khách/bệnh nhân — không bắt buộc đăng nhập, nhưng nếu
+// khách ĐANG đăng nhập (gửi kèm Bearer token) thì nhận diện được req.user, để
+// bật tính năng đặt lịch trực tiếp qua chat (xem book_appointment bên dưới).
+router.post('/chat', optionalAuthenticate, async (req, res) => {
   const client = getClient();
   if (!client) {
     return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
@@ -296,9 +341,14 @@ router.post('/chat', async (req, res) => {
       ? `LƯU Ý QUAN TRỌNG: tài liệu khớp nhất với câu hỏi hiện tại là "${topHit.title}". Nếu câu hỏi liên quan tới triệu chứng hoặc nên khám chuyên khoa nào, PHẢI trả lời theo đúng tài liệu này — TUYỆT ĐỐI KHÔNG tự nêu ra 1 chuyên khoa khác không xuất hiện trong "Tài liệu tham khảo" ở trên.`
       : '';
 
+    const loginNote = req.user
+      ? 'Khách hiện ĐANG ĐĂNG NHẬP nên có thể đặt lịch trực tiếp qua chat bằng công cụ book_appointment.'
+      : 'Khách CHƯA đăng nhập nên KHÔNG thể đặt lịch qua chat — nếu khách muốn đặt lịch, báo khách đăng nhập/đăng ký tại /tai-khoan.html trước rồi quay lại chat, hoặc tự đặt tại /dat-lich.html.';
+
     const systemPrompt = [
       'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
       `Hôm nay là ngày ${todayVN} (giờ Việt Nam).`,
+      loginNote,
       '',
       context,
       '',
@@ -306,7 +356,16 @@ router.post('/chat', async (req, res) => {
       '',
       groundingNote,
       '',
-      'Bạn có công cụ check_available_slots để tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
+      'Bạn có 2 công cụ:',
+      '- check_available_slots: tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
+      '- book_appointment: đặt lịch khám THẬT vào hệ thống, chỉ dùng được khi khách đang đăng nhập.',
+      '',
+      'Quy trình đặt lịch qua chat (làm đúng thứ tự, không bỏ bước):',
+      '1. Khi khách muốn AI đặt lịch giúp (không chỉ hỏi thông tin), thu thập đủ: chuyên khoa, ngày, giờ, tên bác sĩ muốn khám (nếu có), họ tên người đi khám, số điện thoại liên hệ, tuổi, giới tính, lý do khám (nếu khách kể). Hỏi từng phần còn thiếu, đừng hỏi dồn hết 1 lúc nếu khách chưa cung cấp đủ.',
+      '2. Dùng check_available_slots để xác nhận khung giờ khách chọn còn trống trước khi tóm tắt.',
+      '3. TÓM TẮT LẠI đầy đủ thông tin (chuyên khoa, bác sĩ, ngày giờ, họ tên, sđt, tuổi, giới tính, lý do khám) và hỏi khách xác nhận thông tin đã chính xác chưa.',
+      '4. CHỈ SAU KHI khách xác nhận rõ ràng (vd "đúng rồi", "xác nhận", "ok đặt giúp mình") mới được gọi book_appointment. TUYỆT ĐỐI KHÔNG gọi book_appointment khi chưa có xác nhận, và KHÔNG tự bịa ra việc "đã đặt lịch thành công" nếu chưa thực sự gọi công cụ này.',
+      '5. Sau khi book_appointment trả kết quả, báo lại đúng kết quả đó cho khách (kể cả khi lỗi, vd giờ đã có người đặt — thì xin lỗi và mời khách chọn giờ khác).',
       '',
       'Quy tắc:',
       '- Ưu tiên dùng thông tin trong "Tài liệu tham khảo" ở trên nếu liên quan tới câu hỏi; nếu tài liệu không liên quan thì bỏ qua, không nhắc tới nó.',
@@ -316,7 +375,7 @@ router.post('/chat', async (req, res) => {
       '- Với trẻ em: luôn hỏi rõ tuổi/cân nặng trước khi nêu bất kỳ thông tin liều dùng nào từ tài liệu tham khảo, và luôn khuyên nên để bác sĩ khám trực tiếp thay vì tự dùng thuốc tại nhà.',
       '- Nếu triệu chứng nghe nghiêm trọng/cấp cứu (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...), khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.',
       '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0975 755 333.',
-      '- Sau khi báo lịch trống, nhắc khách đặt lịch tại /dat-lich.html (cần đăng nhập/đăng ký ở /tai-khoan.html trước).',
+      '- Nếu khách chỉ hỏi lịch trống (chưa nhờ đặt giúp), báo lịch trống rồi hỏi khách có muốn AI đặt giúp luôn không, hoặc nhắc khách có thể tự đặt tại /dat-lich.html.',
     ].join('\n');
 
     // Gemini dùng vai "model" thay vì "assistant", và lịch sử phải bắt đầu bằng "user".
@@ -332,7 +391,7 @@ router.post('/chat', async (req, res) => {
       model: CHAT_MODEL,
       config: {
         systemInstruction: systemPrompt,
-        tools: [{ functionDeclarations: [checkSlotsDeclaration] }],
+        tools: [{ functionDeclarations: [checkSlotsDeclaration, bookAppointmentDeclaration] }],
         // Nhiệt độ thấp để AI bám sát tài liệu tham khảo thay vì tự suy luận
         // lệch (đã có trường hợp thật: tài liệu ghi rõ "Da liễu" nhưng AI vẫn
         // trả lời "Tai – Mũi – Họng" — lỗi ở bước sinh câu trả lời, không phải
@@ -351,6 +410,8 @@ router.post('/chat', async (req, res) => {
         let output;
         if (call.name === 'check_available_slots') {
           output = await checkAvailableSlots(call.args || {});
+        } else if (call.name === 'book_appointment') {
+          output = await bookAppointmentTool(call.args || {}, req.user);
         } else {
           output = { error: 'Công cụ không được hỗ trợ.' };
         }

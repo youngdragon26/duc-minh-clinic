@@ -1,7 +1,7 @@
 const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
-const { SPECIALTIES, INVOICE_STATUSES } = require('../constants');
+const { SPECIALTIES, INVOICE_STATUSES, PAYMENT_METHODS } = require('../constants');
 
 const router = express.Router();
 router.use(authenticate);
@@ -60,6 +60,7 @@ function publicInvoice(inv) {
     date: inv.appointment_date,
     totalAmount: inv.total_amount,
     status: inv.status,
+    paymentMethod: inv.payment_method,
     paidAt: inv.paid_at,
     createdAt: inv.created_at,
   };
@@ -201,12 +202,18 @@ router.get('/invoices/by-appointment/:appointmentId', async (req, res) => {
 
 router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, res) => {
   try {
-    const { status } = req.body || {};
+    const { status, paymentMethod } = req.body || {};
     if (!INVOICE_STATUSES.includes(status)) return res.status(400).json({ error: 'Trạng thái không hợp lệ.' });
+    // Đánh dấu "đã thanh toán" phải kèm hình thức thanh toán (tiền mặt/chuyển
+    // khoản) để có bill rõ ràng; ngược lại (huỷ đánh dấu đã thu tiền) thì xoá đi.
+    if (status === 'da_thanh_toan' && !PAYMENT_METHODS.includes(paymentMethod)) {
+      return res.status(400).json({ error: 'Vui lòng chọn hình thức thanh toán (tiền mặt hoặc chuyển khoản).' });
+    }
     const result = await pool.query(
-      `UPDATE invoices SET status = $1, paid_at = CASE WHEN $1 = 'da_thanh_toan' THEN now() ELSE NULL END
+      `UPDATE invoices SET status = $1, paid_at = CASE WHEN $1 = 'da_thanh_toan' THEN now() ELSE NULL END,
+              payment_method = CASE WHEN $1 = 'da_thanh_toan' THEN $3 ELSE NULL END
        WHERE id = $2 RETURNING id`,
-      [status, Number(req.params.id)]
+      [status, Number(req.params.id), status === 'da_thanh_toan' ? paymentMethod : null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
     const full = await pool.query(INVOICE_SELECT + ' WHERE inv.id = $1', [result.rows[0].id]);

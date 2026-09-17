@@ -52,6 +52,18 @@ async function init() {
     );
   `);
 
+  // Thông tin người khám khai báo riêng cho từng lượt đặt lịch (có thể khác
+  // thông tin tài khoản, vd đặt hộ người thân) — thu thập ngay lúc đặt lịch.
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS contact_name TEXT;`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS contact_phone TEXT;`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS age INTEGER;`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS gender TEXT;`);
+  await pool.query(`
+    ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_gender_check;
+    ALTER TABLE appointments ADD CONSTRAINT appointments_gender_check
+      CHECK (gender IS NULL OR gender IN ('nam','nu','khac'));
+  `);
+
   // Chặn 2 lịch hẹn trùng giờ của cùng 1 bác sĩ ở tầng CSDL (không chỉ kiểm tra
   // ở code) để tránh race condition khi 2 người đặt cùng lúc — lịch đã huỷ thì
   // không tính vào, nên giờ đó lại đặt được cho người khác.
@@ -168,6 +180,14 @@ async function init() {
       paid_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+
+  // Hình thức thanh toán — chỉ có giá trị khi hoá đơn đã được xác nhận thu tiền.
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method TEXT;`);
+  await pool.query(`
+    ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_payment_method_check;
+    ALTER TABLE invoices ADD CONSTRAINT invoices_payment_method_check
+      CHECK (payment_method IS NULL OR payment_method IN ('tien_mat','chuyen_khoan'));
   `);
 
   await pool.query(`

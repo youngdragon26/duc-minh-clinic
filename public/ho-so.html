@@ -76,6 +76,7 @@
   const token = localStorage.getItem('dm_token');
 
   const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
+  const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
   function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
 
   async function api(path) {
@@ -90,7 +91,8 @@
   async function invoiceHtml(appointmentId) {
     try {
       const { invoice } = await api('/api/billing/invoices/by-appointment/' + appointmentId);
-      return `<div class="field"><b>Hoá đơn</b><span class="money">${money(invoice.totalAmount)}</span> · <span class="pill ${invoice.status}">${STATUS_LABELS[invoice.status]}</span></div>`;
+      const methodPart = invoice.paymentMethod ? ` · ${PAYMENT_METHOD_LABELS[invoice.paymentMethod]}` : '';
+      return `<div class="field"><b>Hoá đơn</b><span class="money">${money(invoice.totalAmount)}</span> · <span class="pill ${invoice.status}">${STATUS_LABELS[invoice.status]}</span>${methodPart}</div>`;
     } catch (e) {
       return '';
     }

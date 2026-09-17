@@ -2,6 +2,8 @@ const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { SPECIALTIES, APPOINTMENT_STATUSES } = require('../constants');
+const { createAppointment, BookingError } = require('../lib/appointmentService');
+const { getAvailableSlots } = require('../lib/availability');
 
 const router = express.Router();
 router.use(authenticate);
@@ -29,6 +31,10 @@ function publicAppointment(a) {
     time: a.appointment_time,
     status: a.status,
     note: a.note,
+    contactName: a.contact_name,
+    contactPhone: a.contact_phone,
+    age: a.age,
+    gender: a.gender,
     hasInvoice: a.has_invoice,
     createdAt: a.created_at,
   };
@@ -57,50 +63,35 @@ router.get('/doctors', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { specialty, doctorId, date, time, note } = req.body || {};
-
-    if (!specialty || !date || !time) {
-      return res.status(400).json({ error: 'Thiếu chuyên khoa, ngày hoặc giờ khám.' });
-    }
-    if (!SPECIALTIES.includes(specialty)) {
-      return res.status(400).json({ error: 'Chuyên khoa không hợp lệ.' });
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Ngày khám không hợp lệ.' });
-    }
-    const dateObj = new Date(date + 'T00:00:00');
-    if (Number.isNaN(dateObj.getTime())) {
-      return res.status(400).json({ error: 'Ngày khám không hợp lệ.' });
-    }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (dateObj < today) {
-      return res.status(400).json({ error: 'Không thể đặt lịch cho ngày đã qua.' });
-    }
-
-    let doctorIdNum = null;
-    if (doctorId) {
-      doctorIdNum = Number(doctorId);
-      const doc = await pool.query("SELECT id, specialty FROM users WHERE id = $1 AND role = 'doctor'", [doctorIdNum]);
-      if (doc.rows.length === 0) {
-        return res.status(400).json({ error: 'Không tìm thấy bác sĩ này.' });
-      }
-      if (doc.rows[0].specialty && doc.rows[0].specialty !== specialty) {
-        return res.status(400).json({ error: 'Bác sĩ này không thuộc chuyên khoa đã chọn.' });
-      }
-    }
-
-    const inserted = await pool.query(
-      `INSERT INTO appointments (patient_id, doctor_id, specialty, appointment_date, appointment_time, note)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [req.user.id, doctorIdNum, specialty, date, time, note || null]
-    );
-    const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [inserted.rows[0].id]);
+    const { specialty, doctorId, date, time, note, contactName, contactPhone, age, gender } = req.body || {};
+    const id = await createAppointment({
+      patientId: req.user.id, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender,
+    });
+    const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [id]);
     res.status(201).json({ appointment: publicAppointment(full.rows[0]) });
   } catch (e) {
-    if (e.code === '23505') {
-      return res.status(409).json({ error: 'Khung giờ này của bác sĩ đã có người đặt, vui lòng chọn giờ khác.' });
+    if (e instanceof BookingError) {
+      return res.status(e.status).json({ error: e.message });
     }
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Khung giờ còn trống cho 1 chuyên khoa (và bác sĩ cụ thể nếu có) vào 1 ngày —
+// nguồn dữ liệu cho lưới lịch tuần ở trang đặt lịch.
+router.get('/availability', async (req, res) => {
+  try {
+    const { specialty, date, doctorId } = req.query;
+    if (!specialty || !SPECIALTIES.includes(specialty)) {
+      return res.status(400).json({ error: 'Chuyên khoa không hợp lệ.' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+      return res.status(400).json({ error: 'Ngày không hợp lệ.' });
+    }
+    const { slots } = await getAvailableSlots({ specialty, date, doctorId: doctorId ? Number(doctorId) : null });
+    res.json({ specialty, date, slots });
+  } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
   }

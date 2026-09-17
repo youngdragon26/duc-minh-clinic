@@ -480,9 +480,13 @@
     const thinkingEl = addMsg('Đang trả lời...', 'bot');
     thinkingEl.style.fontStyle = 'italic';
     try {
+      const chatToken = localStorage.getItem('dm_token');
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(chatToken ? { Authorization: 'Bearer ' + chatToken } : {}),
+        },
         body: JSON.stringify({ message: q, history: chatHistory }),
       });
       const data = await res.json();
