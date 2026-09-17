@@ -54,7 +54,7 @@ function aiErrorResponse(e) {
   if (e && e.status === 429 && (msg.includes('PerDay') || msg.includes('RESOURCE_EXHAUSTED'))) {
     return {
       status: 503,
-      error: 'Trợ lý AI đã đạt giới hạn miễn phí hôm nay, vui lòng thử lại vào ngày mai hoặc gọi hotline 0975 755 333 để được hỗ trợ.',
+      error: 'Trợ lý AI đã đạt giới hạn miễn phí hôm nay, vui lòng thử lại vào ngày mai hoặc gọi hotline 0974 755 333 để được hỗ trợ.',
     };
   }
   if (e && (e.status === 503 || e.status === 429)) {
@@ -91,7 +91,7 @@ async function buildClinicContext() {
     'Thông tin phòng khám (chỉ dùng đúng dữ kiện dưới đây, không bịa thêm):',
     '- Tên: Phòng khám Đa khoa Đức Minh.',
     '- Địa chỉ: Phường Túc Duyên, TP. Thái Nguyên.',
-    '- Hotline: 0975 755 333.',
+    '- Hotline: 0974 755 333.',
     '- Giờ làm việc: 7:00–21:00, Thứ 2 – Thứ 7 (không khám Chủ nhật).',
     '- Cách đặt lịch: đăng nhập/đăng ký tại /tai-khoan.html rồi đặt lịch tại /dat-lich.html.',
     '',
@@ -193,7 +193,7 @@ async function bookAppointmentTool(args, user) {
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     console.error(e);
-    return { error: 'Có lỗi hệ thống khi đặt lịch, hãy báo khách thử lại sau hoặc gọi hotline 0975 755 333.' };
+    return { error: 'Có lỗi hệ thống khi đặt lịch, hãy báo khách thử lại sau hoặc gọi hotline 0974 755 333.' };
   }
 }
 
@@ -374,7 +374,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '- Chỉ được nêu tên thuốc/liều dùng/cách xử lý khi thông tin đó có sẵn trong "Tài liệu tham khảo" ở trên — TUYỆT ĐỐI KHÔNG tự bịa thêm tên thuốc hay liều dùng ngoài tài liệu. Khi nêu, luôn trích dẫn (Nguồn: ...) và kèm câu nhắc đây chỉ là thông tin tham khảo, cần đến khám bác sĩ nếu triệu chứng không đỡ hoặc nặng hơn.',
       '- Với trẻ em: luôn hỏi rõ tuổi/cân nặng trước khi nêu bất kỳ thông tin liều dùng nào từ tài liệu tham khảo, và luôn khuyên nên để bác sĩ khám trực tiếp thay vì tự dùng thuốc tại nhà.',
       '- Nếu triệu chứng nghe nghiêm trọng/cấp cứu (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...), khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.',
-      '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0975 755 333.',
+      '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0974 755 333.',
       '- Nếu khách chỉ hỏi lịch trống (chưa nhờ đặt giúp), báo lịch trống rồi hỏi khách có muốn AI đặt giúp luôn không, hoặc nhắc khách có thể tự đặt tại /dat-lich.html.',
     ].join('\n');
 
@@ -423,7 +423,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
 
     const text = (result.text || '').trim();
-    res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0975 755 333 để được hỗ trợ nhé.' });
+    res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0974 755 333 để được hỗ trợ nhé.' });
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);
