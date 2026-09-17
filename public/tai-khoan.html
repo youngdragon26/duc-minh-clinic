@@ -39,8 +39,9 @@
   .tab{padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink-muted); cursor:pointer; font-size:.88rem; font-weight:600;}
   .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
   label{display:block; font-size:.8rem; color:var(--ink-muted); margin:12px 0 4px;}
-  input, select{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
-  input:focus, select:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  input, select, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  textarea{resize:vertical;}
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--accent); outline-offset:1px;}
   .hint{font-size:.76rem; color:var(--ink-muted); margin-top:4px;}
   hr.sep{border:none; border-top:1px solid var(--line); margin:22px 0;}
   button.primary{
@@ -142,6 +143,8 @@
       <div id="newSpecialtyWrap">
         <label>Chuyên khoa</label>
         <select id="newSpecialty"></select>
+        <label>Lý lịch / giới thiệu (bệnh nhân xem được khi đặt lịch)</label>
+        <textarea id="newBio" rows="3" placeholder="Ví dụ: Tốt nghiệp ĐH Y Hà Nội, 10 năm kinh nghiệm..."></textarea>
       </div>
       <button class="primary" type="submit">Tạo tài khoản</button>
       <div class="msg" id="createUserMsg"></div>
@@ -266,6 +269,7 @@
         <td>${new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
         <td>
           <div class="row-actions">
+          ${u.role === 'doctor' ? `<button class="ghost edit-bio" data-id="${u.id}" data-bio="${(u.bio || '').replace(/"/g, '&quot;')}">Sửa lý lịch</button>` : ''}
           ${u.id === me.id ? '' : `
             <select class="role-select" data-id="${u.id}">
               ${Object.keys(ROLE_LABELS).map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('')}
@@ -296,6 +300,18 @@
         if (!confirm('Xoá tài khoản này?')) return;
         await api(`/api/admin/users/${btn.dataset.id}`, { method: 'DELETE' });
         loadUsers();
+      });
+    });
+    body.querySelectorAll('.edit-bio').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const next = prompt('Lý lịch / giới thiệu bác sĩ (bệnh nhân sẽ xem được):', btn.dataset.bio || '');
+        if (next === null) return;
+        try {
+          await api(`/api/admin/users/${btn.dataset.id}/bio`, { method: 'PATCH', body: JSON.stringify({ bio: next }) });
+          loadUsers();
+        } catch (e) {
+          alert(e.message);
+        }
       });
     });
   }
@@ -357,6 +373,7 @@
           password: document.getElementById('newPassword').value,
           role: document.getElementById('newRole').value,
           specialty: document.getElementById('newSpecialty').value,
+          bio: document.getElementById('newBio').value,
         }),
       });
       e.target.reset();

@@ -92,6 +92,20 @@
   .legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:12px; font-size:.75rem; color:var(--ink-muted);}
   .legend span{display:inline-flex; align-items:center; gap:5px;}
   .legend i{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  button.icon-btn:disabled{opacity:.4; cursor:default;}
+  .far-note{margin-top:10px; padding:10px 12px; border-radius:8px; background:#fdf0d0; color:#8a5a00; font-size:.82rem; line-height:1.5;}
+  .link-btn{background:none; border:none; padding:0; color:var(--accent-deep); font-size:.8rem; cursor:pointer; text-decoration:underline; font-family:inherit;}
+  .doctor-row{display:flex; align-items:center; gap:10px; margin-top:4px;}
+  .edit-banner{margin-bottom:14px; padding:10px 12px; border-radius:8px; background:var(--surface-2); font-size:.85rem; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+
+  /* ---------- Modal chi tiết / lý lịch ---------- */
+  .modal-overlay{position:fixed; inset:0; background:rgba(20,46,41,.45); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100;}
+  .modal-box{background:var(--surface); border-radius:14px; padding:20px 22px; max-width:440px; width:100%; max-height:82vh; overflow:auto;}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;}
+  .modal-head b{font-family:"Lora",serif; font-size:1.05rem;}
+  .modal-body .field{margin-top:8px; font-size:.88rem; line-height:1.5;}
+  .modal-body .field b{display:block; font-size:.72rem; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-muted); margin-bottom:2px; font-weight:600;}
+  .modal-actions{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap;}
   @media (max-width:640px){ .grid2{grid-template-columns:1fr;} }
 </style>
 </head>
@@ -116,6 +130,11 @@
   </div>
 
   <div id="bookingArea" hidden>
+    <div class="edit-banner" id="editBanner" hidden>
+      <span>Đang sửa lịch hẹn đã đặt.</span>
+      <button type="button" class="ghost" id="cancelEditBtn">Huỷ sửa, đặt lịch mới</button>
+    </div>
+
     <div class="card">
       <h2>Chuyên khoa</h2>
       <div class="grid2">
@@ -128,6 +147,9 @@
           <select id="fDoctor">
             <option value="">Không chọn bác sĩ cụ thể</option>
           </select>
+          <div class="doctor-row">
+            <button type="button" class="link-btn" id="viewDoctorBio" hidden>Xem lý lịch bác sĩ</button>
+          </div>
         </div>
       </div>
     </div>
@@ -157,6 +179,10 @@
         <span><i style="background:var(--surface-2); border:1px solid var(--line);"></i> Còn trống</span>
         <span><i style="background:var(--line);"></i> Hết chỗ / đã qua giờ</span>
         <span><i style="background:#fdf0d0;"></i> Lịch hẹn của bạn</span>
+      </div>
+
+      <div class="far-note" id="farNote" hidden>
+        Đây là tuần xa nhất có thể tự đặt lịch online. Muốn đặt cho tháng sau hoặc một ngày cụ thể ngoài lịch, vui lòng gọi hotline <b>0975 755 333</b> để được nhân viên hỗ trợ.
       </div>
 
       <div class="selected-readout" id="selectedReadout">Chưa chọn khung giờ nào.</div>
@@ -201,6 +227,7 @@
 
     <div class="card">
       <b>Tất cả lịch hẹn của tôi</b>
+      <p class="hint" style="margin:4px 0 0;">Bấm vào 1 dòng để xem chi tiết.</p>
       <div class="table-scroll">
         <table>
           <thead><tr><th>Ngày</th><th>Giờ</th><th>Chuyên khoa</th><th>Bác sĩ</th><th>Trạng thái</th><th></th></tr></thead>
@@ -209,6 +236,13 @@
       </div>
       <div class="empty" id="mineEmpty" hidden>Bạn chưa có lịch hẹn nào.</div>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" hidden>
+  <div class="modal-box">
+    <div class="modal-head"><b id="modalTitle"></b><button type="button" class="icon-btn" id="modalClose">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
   </div>
 </div>
 
@@ -222,8 +256,14 @@
     dang_kham: 'Đang khám', hoan_thanh: 'Hoàn thành', da_huy: 'Đã huỷ',
   };
   const CANCELLABLE = ['cho_xac_nhan', 'da_xac_nhan'];
+  const GENDER_LABELS = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
   const DAY_NAMES = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
   const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(2, '0') + ':00'); // 07:00 - 20:00
+  const MAX_WEEKS_AHEAD = 4; // tuần này + 3 tuần tới (~1 tháng) cho tự đặt online
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
 
   async function api(path, opts = {}) {
     const res = await fetch(API + path, {
@@ -248,24 +288,147 @@
   const todayDate = new Date(todayISO + 'T00:00:00');
   const nowHourVN = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }));
 
+  const maxWeekStart = addDays(startOfWeek(todayDate), (MAX_WEEKS_AHEAD - 1) * 7);
+
   let weekStart = startOfWeek(todayDate);
   let mineAppointments = [];
+  let doctorsList = [];
   let availabilityByDate = {}; // { 'YYYY-MM-DD': { '07:00': true/false, ... } }
   let selected = { date: null, time: null };
+  let editingId = null; // id lịch hẹn đang sửa, null = đang đặt lịch mới
+  let meCache = null;
 
   const fSpecialty = document.getElementById('fSpecialty');
   const fDoctor = document.getElementById('fDoctor');
+  const viewDoctorBioBtn = document.getElementById('viewDoctorBio');
   fSpecialty.innerHTML = SPECIALTIES.map(s => `<option value="${s}">${s}</option>`).join('');
+
+  function syncDoctorBioButton() {
+    const doc = doctorsList.find(d => String(d.id) === fDoctor.value);
+    viewDoctorBioBtn.hidden = !fDoctor.value || !doc;
+  }
 
   async function loadDoctors() {
     const { doctors } = await api('/api/appointments/doctors?specialty=' + encodeURIComponent(fSpecialty.value));
+    doctorsList = doctors;
     fDoctor.innerHTML = '<option value="">Không chọn bác sĩ cụ thể</option>' +
-      doctors.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+      doctors.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    syncDoctorBioButton();
   }
+
+  viewDoctorBioBtn.addEventListener('click', () => {
+    const doc = doctorsList.find(d => String(d.id) === fDoctor.value);
+    if (!doc) return;
+    openModal(`BS. ${doc.name}`, `
+      <div class="field"><b>Chuyên khoa</b>${esc(doc.specialty || 'Đa khoa (tổng quát)')}</div>
+      <div class="field"><b>Lý lịch / giới thiệu</b>${doc.bio ? esc(doc.bio).replace(/\n/g, '<br>') : 'Bác sĩ chưa cập nhật lý lịch.'}</div>
+    `);
+  });
+
+  function openModal(title, bodyHtml) {
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+    document.getElementById('modalOverlay').hidden = false;
+  }
+  function closeModal() {
+    document.getElementById('modalOverlay').hidden = true;
+  }
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  document.getElementById('modalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modalOverlay') closeModal();
+  });
 
   function resetSelection() {
     selected = { date: null, time: null };
     document.getElementById('selectedReadout').textContent = 'Chưa chọn khung giờ nào.';
+  }
+
+  function resetContactFields() {
+    document.getElementById('fName').value = meCache?.name || '';
+    document.getElementById('fPhone').value = meCache?.phone || '';
+    document.getElementById('fAge').value = '';
+    document.getElementById('fGender').value = '';
+    document.getElementById('fNote').value = '';
+  }
+
+  function exitEditMode() {
+    editingId = null;
+    document.getElementById('editBanner').hidden = true;
+    document.getElementById('bookSubmit').textContent = 'Đặt lịch';
+  }
+
+  async function startEdit(appt) {
+    editingId = appt.id;
+    document.getElementById('editBanner').hidden = false;
+    document.getElementById('bookSubmit').textContent = 'Lưu thay đổi';
+
+    fSpecialty.value = appt.specialty;
+    await loadDoctors();
+    fDoctor.value = appt.doctorId || '';
+    syncDoctorBioButton();
+
+    document.getElementById('fName').value = appt.contactName || '';
+    document.getElementById('fPhone').value = appt.contactPhone || '';
+    document.getElementById('fAge').value = appt.age != null ? appt.age : '';
+    document.getElementById('fGender').value = appt.gender || '';
+    document.getElementById('fNote').value = appt.note || '';
+
+    const apptDateStr = appt.date.slice(0, 10);
+    const apptDate = new Date(apptDateStr + 'T00:00:00');
+    weekStart = startOfWeek(apptDate);
+    selected = { date: apptDateStr, time: appt.time };
+    document.getElementById('selectedReadout').innerHTML =
+      `Đã chọn: <b>${DAY_NAMES[apptDate.getDay()]}, ${pad(apptDate.getDate())}/${pad(apptDate.getMonth() + 1)}/${apptDate.getFullYear()} lúc ${selected.time}</b>`;
+
+    renderCal();
+    await loadWeekAvailability();
+    renderCal();
+    document.getElementById('bookForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.getElementById('cancelEditBtn').addEventListener('click', async () => {
+    exitEditMode();
+    resetSelection();
+    resetContactFields();
+    await loadWeekAvailability();
+    renderCal();
+  });
+
+  function showApptDetail(appt) {
+    const editable = CANCELLABLE.includes(appt.status);
+    const genderLabel = GENDER_LABELS[appt.gender] || '—';
+    const d = new Date(appt.date.slice(0, 10) + 'T00:00:00');
+    const dateLabel = `${DAY_NAMES[d.getDay()]}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+    openModal('Chi tiết lịch hẹn', `
+      <div class="field"><b>Ngày giờ</b>${dateLabel} lúc ${appt.time}</div>
+      <div class="field"><b>Chuyên khoa</b>${esc(appt.specialty)}</div>
+      <div class="field"><b>Bác sĩ</b>${appt.doctorName ? esc(appt.doctorName) : 'Chưa chỉ định'}</div>
+      ${appt.doctorBio ? `<div class="field"><b>Lý lịch bác sĩ</b>${esc(appt.doctorBio).replace(/\n/g, '<br>')}</div>` : ''}
+      <div class="field"><b>Người khám</b>${esc(appt.contactName) || '—'} · ${genderLabel}${appt.age != null ? ', ' + appt.age + ' tuổi' : ''}</div>
+      <div class="field"><b>Số điện thoại</b>${esc(appt.contactPhone) || '—'}</div>
+      ${appt.note ? `<div class="field"><b>Lý do khám</b>${esc(appt.note)}</div>` : ''}
+      <div class="field"><b>Trạng thái</b><span class="pill ${appt.status}">${STATUS_LABELS[appt.status] || appt.status}</span></div>
+      ${editable ? `
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="modalEditBtn">Sửa thông tin</button>
+          <button type="button" class="ghost" id="modalCancelApptBtn">Huỷ lịch hẹn</button>
+        </div>
+      ` : ''}
+    `);
+    if (editable) {
+      document.getElementById('modalEditBtn').addEventListener('click', () => {
+        closeModal();
+        startEdit(appt);
+      });
+      document.getElementById('modalCancelApptBtn').addEventListener('click', async () => {
+        if (!confirm('Huỷ lịch hẹn này?')) return;
+        await api(`/api/appointments/${appt.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'da_huy' }) });
+        closeModal();
+        if (editingId === appt.id) exitEditMode();
+        await Promise.all([loadMine(), loadWeekAvailability()]);
+        renderCal();
+      });
+    }
   }
 
   async function loadWeekAvailability() {
@@ -278,6 +441,7 @@
       try {
         const params = new URLSearchParams({ specialty, date });
         if (doctorId) params.set('doctorId', doctorId);
+        if (editingId) params.set('excludeAppointmentId', editingId);
         const { slots } = await api('/api/appointments/availability?' + params.toString());
         availabilityByDate[date] = Object.fromEntries(slots.map(s => [s.time, s.available]));
       } catch (e) {
@@ -303,16 +467,22 @@
     document.getElementById('weekLabel').textContent = label;
   }
 
+  function updateNavButtons() {
+    const atMax = weekStart >= maxWeekStart;
+    document.getElementById('nextWeek').disabled = atMax;
+    document.getElementById('farNote').hidden = !atMax;
+  }
+
   function renderCalBody() {
     const dates = Array.from({ length: 7 }, (_, i) => toISODate(addDays(weekStart, i)));
     const body = document.getElementById('calBody');
 
     body.innerHTML = FIXED_SLOTS.map(time => {
       const cells = dates.map(date => {
-        const mine = mineAppointments.find(a => a.date.slice(0, 10) === date && a.time === time && a.status !== 'da_huy');
+        const mine = mineAppointments.find(a => a.date.slice(0, 10) === date && a.time === time && a.status !== 'da_huy' && a.id !== editingId);
         if (mine) {
           return `<td class="slot" data-date="${date}" data-time="${time}">
-            <span class="pill ${mine.status}" data-appt-id="${mine.id}">${mine.specialty}${mine.doctorName ? ' · ' + mine.doctorName : ''}</span>
+            <span class="pill ${mine.status}" data-appt-id="${mine.id}">${esc(mine.specialty)}${mine.doctorName ? ' · ' + esc(mine.doctorName) : ''}</span>
           </td>`;
         }
 
@@ -338,22 +508,14 @@
   function renderCal() {
     renderCalHead();
     renderCalBody();
+    updateNavButtons();
   }
 
-  document.getElementById('calBody').addEventListener('click', async (e) => {
+  document.getElementById('calBody').addEventListener('click', (e) => {
     const pill = e.target.closest('.pill[data-appt-id]');
     if (pill) {
-      const id = pill.dataset.apptId;
-      const appt = mineAppointments.find(a => String(a.id) === id);
-      if (appt && CANCELLABLE.includes(appt.status)) {
-        if (confirm(`Huỷ lịch hẹn ${appt.specialty} lúc ${appt.time} ngày ${appt.date.slice(0, 10)}?`)) {
-          await api(`/api/appointments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'da_huy' }) });
-          await Promise.all([loadMine(), loadWeekAvailability()]);
-          renderCal();
-        }
-      } else if (appt) {
-        alert(`Lịch hẹn: ${appt.specialty}${appt.doctorName ? ' · BS. ' + appt.doctorName : ''} — trạng thái: ${STATUS_LABELS[appt.status] || appt.status}`);
-      }
+      const appt = mineAppointments.find(a => String(a.id) === pill.dataset.apptId);
+      if (appt) showApptDetail(appt);
       return;
     }
 
@@ -374,6 +536,7 @@
     renderCal();
   });
   document.getElementById('nextWeek').addEventListener('click', async () => {
+    if (weekStart >= maxWeekStart) return;
     weekStart = addDays(weekStart, 7);
     resetSelection();
     renderCal();
@@ -395,6 +558,7 @@
     renderCal();
   });
   fDoctor.addEventListener('change', async () => {
+    syncDoctorBioButton();
     resetSelection();
     await loadWeekAvailability();
     renderCal();
@@ -412,25 +576,35 @@
       return;
     }
 
+    const payload = {
+      specialty: fSpecialty.value,
+      doctorId: fDoctor.value || null,
+      date: selected.date,
+      time: selected.time,
+      note: document.getElementById('fNote').value,
+      contactName: document.getElementById('fName').value,
+      contactPhone: document.getElementById('fPhone').value,
+      age: Number(document.getElementById('fAge').value),
+      gender: document.getElementById('fGender').value,
+    };
+
     submitBtn.disabled = true;
     try {
-      await api('/api/appointments', {
-        method: 'POST',
-        body: JSON.stringify({
-          specialty: fSpecialty.value,
-          doctorId: fDoctor.value || null,
-          date: selected.date,
-          time: selected.time,
-          note: document.getElementById('fNote').value,
-          contactName: document.getElementById('fName').value,
-          contactPhone: document.getElementById('fPhone').value,
-          age: Number(document.getElementById('fAge').value),
-          gender: document.getElementById('fGender').value,
-        }),
-      });
-      msg.textContent = 'Đặt lịch thành công! Nhân viên sẽ xác nhận sớm.';
+      const wasEditing = editingId;
+      if (wasEditing) {
+        await api(`/api/appointments/${wasEditing}`, { method: 'PATCH', body: JSON.stringify(payload) });
+        msg.textContent = 'Đã lưu thay đổi lịch hẹn.';
+      } else {
+        await api('/api/appointments', { method: 'POST', body: JSON.stringify(payload) });
+        msg.textContent = 'Đặt lịch thành công! Nhân viên sẽ xác nhận sớm.';
+      }
       msg.className = 'msg ok';
-      document.getElementById('fNote').value = '';
+      if (wasEditing) {
+        exitEditMode();
+        resetContactFields();
+      } else {
+        document.getElementById('fNote').value = '';
+      }
       resetSelection();
       await Promise.all([loadMine(), loadWeekAvailability()]);
       renderCal();
@@ -448,16 +622,32 @@
     const empty = document.getElementById('mineEmpty');
     empty.hidden = appointments.length > 0;
     body.innerHTML = appointments.map(a => `
-      <tr>
+      <tr data-id="${a.id}" style="cursor:pointer;">
         <td>${a.date.slice(0, 10)}</td>
         <td>${a.time}</td>
-        <td>${a.specialty}</td>
-        <td>${a.doctorName || 'Chưa chỉ định'}</td>
+        <td>${esc(a.specialty)}</td>
+        <td>${a.doctorName ? esc(a.doctorName) : 'Chưa chỉ định'}</td>
         <td><span class="pill ${a.status}">${STATUS_LABELS[a.status] || a.status}</span></td>
-        <td>${CANCELLABLE.includes(a.status) ? `<button class="ghost cancel-appt" data-id="${a.id}">Huỷ</button>` : ''}</td>
+        <td>${CANCELLABLE.includes(a.status) ? `
+          <button class="ghost edit-appt" data-id="${a.id}">Sửa</button>
+          <button class="ghost cancel-appt" data-id="${a.id}">Huỷ</button>
+        ` : ''}</td>
       </tr>
     `).join('');
 
+    body.querySelectorAll('tr[data-id]').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const appt = mineAppointments.find(a => String(a.id) === tr.dataset.id);
+        if (appt) showApptDetail(appt);
+      });
+    });
+    body.querySelectorAll('.edit-appt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const appt = mineAppointments.find(a => String(a.id) === btn.dataset.id);
+        if (appt) startEdit(appt);
+      });
+    });
     body.querySelectorAll('.cancel-appt').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Huỷ lịch hẹn này?')) return;
@@ -465,6 +655,7 @@
           method: 'PATCH',
           body: JSON.stringify({ status: 'da_huy' }),
         });
+        if (editingId === Number(btn.dataset.id)) exitEditMode();
         await Promise.all([loadMine(), loadWeekAvailability()]);
         renderCal();
       });
@@ -476,17 +667,15 @@
       document.getElementById('needLoginCard').hidden = false;
       return;
     }
-    let me;
     try {
-      me = (await api('/api/auth/me')).user;
+      meCache = (await api('/api/auth/me')).user;
     } catch (e) {
       localStorage.removeItem('dm_token');
       document.getElementById('needLoginCard').hidden = false;
       return;
     }
     document.getElementById('bookingArea').hidden = false;
-    document.getElementById('fName').value = me.name || '';
-    document.getElementById('fPhone').value = me.phone || '';
+    resetContactFields();
 
     renderCal();
     await loadDoctors();

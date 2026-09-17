@@ -2,7 +2,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { SPECIALTIES, APPOINTMENT_STATUSES } = require('../constants');
-const { createAppointment, BookingError } = require('../lib/appointmentService');
+const { createAppointment, updateAppointment, BookingError } = require('../lib/appointmentService');
 const { getAvailableSlots } = require('../lib/availability');
 
 const router = express.Router();
@@ -11,7 +11,7 @@ router.use(authenticate);
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 
 const APPT_SELECT = `
-  SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name,
+  SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name, d.bio AS doctor_bio,
          EXISTS(SELECT 1 FROM invoices i WHERE i.appointment_id = a.id) AS has_invoice
   FROM appointments a
   JOIN users p ON p.id = a.patient_id
@@ -26,6 +26,7 @@ function publicAppointment(a) {
     patientPhone: a.patient_phone,
     doctorId: a.doctor_id,
     doctorName: a.doctor_name,
+    doctorBio: a.doctor_bio,
     specialty: a.specialty,
     date: a.appointment_date,
     time: a.appointment_time,
@@ -47,7 +48,7 @@ router.get('/doctors', async (req, res) => {
   try {
     const { specialty } = req.query;
     const params = [];
-    let sql = "SELECT id, name, specialty FROM users WHERE role = 'doctor'";
+    let sql = "SELECT id, name, specialty, bio FROM users WHERE role = 'doctor'";
     if (specialty) {
       params.push(specialty);
       sql += ` AND (specialty = $${params.length} OR specialty IS NULL)`;
@@ -82,16 +83,39 @@ router.post('/', async (req, res) => {
 // nguồn dữ liệu cho lưới lịch tuần ở trang đặt lịch.
 router.get('/availability', async (req, res) => {
   try {
-    const { specialty, date, doctorId } = req.query;
+    const { specialty, date, doctorId, excludeAppointmentId } = req.query;
     if (!specialty || !SPECIALTIES.includes(specialty)) {
       return res.status(400).json({ error: 'Chuyên khoa không hợp lệ.' });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
       return res.status(400).json({ error: 'Ngày không hợp lệ.' });
     }
-    const { slots } = await getAvailableSlots({ specialty, date, doctorId: doctorId ? Number(doctorId) : null });
+    const { slots } = await getAvailableSlots({
+      specialty, date,
+      doctorId: doctorId ? Number(doctorId) : null,
+      excludeAppointmentId: excludeAppointmentId ? Number(excludeAppointmentId) : null,
+    });
     res.json({ specialty, date, slots });
   } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Sửa thông tin liên hệ và/hoặc ngày giờ của 1 lịch hẹn đã đặt (xem quy tắc
+// quyền + trạng thái cho phép sửa trong updateAppointment).
+router.patch('/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy lịch hẹn.' });
+    const { doctorId, date, time, note, contactName, contactPhone, age, gender } = req.body || {};
+    await updateAppointment({ id, requester: req.user, doctorId, date, time, note, contactName, contactPhone, age, gender });
+    const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [id]);
+    res.json({ appointment: publicAppointment(full.rows[0]) });
+  } catch (e) {
+    if (e instanceof BookingError) {
+      return res.status(e.status).json({ error: e.message });
+    }
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
   }

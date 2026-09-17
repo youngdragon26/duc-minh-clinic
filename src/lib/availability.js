@@ -7,7 +7,10 @@ const FIXED_SLOTS = Array.from({ length: 14 }, (_, i) => String(7 + i).padStart(
 // cho cả trang đặt lịch (lưới lịch) và tool đặt lịch của trợ lý AI, để 2 nơi
 // luôn thấy đúng 1 nguồn sự thật thay vì suy đoán khác nhau.
 // doctorId (nếu có) thu hẹp kết quả về đúng 1 bác sĩ thay vì toàn bộ chuyên khoa.
-async function getAvailableSlots({ specialty, date, doctorId = null }) {
+// excludeAppointmentId: khi đang SỬA 1 lịch hẹn, bỏ qua chính lịch hẹn đó khỏi
+// danh sách "đã đặt" — nếu không, khung giờ hiện tại của lịch hẹn sẽ bị coi là
+// hết chỗ ngay trên chính lưới dùng để sửa nó.
+async function getAvailableSlots({ specialty, date, doctorId = null, excludeAppointmentId = null }) {
   const params = [specialty];
   // Bác sĩ specialty = NULL là "bác sĩ tổng quát", phụ trách được mọi chuyên khoa.
   let doctorSql = "SELECT id, name FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL)";
@@ -23,11 +26,14 @@ async function getAvailableSlots({ specialty, date, doctorId = null }) {
   }
 
   const doctorIds = doctorsRes.rows.map((d) => d.id);
-  const bookedRes = await pool.query(
-    `SELECT doctor_id, appointment_time FROM appointments
-     WHERE appointment_date = $1 AND status <> 'da_huy' AND doctor_id = ANY($2::int[])`,
-    [date, doctorIds]
-  );
+  const bookedParams = [date, doctorIds];
+  let bookedSql = `SELECT doctor_id, appointment_time FROM appointments
+     WHERE appointment_date = $1 AND status <> 'da_huy' AND doctor_id = ANY($2::int[])`;
+  if (excludeAppointmentId) {
+    bookedParams.push(excludeAppointmentId);
+    bookedSql += ` AND id <> $${bookedParams.length}`;
+  }
+  const bookedRes = await pool.query(bookedSql, bookedParams);
   const bookedByDoctor = {};
   for (const row of bookedRes.rows) {
     if (!bookedByDoctor[row.doctor_id]) bookedByDoctor[row.doctor_id] = new Set();

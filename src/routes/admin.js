@@ -12,7 +12,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function publicUser(u) {
   return {
     id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role,
-    specialty: u.specialty, createdAt: u.created_at,
+    specialty: u.specialty, bio: u.bio, createdAt: u.created_at,
   };
 }
 
@@ -30,7 +30,7 @@ router.get('/users', async (req, res) => {
 // form đăng ký công khai, để không ai tự phong mình làm bác sĩ/nhân viên.
 router.post('/users', async (req, res) => {
   try {
-    const { name, email, phone, password, role, specialty } = req.body || {};
+    const { name, email, phone, password, role, specialty, bio } = req.body || {};
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ error: 'Thiếu họ tên, email, mật khẩu hoặc vai trò.' });
@@ -55,8 +55,8 @@ router.post('/users', async (req, res) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (name, email, phone, password_hash, role, specialty) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [name.trim(), email.toLowerCase(), phone || null, passwordHash, role, role === 'doctor' ? specialty : null]
+      'INSERT INTO users (name, email, phone, password_hash, role, specialty, bio) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [name.trim(), email.toLowerCase(), phone || null, passwordHash, role, role === 'doctor' ? specialty : null, role === 'doctor' && bio ? String(bio).trim() : null]
     );
     res.status(201).json({ user: publicUser(result.rows[0]) });
   } catch (e) {
@@ -76,6 +76,24 @@ router.patch('/users/:id/role', async (req, res) => {
       return res.status(400).json({ error: 'Không thể tự hạ quyền của chính mình.' });
     }
     const result = await pool.query('UPDATE users SET role = $1 WHERE id = $2 RETURNING *', [role, id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+    res.json({ user: publicUser(result.rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Sửa lý lịch/giới thiệu bác sĩ (hiện cho bệnh nhân xem khi đặt lịch) — tách
+// riêng khỏi việc đổi vai trò vì đây là thông tin hồ sơ, không phải phân quyền.
+router.patch('/users/:id/bio', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { bio } = req.body || {};
+    const result = await pool.query(
+      'UPDATE users SET bio = $1 WHERE id = $2 RETURNING *',
+      [bio ? String(bio).trim() : null, id]
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
     res.json({ user: publicUser(result.rows[0]) });
   } catch (e) {

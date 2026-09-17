@@ -36,6 +36,9 @@ async function init() {
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS specialty TEXT;`);
+  // Lý lịch/giới thiệu bác sĩ — bệnh nhân xem được khi đặt lịch hoặc xem chi
+  // tiết lịch hẹn (chỉ có ý nghĩa với tài khoản role = 'doctor').
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointments (
