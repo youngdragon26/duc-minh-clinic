@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>In chứng từ — Đa Khoa Đức Minh</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{ --ink:#142e29; --muted:#52685f; --line:#c9d3cf; --accent:#0b6f62; }
+  *{box-sizing:border-box;}
+  body{margin:0; background:#e9ece9; color:var(--ink); font-family:"Be Vietnam Pro",system-ui,sans-serif; font-size:14px; line-height:1.5;}
+  .toolbar{position:sticky; top:0; background:#142e29; color:#fff; padding:10px 20px; display:flex; gap:10px; align-items:center; justify-content:space-between; z-index:5;}
+  .toolbar a{color:#cfe; text-decoration:none; font-size:.85rem;}
+  .toolbar button{font:inherit; font-weight:600; background:#0e8e7d; color:#fff; border:0; border-radius:8px; padding:9px 18px; cursor:pointer;}
+  .toolbar small{opacity:.8;}
+  .sheet{background:#fff; width:210mm; min-height:297mm; margin:18px auto; padding:16mm 16mm 20mm; box-shadow:0 8px 30px rgba(0,0,0,.15);}
+  .clinic{display:flex; justify-content:space-between; gap:16px; border-bottom:2px solid var(--accent); padding-bottom:10px; margin-bottom:14px;}
+  .clinic .name{font-family:"Lora",serif; font-weight:600; font-size:1.35rem;}
+  .clinic .name em{color:var(--accent); font-style:normal;}
+  .clinic .info{font-size:.8rem; color:var(--muted); text-align:right;}
+  .doc-title{text-align:center; margin:6px 0 14px;}
+  .doc-title h1{font-family:"Lora",serif; font-size:1.5rem; margin:0; letter-spacing:.04em;}
+  .doc-title .code{font-weight:700; color:var(--accent); font-size:1rem;}
+  .doc-title .date{color:var(--muted); font-size:.85rem;}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:4px 24px; margin-bottom:12px;}
+  .grid div span{color:var(--muted);}
+  .block{margin:10px 0;}
+  .block b{display:block; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:2px;}
+  table{width:100%; border-collapse:collapse; margin:8px 0;}
+  th,td{border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top;}
+  th{background:#f0f5f3; font-size:.78rem; text-transform:uppercase; letter-spacing:.03em;}
+  td.num,th.num{text-align:right; white-space:nowrap;}
+  .total{display:flex; justify-content:flex-end; gap:24px; font-size:1.1rem; font-weight:700; margin-top:8px;}
+  .stamp{display:inline-block; border:2px solid; border-radius:6px; padding:2px 12px; font-weight:700; transform:rotate(-4deg);}
+  .stamp.paid{color:#0b7a4a;} .stamp.unpaid{color:#b45309;}
+  .sign{display:flex; justify-content:space-between; margin-top:34px; text-align:center;}
+  .sign div{width:44%;} .sign small{color:var(--muted);} .sign .who{margin-top:56px; font-weight:600;}
+  .foot{margin-top:24px; font-size:.75rem; color:var(--muted); text-align:center; border-top:1px dashed var(--line); padding-top:8px;}
+  .err{max-width:520px; margin:80px auto; text-align:center; background:#fff; padding:28px; border-radius:12px;}
+  [hidden]{display:none !important;}
+  @media print{
+    body{background:#fff;}
+    .toolbar{display:none;}
+    .sheet{margin:0; box-shadow:none; width:auto; min-height:0; padding:0;}
+    @page{size:A4; margin:14mm;}
+  }
+</style>
+</head>
+<body>
+<div class="toolbar" id="toolbar" hidden>
+  <a href="javascript:history.back()">← Quay lại</a>
+  <span><small>Bấm In rồi chọn "Lưu dưới dạng PDF" để tải file PDF</small></span>
+  <button type="button" onclick="window.print()">🖨 In / Lưu PDF</button>
+</div>
+<div class="err" id="err" hidden></div>
+<div class="sheet" id="sheet" hidden></div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const type = params.get('type');
+  const id = Number(params.get('id'));
+  const token = localStorage.getItem('dm_token');
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  const money = (n) => Number(n).toLocaleString('vi-VN') + 'đ';
+  const fmtDate = (d) => { const s = String(d).slice(0, 10).split('-'); return s[2] + '/' + s[1] + '/' + s[0]; };
+  const GENDER = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
+  const METHOD = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
+
+  function fail(msg) {
+    const el = document.getElementById('err');
+    el.textContent = msg;
+    el.hidden = false;
+  }
+  async function api(path) {
+    const res = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  const head = `
+    <div class="clinic">
+      <div class="name">Đa Khoa <em>Đức Minh</em></div>
+      <div class="info">Phường Túc Duyên, TP. Thái Nguyên<br>Hotline: 0974 755 333<br>Thứ 2 – Thứ 7 · 7:00 – 21:00</div>
+    </div>`;
+
+  function prescription(r) {
+    const rows = r.items.length
+      ? r.items.map((it, i) => `<tr><td>${i + 1}</td><td><b>${esc(it.medicineName)}</b></td><td>${esc(it.dosage)}</td><td class="num">${esc(it.quantity)} ${esc(it.unit)}</td></tr>`).join('')
+      : '<tr><td colspan="4">Không kê đơn thuốc.</td></tr>';
+    return head + `
+      <div class="doc-title"><h1>ĐƠN THUỐC</h1><div class="code">Số: ${esc(r.code)}</div><div class="date">Ngày khám: ${fmtDate(r.date)}</div></div>
+      <div class="grid">
+        <div><span>Bệnh nhân:</span> <b>${esc(r.patientName)}</b></div>
+        <div><span>Tuổi / Giới:</span> ${r.patientAge != null ? esc(r.patientAge) : '—'} / ${esc(GENDER[r.patientGender] || '—')}</div>
+        <div><span>Điện thoại:</span> ${esc(r.patientPhone || '—')}</div>
+        <div><span>Chuyên khoa:</span> ${esc(r.specialty)}</div>
+      </div>
+      ${r.symptoms ? `<div class="block"><b>Triệu chứng</b>${esc(r.symptoms)}</div>` : ''}
+      <div class="block"><b>Chẩn đoán</b>${esc(r.diagnosis)}</div>
+      <table>
+        <thead><tr><th style="width:36px">#</th><th>Tên thuốc</th><th>Liều dùng</th><th class="num">Số lượng</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${r.notes ? `<div class="block"><b>Lời dặn</b>${esc(r.notes)}</div>` : ''}
+      <div class="sign"><div></div><div><small>Ngày ${fmtDate(r.date)}<br>Bác sĩ khám bệnh</small><div class="who">BS. ${esc(r.doctorName)}</div></div></div>
+      <div class="foot">Đơn thuốc chỉ có giá trị khi có chữ ký bác sĩ. Dùng thuốc đúng liều bác sĩ chỉ định; khám lại nếu triệu chứng nặng hơn.</div>`;
+  }
+
+  function invoice(inv) {
+    const paid = inv.status === 'da_thanh_toan';
+    const rows = inv.items.map((it, i) => `<tr><td>${i + 1}</td><td>${esc(it.description)}</td><td class="num">${esc(it.quantity)}</td><td class="num">${money(it.unitPrice)}</td><td class="num">${money(it.subtotal)}</td></tr>`).join('');
+    return head + `
+      <div class="doc-title"><h1>HOÁ ĐƠN</h1><div class="code">Số: ${esc(inv.code)}</div><div class="date">Ngày khám: ${fmtDate(inv.date)}</div></div>
+      <div class="grid">
+        <div><span>Bệnh nhân:</span> <b>${esc(inv.patientName)}</b></div>
+        <div><span>Chuyên khoa:</span> ${esc(inv.specialty)}</div>
+        <div><span>Trạng thái:</span> <span class="stamp ${paid ? 'paid' : 'unpaid'}">${paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</span></div>
+        <div><span>Hình thức:</span> ${paid ? esc(METHOD[inv.paymentMethod] || '—') : '—'}</div>
+        ${paid && inv.paidAt ? `<div><span>Thu tiền lúc:</span> ${new Date(inv.paidAt).toLocaleString('vi-VN')}</div>` : ''}
+      </div>
+      <table>
+        <thead><tr><th style="width:36px">#</th><th>Nội dung</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="total"><span>Tổng cộng</span><span>${money(inv.totalAmount)}</span></div>
+      <div class="sign"><div><small>Người nộp tiền</small><div class="who">&nbsp;</div></div><div><small>Thu ngân</small><div class="who">&nbsp;</div></div></div>
+      <div class="foot">Cảm ơn quý khách đã tin tưởng Phòng khám Đa khoa Đức Minh.</div>`;
+  }
+
+  (async function () {
+    if (!token) return fail('Bạn cần đăng nhập để in chứng từ.');
+    if (!['dt', 'hd'].includes(type) || !Number.isInteger(id)) return fail('Đường dẫn in không hợp lệ.');
+    try {
+      let html, code;
+      if (type === 'dt') { const { record } = await api('/api/clinical/records/' + id); html = prescription(record); code = record.code; }
+      else { const { invoice: inv } = await api('/api/billing/invoices/' + id); html = invoice(inv); code = inv.code; }
+      document.title = code + ' — Đa Khoa Đức Minh';
+      const sheet = document.getElementById('sheet');
+      sheet.innerHTML = html;
+      sheet.hidden = false;
+      document.getElementById('toolbar').hidden = false;
+    } catch (e) { fail(e.message); }
+  })();
+})();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const { SPECIALTIES, APPOINTMENT_STATUSES } = require('../constants');
 const { createAppointment, updateAppointment, BookingError } = require('../lib/appointmentService');
 const { getAvailableSlots } = require('../lib/availability');
+const { logAudit } = require('../lib/audit');
 
 const router = express.Router();
 
@@ -244,6 +245,9 @@ router.patch('/:id/status', async (req, res) => {
     const updated = autoAssignDoctorId
       ? await pool.query('UPDATE appointments SET status = $1, doctor_id = $2 WHERE id = $3 RETURNING id', [status, autoAssignDoctorId, id])
       : await pool.query('UPDATE appointments SET status = $1 WHERE id = $2 RETURNING id', [status, id]);
+    if (appt.status !== status) {
+      await logAudit(req.user, status === 'da_huy' ? 'appointment.cancel' : 'appointment.status', 'appointment', id, { from: appt.status, to: status, patientId: appt.patient_id });
+    }
     const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [updated.rows[0].id]);
     res.json({ appointment: publicAppointment(full.rows[0]) });
   } catch (e) {

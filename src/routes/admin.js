@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { pool, ROLES } = require('../db');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { SPECIALTIES } = require('../constants');
+const { logAudit, ACTION_LABELS } = require('../lib/audit');
 
 const router = express.Router();
 router.use(authenticate, requireAdmin);
@@ -58,6 +59,7 @@ router.post('/users', async (req, res) => {
       'INSERT INTO users (name, email, phone, password_hash, role, specialty, bio) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [name.trim(), email.toLowerCase(), phone || null, passwordHash, role, role === 'doctor' ? specialty : null, role === 'doctor' && bio ? String(bio).trim() : null]
     );
+    await logAudit(req.user, 'user.create', 'user', result.rows[0].id, { name: result.rows[0].name, role: result.rows[0].role });
     res.status(201).json({ user: publicUser(result.rows[0]) });
   } catch (e) {
     console.error(e);
@@ -75,8 +77,10 @@ router.patch('/users/:id/role', async (req, res) => {
     if (id === req.user.id && role !== 'admin') {
       return res.status(400).json({ error: 'Không thể tự hạ quyền của chính mình.' });
     }
+    const before = await pool.query('SELECT name, role FROM users WHERE id = $1', [id]);
     const result = await pool.query('UPDATE users SET role = $1 WHERE id = $2 RETURNING *', [role, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+    await logAudit(req.user, 'user.role_change', 'user', id, { name: result.rows[0].name, from: before.rows[0]?.role, to: role });
     res.json({ user: publicUser(result.rows[0]) });
   } catch (e) {
     console.error(e);
@@ -108,9 +112,31 @@ router.delete('/users/:id', async (req, res) => {
     if (id === req.user.id) {
       return res.status(400).json({ error: 'Không thể tự xoá tài khoản của chính mình.' });
     }
+    const target = await pool.query('SELECT name, role FROM users WHERE id = $1', [id]);
     const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+    await logAudit(req.user, 'user.delete', 'user', id, { name: target.rows[0]?.name, role: target.rows[0]?.role });
     res.status(204).end();
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Nhật ký hoạt động — admin xem 200 dòng gần nhất, lọc theo loại hành động nếu cần.
+router.get('/audit-logs', async (req, res) => {
+  try {
+    const { action } = req.query;
+    const params = [];
+    let where = '';
+    if (action) { params.push(action); where = 'WHERE action = $1'; }
+    const result = await pool.query(
+      `SELECT id, user_id AS "userId", user_name AS "userName", user_role AS "userRole", action, entity,
+              entity_id AS "entityId", detail, created_at AS "createdAt"
+       FROM audit_logs ${where} ORDER BY created_at DESC, id DESC LIMIT 200`,
+      params
+    );
+    res.json({ logs: result.rows.map((l) => ({ ...l, actionLabel: ACTION_LABELS[l.action] || l.action })), actions: ACTION_LABELS });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });

@@ -12,18 +12,21 @@
     --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --on-accent:#f6fbf9;
     --shadow: 0 18px 40px -22px rgba(20,46,41,.35);
     --role:#0e8e7d; --role-soft:#d7f0ea;
+    --warn:#b45309; --warn-soft:#ffe9cc; --bad:#b91c1c; --bad-soft:#fde2e2;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
       --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
       --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --on-accent:#08201c;
       --shadow: 0 18px 40px -18px rgba(0,0,0,.6);
+      --warn:#f0b25a; --warn-soft:#3a2a10; --bad:#ff8a8a; --bad-soft:#4a1d1d;
     }
   }
   :root[data-theme="dark"]{
     --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
     --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --on-accent:#08201c;
     --shadow: 0 18px 40px -18px rgba(0,0,0,.6);
+    --warn:#f0b25a; --warn-soft:#3a2a10; --bad:#ff8a8a; --bad-soft:#4a1d1d;
   }
   /* Mỗi vai trò 1 màu nhấn riêng để nhìn là biết đang ở không gian nào. */
   body[data-role="admin"]{ --role:#7c3aed; --role-soft:#ece1ff; }
@@ -58,11 +61,12 @@
 
   .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:26px;}
   .stat{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px; border-left:4px solid var(--role);}
-  .stat .n{font-family:"Lora",serif; font-size:2rem; font-weight:600; line-height:1.1;}
+  .stat .n{font-family:"Lora",serif; font-size:1.9rem; font-weight:600; line-height:1.1;}
   .stat .l{font-size:.8rem; color:var(--ink-muted); margin-top:4px;}
 
   h2{font-size:.78rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 12px;}
-  .tools{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-bottom:28px;}
+  .section{margin-bottom:30px;}
+  .tools{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;}
   .tool{display:block; text-decoration:none; color:inherit; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px; transition:transform .15s, box-shadow .15s, border-color .15s;}
   .tool:hover{transform:translateY(-2px); box-shadow:var(--shadow); border-color:var(--role);}
   .tool .ic{width:38px; height:38px; border-radius:10px; background:var(--role-soft); color:var(--role); display:grid; place-items:center; font-size:1.15rem; margin-bottom:10px;}
@@ -75,9 +79,69 @@
   .list li:last-child{border-bottom:0;}
   .list .meta{color:var(--ink-muted); font-size:.8rem;}
   .pill{padding:2px 10px; border-radius:20px; font-size:.7rem; font-weight:600; white-space:nowrap; background:var(--role-soft); color:var(--role); align-self:center;}
+  .pill.warn{background:var(--warn-soft); color:var(--warn);}
+  .pill.bad{background:var(--bad-soft); color:var(--bad);}
   .empty{color:var(--ink-muted); margin:0; font-size:.9rem;}
   .center{max-width:420px; margin:80px auto; text-align:center;}
   .btn{display:inline-block; margin-top:12px; padding:10px 20px; border-radius:10px; background:var(--accent); color:var(--on-accent); font-weight:600; text-decoration:none;}
+  button.mini{font:inherit; font-size:.75rem; font-weight:600; padding:5px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer;}
+  button.mini:hover{border-color:var(--role);}
+  select.mini, input.mini{font:inherit; font-size:.8rem; padding:6px 9px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
+
+  /* Nhóm tái khám */
+  .fu-group{margin-bottom:14px;}
+  .fu-group:last-child{margin-bottom:0;}
+  .fu-head{display:flex; align-items:center; gap:8px; font-weight:700; font-size:.85rem; margin-bottom:4px;}
+  .fu-head .count{font-weight:600; font-size:.72rem; padding:1px 8px; border-radius:20px; background:var(--role-soft); color:var(--role);}
+  .fu-head.bad .count{background:var(--bad-soft); color:var(--bad);}
+  .fu-head.warn .count{background:var(--warn-soft); color:var(--warn);}
+  .fu-actions{display:flex; gap:6px; align-items:center;}
+
+  /* Biểu đồ */
+  .chart-bar{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden;}
+  .seg button{font:inherit; font-size:.8rem; font-weight:600; padding:7px 14px; border:0; background:var(--surface); color:var(--ink-muted); cursor:pointer;}
+  .seg button.on{background:var(--role); color:#fff;}
+  .charts{display:grid; grid-template-columns:1.5fr 1fr; gap:16px;}
+  @media (max-width:820px){ .charts{grid-template-columns:1fr;} }
+  .chart-title{font-weight:700; font-size:.95rem; margin:0 0 2px;}
+  .chart-note{font-size:.78rem; color:var(--ink-muted); margin:0 0 10px;}
+  .svgwrap{position:relative;}
+  svg.bars{width:100%; height:auto; display:block; overflow:visible;}
+  svg.bars .grid{stroke:var(--line); stroke-width:1;}
+  svg.bars .axis{stroke:var(--ink-muted); stroke-width:1;}
+  svg.bars text{fill:var(--ink-muted); font-size:11px; font-family:inherit;}
+  svg.bars .bar{fill:var(--role); transition:opacity .12s;}
+  svg.bars .bar:hover, svg.bars .bar.hot{opacity:.75;}
+  svg.bars .hit{fill:transparent; cursor:default;}
+  .tip{position:absolute; pointer-events:none; background:var(--ink); color:var(--ground); font-size:.78rem; padding:6px 10px; border-radius:8px; white-space:nowrap; transform:translate(-50%,-110%); z-index:5;}
+  .hbar{display:grid; grid-template-columns:120px 1fr auto; gap:10px; align-items:center; margin:8px 0; font-size:.85rem;}
+  .hbar .track{height:14px; background:var(--surface-2); border-radius:0 7px 7px 0;}
+  .hbar .fill{height:100%; background:var(--role); border-radius:0 7px 7px 0;}
+  .hbar .val{font-weight:700; min-width:28px; text-align:right;}
+  table.tbl{width:100%; border-collapse:collapse; font-size:.85rem;}
+  table.tbl th, table.tbl td{text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top;}
+  table.tbl th{color:var(--ink-muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;}
+  table.tbl td.num, table.tbl th.num{text-align:right;}
+  .scroll{overflow-x:auto; max-height:420px; overflow-y:auto;}
+  .linkbtn{background:none; border:0; padding:0; font:inherit; font-size:.8rem; color:var(--role); font-weight:600; cursor:pointer; text-decoration:underline;}
+
+  /* Trợ lý AI */
+  .ai-head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .ai-head .dot{width:34px; height:34px; border-radius:10px; background:var(--role); color:#fff; display:grid; place-items:center;}
+  .ai-head b{display:block;}
+  .ai-head span{font-size:.8rem; color:var(--ink-muted);}
+  .chat{height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:10px; background:var(--surface-2); border-radius:12px; margin-bottom:10px;}
+  .msg{max-width:88%; padding:9px 13px; border-radius:12px; font-size:.9rem; white-space:pre-wrap; word-wrap:break-word;}
+  .msg.bot{background:var(--surface); border:1px solid var(--line); align-self:flex-start;}
+  .msg.me{background:var(--role); color:#fff; align-self:flex-end;}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;}
+  .chip{font:inherit; font-size:.78rem; padding:6px 12px; border-radius:20px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer;}
+  .chip:hover{border-color:var(--role); color:var(--role);}
+  .ask{display:flex; gap:8px;}
+  .ask input{flex:1; font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
+  .ask button{font:inherit; font-weight:600; padding:10px 18px; border-radius:10px; border:0; background:var(--role); color:#fff; cursor:pointer;}
+  .ask button:disabled{opacity:.6; cursor:default;}
 </style>
 </head>
 <body>
@@ -104,11 +168,77 @@
 
   <div class="stats" id="stats"></div>
 
-  <h2>Công cụ của bạn</h2>
-  <div class="tools" id="tools"></div>
+  <div class="section">
+    <h2>Công cụ của bạn</h2>
+    <div class="tools" id="tools"></div>
+  </div>
 
-  <h2 id="listTitle"></h2>
-  <div class="card"><ul class="list" id="list"></ul></div>
+  <!-- Admin: biểu đồ số liệu -->
+  <div class="section" id="chartsSection" hidden>
+    <h2>Số liệu hoạt động</h2>
+    <div class="card">
+      <div class="chart-bar">
+        <div class="seg" id="rangeSeg">
+          <button type="button" data-g="day" class="on">30 ngày · theo ngày</button>
+          <button type="button" data-g="month">12 tháng · theo tháng</button>
+        </div>
+        <button type="button" class="linkbtn" id="tableToggle">Xem dạng bảng</button>
+      </div>
+      <div class="charts" id="chartsView">
+        <div>
+          <p class="chart-title">Doanh thu</p>
+          <p class="chart-note" id="revNote"></p>
+          <div class="svgwrap" id="revChart"></div>
+        </div>
+        <div>
+          <p class="chart-title">Số ca khám theo chuyên khoa</p>
+          <p class="chart-note" id="specNote"></p>
+          <div id="specChart"></div>
+        </div>
+      </div>
+      <div class="charts" id="chartsTable" hidden>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Kỳ</th><th class="num">Số hoá đơn</th><th class="num">Doanh thu</th></tr></thead><tbody id="revTable"></tbody></table></div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Chuyên khoa</th><th class="num">Tổng</th><th class="num">Hoàn thành</th><th class="num">Huỷ</th></tr></thead><tbody id="specTable"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bác sĩ / Nhân viên / Bệnh nhân: lịch tái khám -->
+  <div class="section" id="followSection" hidden>
+    <h2 id="followTitle">Lịch tái khám</h2>
+    <div class="card" id="followBody"></div>
+  </div>
+
+  <div class="section">
+    <h2 id="listTitle"></h2>
+    <div class="card"><ul class="list" id="list"></ul></div>
+  </div>
+
+  <!-- Admin: nhật ký hoạt động -->
+  <div class="section" id="auditSection" hidden>
+    <h2>Nhật ký hoạt động</h2>
+    <div class="card">
+      <div class="chart-bar">
+        <span class="sub">200 hoạt động gần nhất: ai đã đổi vai trò, sửa giá, huỷ lịch, thu tiền…</span>
+        <select class="mini" id="auditFilter"><option value="">Tất cả hành động</option></select>
+      </div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Hành động</th><th>Chi tiết</th></tr></thead><tbody id="auditBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- Trợ lý AI theo vai trò -->
+  <div class="section">
+    <h2>Trợ lý AI của bạn</h2>
+    <div class="card">
+      <div class="ai-head"><div class="dot">✨</div><div><b id="aiName">Trợ lý AI</b><span id="aiHint"></span></div></div>
+      <div class="chat" id="chat"></div>
+      <div class="chips" id="chips"></div>
+      <form class="ask" id="askForm">
+        <input type="text" id="askInput" placeholder="Nhập câu hỏi…" autocomplete="off" maxlength="500">
+        <button type="submit" id="askBtn">Gửi</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <div class="center" id="needLogin" hidden>
@@ -122,46 +252,67 @@
 (function () {
   const token = localStorage.getItem('dm_token');
   const STATUS = { cho_xac_nhan: 'Chờ xác nhận', da_xac_nhan: 'Đã xác nhận', da_checkin: 'Đã check-in', dang_kham: 'Đang khám', hoan_thanh: 'Hoàn thành', da_huy: 'Đã huỷ' };
+  const ROLE_LABEL = { admin: 'Quản trị viên', doctor: 'Bác sĩ', staff: 'Nhân viên', patient: 'Bệnh nhân' };
   const ROLE = {
     admin:   { badge: 'Quản trị viên',     ws: 'Không gian quản trị',  hi: 'Bảng điều khiển quản trị', sub: 'Quản lý tài khoản, danh mục, giá và tri thức AI của phòng khám.' },
-    doctor:  { badge: 'Bác sĩ',            ws: 'Không gian bác sĩ',    hi: 'Không gian bác sĩ',        sub: 'Lịch khám của bạn hôm nay và các công cụ khám bệnh.' },
-    staff:   { badge: 'Nhân viên tư vấn',  ws: 'Không gian nhân viên', hi: 'Không gian nhân viên',     sub: 'Tiếp đón, xác nhận lịch hẹn và thu ngân trong ngày.' },
-    patient: { badge: 'Bệnh nhân',         ws: 'Không gian bệnh nhân', hi: 'Không gian của bạn',       sub: 'Đặt lịch, theo dõi lịch hẹn và xem lại hồ sơ khám bệnh.' },
+    doctor:  { badge: 'Bác sĩ',            ws: 'Không gian bác sĩ',    hi: 'Không gian bác sĩ',        sub: 'Lịch khám của bạn hôm nay, lịch tái khám và các công cụ khám bệnh.' },
+    staff:   { badge: 'Nhân viên tư vấn',  ws: 'Không gian nhân viên', hi: 'Không gian nhân viên',     sub: 'Tiếp đón, xác nhận lịch hẹn, thu ngân và nhắc lịch tái khám.' },
+    patient: { badge: 'Bệnh nhân',         ws: 'Không gian bệnh nhân', hi: 'Không gian của bạn',       sub: 'Đặt lịch, theo dõi lịch hẹn, tái khám và xem lại hồ sơ khám bệnh.' },
   };
   const TOOLS = {
     admin: [
       ['👥', 'Quản lý tài khoản', 'Thêm bác sĩ/nhân viên, phân quyền', '/tai-khoan.html'],
       ['📋', 'Hàng đợi khám', 'Toàn bộ lịch hẹn theo ngày', '/hang-doi.html'],
       ['💊', 'Danh mục thuốc & giá', 'Thuốc, tương tác, giá khám', '/danh-muc-thuoc.html'],
-      ['🧾', 'Hoá đơn', 'Lập và xác nhận thu tiền', '/hoa-don.html'],
+      ['🧾', 'Hoá đơn', 'Lập, thu tiền, in hoá đơn', '/hoa-don.html'],
       ['🧠', 'Cơ sở tri thức AI', 'Tài liệu cho trợ lý AI', '/co-so-tri-thuc.html'],
     ],
     doctor: [
       ['📋', 'Hàng đợi khám', 'Bệnh nhân chờ khám hôm nay', '/hang-doi.html'],
-      ['🩺', 'Khám bệnh', 'Mở từ hàng đợi: chẩn đoán, kê đơn', '/hang-doi.html'],
+      ['🩺', 'Khám bệnh', 'Mở từ hàng đợi: chẩn đoán, kê đơn, hẹn tái khám', '/hang-doi.html'],
       ['👤', 'Thông tin tài khoản', 'Hồ sơ cá nhân', '/tai-khoan.html'],
     ],
     staff: [
       ['📋', 'Hàng đợi khám', 'Xác nhận, check-in lịch hẹn', '/hang-doi.html'],
-      ['🧾', 'Hoá đơn', 'Lập hoá đơn, thu tiền', '/hoa-don.html'],
+      ['🧾', 'Hoá đơn', 'Lập hoá đơn, thu tiền, in', '/hoa-don.html'],
       ['📅', 'Đặt lịch hộ', 'Trang đặt lịch khám', '/dat-lich.html'],
     ],
     patient: [
       ['📅', 'Đặt lịch khám', 'Chọn chuyên khoa, bác sĩ, giờ', '/dat-lich.html'],
-      ['📁', 'Hồ sơ khám bệnh', 'Lịch sử khám, đơn thuốc, hoá đơn', '/ho-so.html'],
+      ['📁', 'Hồ sơ khám bệnh', 'Lịch sử khám, đơn thuốc, hoá đơn, in PDF', '/ho-so.html'],
       ['👤', 'Thông tin tài khoản', 'Hồ sơ cá nhân', '/tai-khoan.html'],
     ],
   };
+  const CHIPS = {
+    admin: ['Doanh thu 7 ngày qua thế nào?', 'Chuyên khoa nào đông khách nhất tháng này?', 'Còn bao nhiêu hoá đơn chưa thu?', 'Gần đây ai đã sửa giá hoặc đổi vai trò?', 'Nhận xét nhanh tình hình tháng này'],
+    doctor: ['Hôm nay tôi có những ca nào?', 'Ai đang quá hạn tái khám?', 'Tuần này có bệnh nhân nào tái khám?'],
+    staff: ['Hôm nay có bao nhiêu lịch hẹn?', 'Hoá đơn nào chưa thu tiền?', 'Cần nhắc ai tái khám hôm nay?'],
+    patient: ['Lịch hẹn sắp tới của tôi là khi nào?', 'Đơn thuốc gần nhất của tôi gồm những gì?', 'Tôi đã thanh toán hoá đơn chưa?', 'Bác sĩ có hẹn tôi tái khám không?'],
+  };
+  const AI_HINT = {
+    admin: 'Hỏi về doanh thu, số ca, công nợ, nhật ký hoạt động.',
+    doctor: 'Hỏi về ca khám hôm nay và lịch tái khám của bệnh nhân bạn.',
+    staff: 'Hỏi về lịch hẹn trong ngày, hoá đơn chưa thu, tái khám cần nhắc.',
+    patient: 'Hỏi về lịch hẹn, đơn thuốc, hoá đơn, tái khám của chính bạn.',
+  };
+
+  let me = null;
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+  const $ = (id) => document.getElementById(id);
+  const money = (n) => Number(n).toLocaleString('vi-VN') + 'đ';
+  const fmtDate = (d) => { const s = String(d).slice(0, 10).split('-'); return s[2] + '/' + s[1] + '/' + s[0]; };
   function today() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
-  async function api(path) {
-    const res = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+  async function api(path, opts = {}) {
+    const res = await fetch(path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
     return data;
@@ -169,12 +320,12 @@
   const safe = (p, fallback) => p.catch(() => fallback);
 
   function setStats(items) {
-    document.getElementById('stats').innerHTML = items.map(([n, l]) =>
+    $('stats').innerHTML = items.map(([n, l]) =>
       `<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
   }
   function setList(title, rows, emptyText) {
-    document.getElementById('listTitle').textContent = title;
-    document.getElementById('list').innerHTML = rows.length
+    $('listTitle').textContent = title;
+    $('list').innerHTML = rows.length
       ? rows.map((r) => `<li><div><b>${esc(r.main)}</b><div class="meta">${esc(r.meta)}</div></div><span class="pill">${esc(r.pill)}</span></li>`).join('')
       : `<li><p class="empty">${esc(emptyText)}</p></li>`;
   }
@@ -184,16 +335,233 @@
     pill: STATUS[a.status] || a.status,
   });
 
+  /* ---------- Lịch tái khám ---------- */
+  const FU_GROUPS = [
+    ['qua_han', 'Quá hạn', 'bad'],
+    ['hom_nay', 'Hôm nay', 'warn'],
+    ['sap_toi', 'Sắp tới', ''],
+  ];
+  function renderFollowups(followups, role) {
+    const canAct = role !== 'patient';
+    const active = followups.filter((f) => f.bucket !== 'xong');
+    $('followSection').hidden = false;
+    $('followTitle').textContent = role === 'patient' ? 'Lịch tái khám của bạn' : 'Lịch tái khám';
+    if (!active.length) {
+      $('followBody').innerHTML = `<p class="empty">${role === 'patient' ? 'Bác sĩ chưa hẹn bạn tái khám.' : 'Không có lịch tái khám nào đang chờ.'}</p>`;
+      return;
+    }
+    $('followBody').innerHTML = FU_GROUPS.map(([key, label, cls]) => {
+      const items = active.filter((f) => f.bucket === key);
+      if (!items.length && role === 'patient') return '';
+      return `<div class="fu-group">
+        <div class="fu-head ${cls}">${label}<span class="count">${items.length}</span></div>
+        ${items.length ? `<ul class="list">${items.map((f) => `
+          <li>
+            <div><b>${esc(fmtDate(f.date))} · ${esc(f.patientName)}</b>
+              <div class="meta">${role === 'patient' ? 'BS. ' + esc(f.doctorName) : (f.patientPhone ? 'SĐT ' + esc(f.patientPhone) + ' · ' : '') + 'Chẩn đoán: ' + esc(f.diagnosis)}${f.note ? ' · ' + esc(f.note) : ''}</div></div>
+            ${canAct ? `<div class="fu-actions">
+              <button class="mini" data-fu="${f.id}" data-st="da_den">Đã đến</button>
+              <button class="mini" data-fu="${f.id}" data-st="da_huy">Huỷ</button></div>` : ''}
+          </li>`).join('')}</ul>` : '<p class="empty">Không có.</p>'}
+      </div>`;
+    }).join('');
+    $('followBody').querySelectorAll('button[data-fu]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await api(`/api/followups/${b.dataset.fu}/status`, { method: 'PATCH', body: JSON.stringify({ status: b.dataset.st }) });
+        const { followups: fresh } = await api('/api/followups');
+        renderFollowups(fresh, role);
+      } catch (e) { alert(e.message); b.disabled = false; }
+    }));
+  }
+
+  /* ---------- Biểu đồ (admin) ---------- */
+  let chartGroup = 'day';
+  let statsData = null;
+
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    const m = v / p;
+    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+  }
+  function compact(v) {
+    if (v >= 1e9) return +(v / 1e9).toFixed(1) + ' tỷ';
+    if (v >= 1e6) return +(v / 1e6).toFixed(1) + ' tr';
+    if (v >= 1e3) return +(v / 1e3).toFixed(0) + 'k';
+    return String(v);
+  }
+  // Liệt kê đủ mọi ngày/tháng trong khoảng để ngày không có doanh thu hiện cột 0, không bị "nhảy cóc".
+  function fillPeriods(data, from, to, group) {
+    const map = new Map(data.map((d) => [d.period, d]));
+    const out = [];
+    const cur = new Date(from + 'T00:00:00');
+    const end = new Date(to + 'T00:00:00');
+    if (group === 'month') cur.setDate(1);
+    while (cur <= end) {
+      const key = group === 'month'
+        ? cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0')
+        : cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-' + String(cur.getDate()).padStart(2, '0');
+      const hit = map.get(key);
+      out.push({ period: key, total: hit ? hit.total : 0, invoices: hit ? hit.invoices : 0 });
+      if (group === 'month') cur.setMonth(cur.getMonth() + 1); else cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }
+  const periodLabel = (p, group) => group === 'month' ? p.slice(5) + '/' + p.slice(0, 4) : p.slice(8) + '/' + p.slice(5, 7);
+
+  function drawRevenue(series, group) {
+    const W = 640, H = 230, L = 46, R = 8, T = 10, B = 28;
+    const max = niceMax(Math.max(0, ...series.map((s) => s.total)));
+    const pw = W - L - R, ph = H - T - B;
+    const slot = pw / Math.max(series.length, 1);
+    const bw = Math.min(26, slot * 0.62);
+    const y = (v) => T + ph - (v / max) * ph;
+    let g = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = (max / 4) * i;
+      g += `<line class="${i === 0 ? 'axis' : 'grid'}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${compact(v)}</text>`;
+    }
+    const every = Math.ceil(series.length / 8);
+    const bars = series.map((s, i) => {
+      const x = L + slot * i + (slot - bw) / 2;
+      const h = Math.max(s.total > 0 ? 2 : 0, (s.total / max) * ph);
+      const label = i % every === 0 ? `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${periodLabel(s.period, group)}</text>` : '';
+      // Cột có góc trên bo 4px, đáy phẳng sát trục.
+      const r = Math.min(4, bw / 2, h);
+      const path = h > 0 ? `M${x},${T + ph} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z` : '';
+      return `${path ? `<path class="bar" d="${path}" data-i="${i}"/>` : ''}<rect class="hit" x="${L + slot * i}" y="${T}" width="${slot}" height="${ph}" data-i="${i}"/>${label}`;
+    }).join('');
+    $('revChart').innerHTML = `<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="Biểu đồ cột doanh thu theo ${group === 'month' ? 'tháng' : 'ngày'}">${g}${bars}</svg><div class="tip" hidden></div>`;
+    const wrap = $('revChart'), tip = wrap.querySelector('.tip'), svg = wrap.querySelector('svg');
+    svg.querySelectorAll('.hit').forEach((el) => {
+      el.addEventListener('mousemove', () => {
+        const s = series[Number(el.dataset.i)];
+        const rect = svg.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+        const cx = ((L + slot * Number(el.dataset.i) + slot / 2) / W) * rect.width + (rect.left - wr.left);
+        tip.hidden = false;
+        tip.style.left = cx + 'px';
+        tip.style.top = ((y(s.total) / H) * rect.height) + 'px';
+        tip.textContent = `${periodLabel(s.period, group)}: ${money(s.total)} · ${s.invoices} hoá đơn`;
+      });
+      el.addEventListener('mouseleave', () => { tip.hidden = true; });
+    });
+  }
+
+  function drawSpecialties(rows) {
+    if (!rows.length) { $('specChart').innerHTML = '<p class="empty">Chưa có lịch hẹn trong khoảng này.</p>'; return; }
+    const max = Math.max(...rows.map((r) => r.total));
+    $('specChart').innerHTML = rows.map((r) => `
+      <div class="hbar" title="${esc(r.specialty)}: ${r.total} ca (${r.completed} hoàn thành, ${r.cancelled} huỷ)">
+        <span>${esc(r.specialty)}</span>
+        <div class="track"><div class="fill" style="width:${Math.max(3, (r.total / max) * 100)}%"></div></div>
+        <span class="val">${r.total}</span>
+      </div>`).join('');
+  }
+
+  async function loadCharts() {
+    const { group } = { group: chartGroup };
+    const data = await api('/api/stats?group=' + group);
+    statsData = data;
+    const series = fillPeriods(data.revenue, data.from, data.to, group);
+    $('revNote').textContent = `${fmtDate(data.from)} – ${fmtDate(data.to)} · tổng ${money(data.summary.revenue)} (chỉ tính hoá đơn đã thu tiền, theo ngày thu)`;
+    $('specNote').textContent = `${data.summary.appointments} lịch hẹn trong khoảng này`;
+    drawRevenue(series, group);
+    drawSpecialties(data.specialties);
+    $('revTable').innerHTML = series.map((s) => `<tr><td>${periodLabel(s.period, group)}</td><td class="num">${s.invoices}</td><td class="num">${money(s.total)}</td></tr>`).join('');
+    $('specTable').innerHTML = data.specialties.map((r) => `<tr><td>${esc(r.specialty)}</td><td class="num">${r.total}</td><td class="num">${r.completed}</td><td class="num">${r.cancelled}</td></tr>`).join('')
+      || '<tr><td colspan="4">Chưa có dữ liệu.</td></tr>';
+    return data;
+  }
+
+  /* ---------- Nhật ký hoạt động (admin) ---------- */
+  const DISCOUNT_LABEL = { bhyt: 'BHYT', sinh_vien: 'Thẻ sinh viên' };
+  function describe(l) {
+    const d = l.detail || {};
+    const st = (s) => STATUS[s] || s;
+    switch (l.action) {
+      case 'user.role_change': return `${d.name}: ${ROLE_LABEL[d.from] || d.from} → ${ROLE_LABEL[d.to] || d.to}`;
+      case 'user.create': return `${d.name} (${ROLE_LABEL[d.role] || d.role})`;
+      case 'user.delete': return `${d.name || '#' + l.entityId} (${ROLE_LABEL[d.role] || d.role || '—'})`;
+      case 'price.service': return `${d.specialty}: ${d.from == null ? 'chưa có' : money(d.from)} → ${money(d.to)}`;
+      case 'price.medicine': return `${d.name}: ${d.from == null ? '—' : money(d.from)} → ${money(d.to)}`;
+      case 'price.discount': return `${DISCOUNT_LABEL[d.category] || d.category}: ${d.from}% → ${d.to}%`;
+      case 'appointment.status':
+      case 'appointment.cancel': return `Lịch #${l.entityId}: ${st(d.from)} → ${st(d.to)}`;
+      case 'invoice.create': return `HD-${String(l.entityId).padStart(6, '0')} · ${money(d.total)}`;
+      case 'invoice.paid': return `HD-${String(l.entityId).padStart(6, '0')} · ${money(d.total)} · ${d.paymentMethod === 'chuyen_khoan' ? 'Chuyển khoản' : 'Tiền mặt'}`;
+      case 'invoice.unpaid': return `HD-${String(l.entityId).padStart(6, '0')} · ${money(d.total)}`;
+      case 'record.create': return `DT-${String(l.entityId).padStart(6, '0')} · ${d.medicines || 0} thuốc`;
+      case 'followup.create': return `Tái khám ngày ${fmtDate(d.date)}`;
+      default: return l.detail ? JSON.stringify(l.detail) : '';
+    }
+  }
+  const badAction = (a) => ['user.delete', 'appointment.cancel', 'invoice.unpaid'].includes(a);
+  let auditActionsLoaded = false;
+  async function loadAudit() {
+    const action = $('auditFilter').value;
+    const { logs, actions } = await api('/api/admin/audit-logs' + (action ? '?action=' + encodeURIComponent(action) : ''));
+    if (!auditActionsLoaded) {
+      $('auditFilter').insertAdjacentHTML('beforeend', Object.entries(actions).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(''));
+      auditActionsLoaded = true;
+    }
+    $('auditBody').innerHTML = logs.length ? logs.map((l) => `
+      <tr>
+        <td>${new Date(l.createdAt).toLocaleString('vi-VN')}</td>
+        <td>${esc(l.userName || '—')}<div class="meta" style="font-size:.72rem; color:var(--ink-muted);">${esc(ROLE_LABEL[l.userRole] || l.userRole || '')}</div></td>
+        <td><span class="pill ${badAction(l.action) ? 'bad' : ''}">${esc(l.actionLabel)}</span></td>
+        <td>${esc(describe(l))}</td>
+      </tr>`).join('') : '<tr><td colspan="4">Chưa có hoạt động nào được ghi lại.</td></tr>';
+  }
+
+  /* ---------- Trợ lý AI ---------- */
+  const chatHistory = [];
+  function addMsg(text, who) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + who;
+    el.textContent = text;
+    $('chat').appendChild(el);
+    $('chat').scrollTop = $('chat').scrollHeight;
+    return el;
+  }
+  async function ask(q) {
+    q = q.trim();
+    if (!q) return;
+    addMsg(q, 'me');
+    const wait = addMsg('Đang tra cứu…', 'bot');
+    $('askBtn').disabled = true;
+    try {
+      const { reply } = await api('/api/ai/assistant', { method: 'POST', body: JSON.stringify({ message: q, history: chatHistory }) });
+      wait.textContent = reply;
+      chatHistory.push({ role: 'user', content: q }, { role: 'assistant', content: reply });
+    } catch (e) {
+      wait.textContent = e.message;
+    } finally {
+      $('askBtn').disabled = false;
+      $('chat').scrollTop = $('chat').scrollHeight;
+    }
+  }
+  function setupAssistant(role) {
+    $('aiHint').textContent = AI_HINT[role] || '';
+    addMsg('Xin chào ' + me.name + '! ' + (AI_HINT[role] || '') + ' Bạn có thể bấm câu gợi ý bên dưới hoặc tự đặt câu hỏi.', 'bot');
+    $('chips').innerHTML = (CHIPS[role] || []).map((c) => `<button type="button" class="chip">${esc(c)}</button>`).join('');
+    $('chips').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+    $('askForm').addEventListener('submit', (e) => { e.preventDefault(); const v = $('askInput').value; $('askInput').value = ''; ask(v); });
+  }
+
+  /* ---------- Nạp dữ liệu theo vai trò ---------- */
   async function load(user) {
+    me = user;
     const cfg = ROLE[user.role] || ROLE.patient;
     document.body.dataset.role = user.role;
-    document.getElementById('roleBadge').textContent = cfg.badge;
-    document.getElementById('title').textContent = cfg.hi + ' — ' + user.name;
-    document.getElementById('subtitle').textContent = cfg.sub;
-    document.getElementById('wsLink').textContent = cfg.ws;
-    document.getElementById('tools').innerHTML = (TOOLS[user.role] || TOOLS.patient).map(([ic, t, d, href]) =>
+    $('roleBadge').textContent = cfg.badge;
+    $('title').textContent = cfg.hi + ' — ' + user.name;
+    $('subtitle').textContent = cfg.sub;
+    $('wsLink').textContent = cfg.ws;
+    $('tools').innerHTML = (TOOLS[user.role] || TOOLS.patient).map(([ic, t, d, href]) =>
       `<a class="tool" href="${href}"><div class="ic">${ic}</div><b>${esc(t)}</b><span>${esc(d)}</span></a>`).join('');
-    document.getElementById('app').hidden = false;
+    $('app').hidden = false;
+    setupAssistant(user.role);
 
     const t = today();
     if (user.role === 'admin') {
@@ -203,28 +571,53 @@
         safe(api('/api/billing/invoices?status=chua_thanh_toan'), { invoices: [] }),
       ]);
       const c = (r) => users.users.filter((u) => u.role === r).length;
+      const unpaidTotal = unpaid.invoices.reduce((s, i) => s + i.totalAmount, 0);
       setStats([
         [users.users.length, 'Tổng tài khoản'],
         [c('doctor') + ' / ' + c('staff'), 'Bác sĩ / Nhân viên'],
         [appts.appointments.length, 'Lịch hẹn hôm nay'],
-        [unpaid.invoices.length, 'Hoá đơn chưa thanh toán'],
+        [unpaid.invoices.length + ' · ' + money(unpaidTotal), 'Hoá đơn chưa thu · Tổng tiền'],
       ]);
       setList('Lịch hẹn hôm nay', appts.appointments.map((a) => apptRow(a)), 'Hôm nay chưa có lịch hẹn.');
+
+      $('chartsSection').hidden = false;
+      $('auditSection').hidden = false;
+      $('rangeSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', async () => {
+        chartGroup = b.dataset.g;
+        $('rangeSeg').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+        try { await loadCharts(); } catch (e) { $('revNote').textContent = e.message; }
+      }));
+      $('tableToggle').addEventListener('click', () => {
+        const showTable = $('chartsTable').hidden;
+        $('chartsTable').hidden = !showTable;
+        $('chartsView').hidden = showTable;
+        $('tableToggle').textContent = showTable ? 'Xem dạng biểu đồ' : 'Xem dạng bảng';
+      });
+      $('auditFilter').addEventListener('change', () => loadAudit().catch((e) => alert(e.message)));
+      loadCharts().catch((e) => { $('revNote').textContent = e.message; });
+      loadAudit().catch((e) => { $('auditBody').innerHTML = `<tr><td colspan="4">${esc(e.message)}</td></tr>`; });
+      safe(api('/api/followups'), { followups: [] }).then(({ followups }) => renderFollowups(followups, 'admin'));
     } else if (user.role === 'doctor') {
-      const { appointments } = await safe(api('/api/appointments?date=' + t), { appointments: [] });
+      const [{ appointments }, { followups }] = await Promise.all([
+        safe(api('/api/appointments?date=' + t), { appointments: [] }),
+        safe(api('/api/followups'), { followups: [] }),
+      ]);
       const mine = appointments.filter((a) => a.doctorId === user.id && a.status !== 'da_huy');
       const n = (s) => mine.filter((a) => a.status === s).length;
+      const fu = (b) => followups.filter((f) => f.bucket === b).length;
       setStats([
         [mine.length, 'Lịch của bạn hôm nay'],
-        [n('da_checkin'), 'Đã check-in, chờ khám'],
-        [n('dang_kham'), 'Đang khám'],
+        [n('da_checkin') + n('dang_kham'), 'Đang chờ / đang khám'],
         [n('hoan_thanh'), 'Đã khám xong'],
+        [fu('qua_han') + ' / ' + fu('hom_nay'), 'Tái khám quá hạn / hôm nay'],
       ]);
       setList('Lịch khám của bạn hôm nay', mine.map((a) => apptRow(a, 'doctor')), 'Hôm nay bạn chưa có lịch khám.');
+      renderFollowups(followups, 'doctor');
     } else if (user.role === 'staff') {
-      const [appts, unpaid] = await Promise.all([
+      const [appts, unpaid, { followups }] = await Promise.all([
         safe(api('/api/appointments?date=' + t), { appointments: [] }),
         safe(api('/api/billing/invoices?status=chua_thanh_toan'), { invoices: [] }),
+        safe(api('/api/followups'), { followups: [] }),
       ]);
       const list = appts.appointments.filter((a) => a.status !== 'da_huy');
       const n = (s) => list.filter((a) => a.status === s).length;
@@ -235,10 +628,12 @@
         [unpaid.invoices.length, 'Hoá đơn chưa thanh toán'],
       ]);
       setList('Việc cần xử lý hôm nay', list.filter((a) => a.status === 'cho_xac_nhan' || a.status === 'da_xac_nhan').map((a) => apptRow(a)), 'Không có lịch nào đang chờ xử lý.');
+      renderFollowups(followups, 'staff');
     } else {
-      const [appts, recs] = await Promise.all([
+      const [appts, recs, { followups }] = await Promise.all([
         safe(api('/api/appointments/mine'), { appointments: [] }),
         safe(api('/api/clinical/records/mine'), { records: [] }),
+        safe(api('/api/followups/mine'), { followups: [] }),
       ]);
       const upcoming = appts.appointments
         .filter((a) => a.date.slice(0, 10) >= t && !['da_huy', 'hoan_thanh'].includes(a.status))
@@ -246,20 +641,24 @@
       setStats([
         [upcoming.length, 'Lịch hẹn sắp tới'],
         [(recs.records || []).length, 'Lần khám đã có hồ sơ'],
+        [followups.filter((f) => f.bucket !== 'xong').length, 'Lịch tái khám đang chờ'],
       ]);
       setList('Lịch hẹn sắp tới', upcoming.map((a) => ({
         main: `${a.date.slice(0, 10)} · ${a.time}`,
         meta: `${a.specialty}${a.doctorName ? ' · BS. ' + a.doctorName : ''}`,
         pill: STATUS[a.status] || a.status,
       })), 'Bạn chưa có lịch hẹn nào sắp tới.');
+      renderFollowups(followups, 'patient');
     }
   }
 
-  if (!token) { document.getElementById('needLogin').hidden = false; return; }
+  if (!token) { $('needLogin').hidden = false; return; }
   fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } })
     .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(({ user }) => load(user))
-    .catch(() => { localStorage.removeItem('dm_token'); document.getElementById('needLogin').hidden = false; });
+    .then(
+      ({ user }) => load(user).catch((e) => console.error(e)), // lỗi hiển thị dữ liệu không được làm mất phiên đăng nhập
+      () => { localStorage.removeItem('dm_token'); $('needLogin').hidden = false; }
+    );
 })();
 </script>
 </body>

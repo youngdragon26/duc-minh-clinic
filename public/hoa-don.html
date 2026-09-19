@@ -94,7 +94,7 @@
       </select>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Ngày khám</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th>Tổng tiền</th><th>Trạng thái</th><th>Hình thức TT</th><th></th></tr></thead>
+          <thead><tr><th>Ngày khám</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th>Tổng tiền</th><th>Trạng thái</th><th>Hình thức TT</th><th>Chứng từ</th><th></th></tr></thead>
           <tbody id="invoiceBody"></tbody>
         </table>
       </div>
@@ -163,6 +163,7 @@
         <td class="money">${money(inv.totalAmount)}</td>
         <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span></td>
         <td>${inv.paymentMethod ? `<span class="method-tag">${PAYMENT_METHOD_LABELS[inv.paymentMethod]}</span>` : '—'}</td>
+        <td><a class="ghost" style="text-decoration:none; display:inline-block; margin-bottom:6px;" href="/in.html?type=hd&id=${inv.id}" target="_blank">🖨 In ${inv.code}</a></td>
         <td>${inv.status === 'chua_thanh_toan' ? `
           <div class="pay-actions">
             <select class="pay-method" data-id="${inv.id}">

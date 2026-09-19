@@ -2,6 +2,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
 const { INTERACTION_SEVERITIES } = require('../constants');
+const { logAudit } = require('../lib/audit');
 
 const router = express.Router();
 router.use(authenticate);
@@ -44,11 +45,13 @@ router.patch('/medicines/:id', requireAdmin, async (req, res) => {
     const { price } = req.body || {};
     const priceNum = Number(price);
     if (!Number.isFinite(priceNum) || priceNum < 0) return res.status(400).json({ error: 'Giá thuốc không hợp lệ.' });
+    const old = await pool.query('SELECT price FROM medicines WHERE id = $1', [Number(req.params.id)]);
     const result = await pool.query(
       'UPDATE medicines SET price = $1 WHERE id = $2 RETURNING id, name, unit, price, created_at AS "createdAt"',
       [priceNum, Number(req.params.id)]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy thuốc.' });
+    await logAudit(req.user, 'price.medicine', 'medicine', result.rows[0].id, { name: result.rows[0].name, from: old.rows[0]?.price ?? null, to: priceNum });
     res.json({ medicine: result.rows[0] });
   } catch (e) {
     console.error(e);
@@ -157,9 +160,17 @@ router.post('/check-interactions', async (req, res) => {
 
 // ---------- Hồ sơ khám bệnh + đơn thuốc ----------
 
+// Số đơn thuốc hiển thị: DT-000001 (lấy từ id tự tăng của hồ sơ khám).
+const prescriptionCode = (id) => 'DT-' + String(id).padStart(6, '0');
+
 function publicRecord(r) {
   return {
     id: r.id,
+    code: prescriptionCode(r.id),
+    patientName: r.patient_name,
+    patientAge: r.age,
+    patientGender: r.gender,
+    patientPhone: r.contact_phone,
     appointmentId: r.appointment_id,
     patientId: r.patient_id,
     doctorId: r.doctor_id,
@@ -174,9 +185,11 @@ function publicRecord(r) {
 }
 
 const RECORD_SELECT = `
-  SELECT mr.*, d.name AS doctor_name, a.specialty, a.appointment_date
+  SELECT mr.*, d.name AS doctor_name, p.name AS patient_name, a.specialty, a.appointment_date,
+         a.age, a.gender, a.contact_phone
   FROM medical_records mr
   JOIN users d ON d.id = mr.doctor_id
+  JOIN users p ON p.id = mr.patient_id
   JOIN appointments a ON a.id = mr.appointment_id
 `;
 
@@ -242,6 +255,7 @@ router.post('/records', requireRole('doctor'), async (req, res) => {
     );
 
     await client.query('COMMIT');
+    await logAudit(req.user, 'record.create', 'medical_record', recordId, { appointmentId: apptId, patientId: appt.patient_id, medicines: list.length });
 
     const warnings = await findInteractions(list.map((it) => it.medicineId));
     const full = await pool.query(RECORD_SELECT + ' WHERE mr.id = $1', [recordId]);
@@ -280,6 +294,25 @@ router.get('/records/by-appointment/:appointmentId', async (req, res) => {
   try {
     const result = await pool.query(RECORD_SELECT + ' WHERE mr.appointment_id = $1', [Number(req.params.appointmentId)]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Chưa có hồ sơ khám cho lịch hẹn này.' });
+    const record = result.rows[0];
+    if (!STAFF_ROLES.includes(req.user.role) && record.patient_id !== req.user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền xem hồ sơ này.' });
+    }
+    res.json({ record: await attachItems(record) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Chi tiết 1 hồ sơ khám/đơn thuốc theo id (dùng cho trang in) — đặt SAU
+// '/records/mine' và '/records/by-appointment/...' để 2 đường dẫn cố định khớp trước.
+router.get('/records/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy hồ sơ khám.' });
+    const result = await pool.query(RECORD_SELECT + ' WHERE mr.id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy hồ sơ khám.' });
     const record = result.rows[0];
     if (!STAFF_ROLES.includes(req.user.role) && record.patient_id !== req.user.id) {
       return res.status(403).json({ error: 'Bạn không có quyền xem hồ sơ này.' });

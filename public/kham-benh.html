@@ -99,6 +99,7 @@
       <b>Đã khám xong</b>
       <p id="doneDiagnosis" style="margin-top:8px;"></p>
       <div id="donePrescription"></div>
+      <a class="ghost" id="printRx" href="#" target="_blank" style="text-decoration:none; display:inline-block; margin-top:10px;" hidden>🖨 In đơn thuốc</a>
     </div>
 
     <form class="card" id="examForm">
@@ -114,6 +115,12 @@
       <label style="margin-top:20px;">Đơn thuốc</label>
       <div id="medRows"></div>
       <button type="button" class="ghost" id="addMedBtn" style="margin-top:10px;">+ Thêm thuốc</button>
+
+      <label style="margin-top:20px;">Hẹn tái khám (không bắt buộc)</label>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="date" id="fFollowDate" style="max-width:180px;">
+        <input type="text" id="fFollowNote" placeholder="Dặn dò khi tái khám (vd: nhịn ăn sáng, mang theo kết quả xét nghiệm)" style="flex:1; min-width:220px;">
+      </div>
 
       <div class="warn-box" id="warnBox" hidden></div>
 
@@ -219,7 +226,7 @@
     })).filter(it => it.medicineId);
 
     try {
-      const { warnings } = await api('/api/clinical/records', {
+      const { warnings, record } = await api('/api/clinical/records', {
         method: 'POST',
         body: JSON.stringify({
           appointmentId: Number(appointmentId),
@@ -233,6 +240,24 @@
         ? 'Đã lưu hồ sơ khám (có cảnh báo tương tác thuốc ở trên).'
         : 'Đã lưu hồ sơ khám và hoàn thành lịch hẹn.';
       msg.className = 'msg ok';
+      const followDate = document.getElementById('fFollowDate').value;
+      if (followDate) {
+        try {
+          await api('/api/followups', {
+            method: 'POST',
+            body: JSON.stringify({ medicalRecordId: record.id, date: followDate, note: document.getElementById('fFollowNote').value }),
+          });
+          msg.textContent += ' Đã đặt lịch tái khám ngày ' + followDate.split('-').reverse().join('/') + '.';
+        } catch (fe) {
+          msg.textContent += ' Nhưng chưa đặt được lịch tái khám: ' + fe.message;
+          msg.className = 'msg err';
+        }
+      }
+      const printLink = document.createElement('a');
+      printLink.href = '/in.html?type=dt&id=' + record.id;
+      printLink.target = '_blank';
+      printLink.textContent = ' 🖨 In đơn thuốc ' + record.code;
+      msg.appendChild(printLink);
       btn.textContent = 'Đã lưu';
     } catch (err) {
       msg.textContent = err.message; msg.className = 'msg err';
@@ -290,6 +315,10 @@
       document.getElementById('donePrescription').innerHTML = record.items.length
         ? '<b>Đơn thuốc:</b><ul>' + record.items.map(it => `<li>${it.medicineName} — ${it.dosage} (SL: ${it.quantity} ${it.unit})</li>`).join('') + '</ul>'
         : '<p class="sub" style="margin:8px 0 0;">Không kê đơn thuốc.</p>';
+      const printRx = document.getElementById('printRx');
+      printRx.href = '/in.html?type=dt&id=' + record.id;
+      printRx.textContent = '🖨 In đơn thuốc ' + record.code;
+      printRx.hidden = false;
     } catch (e) {
       // Chưa có hồ sơ khám -> hiển thị form để bác sĩ nhập.
       addMedRow();

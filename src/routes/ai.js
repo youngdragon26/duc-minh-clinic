@@ -6,6 +6,7 @@ const { chunkText } = require('../lib/chunk');
 const { embedText, toVectorLiteral } = require('../lib/embeddings');
 const { getAvailableSlots } = require('../lib/availability');
 const { createAppointment, BookingError } = require('../lib/appointmentService');
+const { toolsForRole, runTool } = require('../lib/assistantTools');
 
 const router = express.Router();
 
@@ -556,6 +557,88 @@ router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async
       config: { systemInstruction: systemPrompt },
     }));
     res.json({ summary: (result.text || '').trim() });
+  } catch (e) {
+    console.error(e);
+    const { status, error } = aiErrorResponse(e);
+    res.status(status).json({ error });
+  }
+});
+
+// ---------- Trợ lý AI cá nhân theo vai trò (trong không gian làm việc) ----------
+// Khác với chatbot công khai ở trên: người dùng PHẢI đăng nhập, và trợ lý có
+// các công cụ tra cứu dữ liệu thật của chính họ (xem lib/assistantTools.js) —
+// bệnh nhân hỏi lịch hẹn/đơn thuốc/hoá đơn của mình, bác sĩ hỏi ca hôm nay và
+// lịch tái khám, admin hỏi doanh thu, số ca theo chuyên khoa, nhật ký hoạt động.
+const ASSISTANT_ROLE_INFO = {
+  patient: 'Bệnh nhân. Bạn giúp họ theo dõi lịch hẹn, hiểu đơn thuốc/hoá đơn/lịch tái khám của CHÍNH họ.',
+  doctor: 'Bác sĩ. Bạn giúp họ nắm nhanh ca khám hôm nay, lịch tái khám quá hạn/hôm nay/sắp tới của bệnh nhân họ phụ trách.',
+  staff: 'Nhân viên tư vấn/tiếp đón. Bạn giúp họ nắm lịch hẹn trong ngày, hoá đơn chưa thu và lịch tái khám cần nhắc bệnh nhân.',
+  admin: 'Quản trị viên. Bạn giúp họ đọc số liệu vận hành: doanh thu, số ca theo chuyên khoa, công nợ, nhật ký hoạt động; có thể đưa nhận xét ngắn dựa trên số liệu.',
+};
+
+router.post('/assistant', async (req, res) => {
+  const client = getClient();
+  if (!client) {
+    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
+  }
+  try {
+    const { message, history } = req.body || {};
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'Thiếu nội dung câu hỏi.' });
+    }
+    const tools = toolsForRole(req.user.role);
+    const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+
+    const systemPrompt = [
+      'Bạn là trợ lý AI cá nhân của Phòng khám Đa khoa Đức Minh, đang trò chuyện với ' + req.user.name + '.',
+      'Vai trò người dùng: ' + (ASSISTANT_ROLE_INFO[req.user.role] || ASSISTANT_ROLE_INFO.patient),
+      'Hôm nay là ngày ' + todayVN + ' (giờ Việt Nam). Trả lời bằng tiếng Việt, ngắn gọn, thân thiện; dùng gạch đầu dòng khi liệt kê.',
+      '',
+      'Quy tắc bắt buộc:',
+      '- Mọi số liệu, tên, ngày giờ, tiền, thuốc PHẢI lấy từ kết quả công cụ. TUYỆT ĐỐI KHÔNG bịa hay đoán. Câu hỏi cần dữ liệu thì gọi công cụ trước khi trả lời; công cụ trả rỗng thì nói thẳng là chưa có dữ liệu.',
+      '- Xưng "mình" và gọi người dùng là "bạn" (hoặc "bác sĩ" với bác sĩ). KHÔNG đoán giới tính qua tên nên không dùng anh/chị/ông/bà.',
+      '- Tiền viết dạng 1.500.000đ. Ngày viết dạng dd/mm/yyyy.',
+      '- KHÔNG chẩn đoán bệnh, KHÔNG tự đổi liều hay kê thuốc mới. Khi giải thích đơn thuốc của bệnh nhân, chỉ nhắc lại đúng thuốc và liều bác sĩ đã ghi, rồi nhắc hỏi lại bác sĩ nếu còn thắc mắc hoặc có dấu hiệu bất thường.',
+      '- Triệu chứng nghe nghiêm trọng (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...): khuyên gọi cấp cứu 115 ngay.',
+      '- Bạn CHỈ tra cứu được, không thể sửa dữ liệu. Muốn đặt lịch, thu tiền, sửa giá... thì chỉ dẫn người dùng thao tác ở trang tương ứng.',
+      '- Câu hỏi ngoài phạm vi phòng khám hoặc ngoài quyền hạn của người dùng: từ chối lịch sự; cần hỗ trợ thêm thì gọi hotline 0974 755 333.',
+      '- Khi được nhờ nhận xét số liệu (admin): nêu 2-3 điểm đáng chú ý chỉ dựa trên số đã tra cứu, nói rõ đó là nhận xét tham khảo.',
+    ].join('\n');
+
+    const turns = Array.isArray(history)
+      ? history
+          .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+          .slice(-10)
+          .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }))
+      : [];
+    while (turns.length && turns[0].role !== 'user') turns.shift();
+
+    const chat = client.chats.create({
+      model: CHAT_MODEL,
+      config: {
+        systemInstruction: systemPrompt,
+        tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
+        temperature: 0.2,
+      },
+      history: turns,
+    });
+
+    let result = await withRetry(() => chat.sendMessage({ message: message.trim() }));
+    let calls = result.functionCalls;
+    let rounds = 0;
+    while (calls && calls.length > 0 && rounds < 4) {
+      const responseParts = [];
+      for (const call of calls) {
+        const output = await runTool(call.name, call.args, req.user);
+        responseParts.push({ functionResponse: { name: call.name, response: output } });
+      }
+      result = await withRetry(() => chat.sendMessage({ message: responseParts }));
+      calls = result.functionCalls;
+      rounds++;
+    }
+
+    const text = (result.text || '').trim();
+    res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn thử hỏi cụ thể hơn, hoặc gọi hotline 0974 755 333 nhé.' });
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);

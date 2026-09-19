@@ -1,6 +1,7 @@
 const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
+const { logAudit } = require('../lib/audit');
 const { SPECIALTIES, INVOICE_STATUSES, PAYMENT_METHODS, DISCOUNT_CATEGORIES, DISCOUNT_CATEGORY_LABELS } = require('../constants');
 
 const router = express.Router();
@@ -36,11 +37,13 @@ router.put('/service-prices/:specialty', requireAdmin, async (req, res) => {
     if (!Number.isFinite(price) || price < 0) {
       return res.status(400).json({ error: 'Giá khám không hợp lệ.' });
     }
+    const old = await pool.query('SELECT price FROM service_prices WHERE specialty = $1', [specialty]);
     await pool.query(
       `INSERT INTO service_prices (specialty, price) VALUES ($1, $2)
        ON CONFLICT (specialty) DO UPDATE SET price = EXCLUDED.price`,
       [specialty, price]
     );
+    await logAudit(req.user, 'price.service', 'service_price', null, { specialty, from: old.rows[0]?.price ?? null, to: price });
     res.json({ specialty, price });
   } catch (e) {
     console.error(e);
@@ -76,11 +79,13 @@ router.put('/discount-rates/:category', requireAdmin, async (req, res) => {
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
       return res.status(400).json({ error: 'Phần trăm giảm giá không hợp lệ (0-100).' });
     }
+    const old = await pool.query('SELECT percent FROM discount_rates WHERE category = $1', [category]);
     await pool.query(
       `INSERT INTO discount_rates (category, percent) VALUES ($1, $2)
        ON CONFLICT (category) DO UPDATE SET percent = EXCLUDED.percent`,
       [category, percent]
     );
+    await logAudit(req.user, 'price.discount', 'discount_rate', null, { category, from: old.rows[0]?.percent ?? 0, to: percent });
     res.json({ category, percent });
   } catch (e) {
     console.error(e);
@@ -90,9 +95,13 @@ router.put('/discount-rates/:category', requireAdmin, async (req, res) => {
 
 // ---------- Hoá đơn ----------
 
+// Số hoá đơn hiển thị: HD-000001 (lấy từ id tự tăng nên luôn tăng dần, không trùng).
+const invoiceCode = (id) => 'HD-' + String(id).padStart(6, '0');
+
 function publicInvoice(inv) {
   return {
     id: inv.id,
+    code: invoiceCode(inv.id),
     appointmentId: inv.appointment_id,
     patientId: inv.patient_id,
     patientName: inv.patient_name,
@@ -196,6 +205,7 @@ router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
       await client.query('COMMIT');
 
       const full = await pool.query(INVOICE_SELECT + ' WHERE inv.id = $1', [invoiceId]);
+      await logAudit(req.user, 'invoice.create', 'invoice', invoiceId, { appointmentId, total: full.rows[0].total_amount });
       res.status(201).json({ invoice: await attachInvoiceItems(full.rows[0]) });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -253,6 +263,25 @@ router.get('/invoices/by-appointment/:appointmentId', async (req, res) => {
   }
 });
 
+// Chi tiết 1 hoá đơn (dùng cho trang in) — đặt SAU '/invoices/mine' và
+// '/invoices/by-appointment/...' để 2 đường dẫn cố định đó khớp trước ':id'.
+router.get('/invoices/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
+    const result = await pool.query(INVOICE_SELECT + ' WHERE inv.id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
+    const inv = result.rows[0];
+    if (!STAFF_ROLES.includes(req.user.role) && inv.patient_id !== req.user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền xem hoá đơn này.' });
+    }
+    res.json({ invoice: await attachInvoiceItems(inv) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
 router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, res) => {
   try {
     const { status, paymentMethod } = req.body || {};
@@ -270,6 +299,8 @@ router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, 
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
     const full = await pool.query(INVOICE_SELECT + ' WHERE inv.id = $1', [result.rows[0].id]);
+    await logAudit(req.user, status === 'da_thanh_toan' ? 'invoice.paid' : 'invoice.unpaid', 'invoice', result.rows[0].id,
+      { total: full.rows[0].total_amount, paymentMethod: status === 'da_thanh_toan' ? paymentMethod : null });
     res.json({ invoice: await attachInvoiceItems(full.rows[0]) });
   } catch (e) {
     console.error(e);

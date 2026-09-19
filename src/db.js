@@ -223,6 +223,39 @@ async function init() {
       subtotal INTEGER NOT NULL DEFAULT 0
     );
   `);
+
+  // Nhật ký hoạt động: ai làm gì, lúc nào, với đối tượng nào. Chỉ thêm, không
+  // sửa/xoá qua ứng dụng. user_name/role chép lại tại thời điểm ghi để dòng
+  // nhật ký vẫn đọc được kể cả khi tài khoản sau đó bị xoá hoặc đổi vai trò.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      user_name TEXT,
+      user_role TEXT,
+      action TEXT NOT NULL,
+      entity TEXT,
+      entity_id INTEGER,
+      detail JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ix_audit_logs_created ON audit_logs (created_at DESC);`);
+
+  // Hẹn tái khám do bác sĩ đặt sau mỗi lần khám.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS followups (
+      id SERIAL PRIMARY KEY,
+      medical_record_id INTEGER NOT NULL REFERENCES medical_records(id) ON DELETE CASCADE,
+      patient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      doctor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      followup_date DATE NOT NULL,
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'cho' CHECK (status IN ('cho','da_den','da_huy')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ix_followups_doctor_date ON followups (doctor_id, followup_date);`);
 }
 
 const ROLES = ['admin', 'patient', 'doctor', 'staff'];
