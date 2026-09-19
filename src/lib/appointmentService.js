@@ -1,5 +1,5 @@
 const { pool } = require('../db');
-const { SPECIALTIES, GENDERS } = require('../constants');
+const { SPECIALTIES, GENDERS, DISCOUNT_CATEGORIES } = require('../constants');
 const { FIXED_SLOTS } = require('./availability');
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
@@ -19,7 +19,7 @@ class BookingError extends Error {
 
 // Kiểm tra + chuẩn hoá các trường chung cho cả tạo mới lẫn sửa lịch hẹn — dùng
 // chung để 2 đường (đặt lịch lần đầu / sửa lịch đã đặt) luôn áp cùng 1 quy tắc.
-function validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender }) {
+function validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory }) {
   if (!specialty || !date || !time) {
     throw new BookingError('Thiếu chuyên khoa, ngày hoặc giờ khám.');
   }
@@ -54,10 +54,15 @@ function validateBookingFields({ specialty, date, time, contactName, contactPhon
   if (!FIXED_SLOTS.includes(time)) {
     throw new BookingError('Giờ khám không hợp lệ.');
   }
+  const discountCategoryNorm = discountCategory || null;
+  if (discountCategoryNorm && !DISCOUNT_CATEGORIES.includes(discountCategoryNorm)) {
+    throw new BookingError('Đối tượng ưu tiên không hợp lệ.');
+  }
   return {
     ageNum,
     contactName: String(contactName).trim(),
     contactPhone: String(contactPhone).trim(),
+    discountCategory: discountCategoryNorm,
   };
 }
 
@@ -77,16 +82,16 @@ async function resolveDoctorId(doctorId, specialty) {
 // Tạo 1 lịch hẹn — dùng chung cho cả form đặt lịch trên web (route POST
 // /api/appointments) và tool book_appointment mà trợ lý AI gọi, để 2 đường
 // đặt lịch luôn áp dụng đúng 1 bộ quy tắc kiểm tra, không lệch nhau.
-async function createAppointment({ patientId, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender }) {
-  const normalized = validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender });
+async function createAppointment({ patientId, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory }) {
+  const normalized = validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory });
   const doctorIdNum = await resolveDoctorId(doctorId, specialty);
 
   try {
     const inserted = await pool.query(
       `INSERT INTO appointments
-         (patient_id, doctor_id, specialty, appointment_date, appointment_time, note, contact_name, contact_phone, age, gender)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-      [patientId, doctorIdNum, specialty, date, time, note || null, normalized.contactName, normalized.contactPhone, normalized.ageNum, gender]
+         (patient_id, doctor_id, specialty, appointment_date, appointment_time, note, contact_name, contact_phone, age, gender, discount_category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [patientId, doctorIdNum, specialty, date, time, note || null, normalized.contactName, normalized.contactPhone, normalized.ageNum, gender, normalized.discountCategory]
     );
     return inserted.rows[0].id;
   } catch (e) {
@@ -101,7 +106,7 @@ async function createAppointment({ patientId, specialty, doctorId, date, time, n
 // nguyên như lúc đặt (muốn đổi chuyên khoa thì huỷ rồi đặt lại). Bệnh nhân chỉ
 // sửa được lịch của chính mình và khi lịch chưa bắt đầu khám; nhân viên/bác
 // sĩ/admin sửa được mọi lịch hẹn còn trong 2 trạng thái đó (vd sửa hộ SĐT sai).
-async function updateAppointment({ id, requester, doctorId, date, time, note, contactName, contactPhone, age, gender }) {
+async function updateAppointment({ id, requester, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory }) {
   const existing = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
     throw new BookingError('Không tìm thấy lịch hẹn.', 404);
@@ -117,7 +122,7 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
   }
 
   const normalized = validateBookingFields({
-    specialty: appt.specialty, date, time, contactName, contactPhone, age, gender,
+    specialty: appt.specialty, date, time, contactName, contactPhone, age, gender, discountCategory,
   });
   const doctorIdNum = await resolveDoctorId(doctorId, appt.specialty);
 
@@ -125,9 +130,9 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
     const updated = await pool.query(
       `UPDATE appointments SET
          doctor_id = $1, appointment_date = $2, appointment_time = $3, note = $4,
-         contact_name = $5, contact_phone = $6, age = $7, gender = $8
-       WHERE id = $9 RETURNING id`,
-      [doctorIdNum, date, time, note || null, normalized.contactName, normalized.contactPhone, normalized.ageNum, gender, id]
+         contact_name = $5, contact_phone = $6, age = $7, gender = $8, discount_category = $9
+       WHERE id = $10 RETURNING id`,
+      [doctorIdNum, date, time, note || null, normalized.contactName, normalized.contactPhone, normalized.ageNum, gender, normalized.discountCategory, id]
     );
     return updated.rows[0].id;
   } catch (e) {

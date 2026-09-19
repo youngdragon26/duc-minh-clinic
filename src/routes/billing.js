@@ -1,7 +1,7 @@
 const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
-const { SPECIALTIES, INVOICE_STATUSES, PAYMENT_METHODS } = require('../constants');
+const { SPECIALTIES, INVOICE_STATUSES, PAYMENT_METHODS, DISCOUNT_CATEGORIES, DISCOUNT_CATEGORY_LABELS } = require('../constants');
 
 const router = express.Router();
 router.use(authenticate);
@@ -42,6 +42,46 @@ router.put('/service-prices/:specialty', requireAdmin, async (req, res) => {
       [specialty, price]
     );
     res.json({ specialty, price });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// ---------- % giảm giá theo đối tượng ưu tiên (BHYT / thẻ sinh viên) ----------
+
+router.get('/discount-rates', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT category, percent FROM discount_rates');
+    const byCategory = Object.fromEntries(result.rows.map((r) => [r.category, r.percent]));
+    const rates = DISCOUNT_CATEGORIES.map((c) => ({
+      category: c,
+      label: DISCOUNT_CATEGORY_LABELS[c],
+      percent: byCategory[c] ?? 0,
+    }));
+    res.json({ rates });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.put('/discount-rates/:category', requireAdmin, async (req, res) => {
+  try {
+    const category = req.params.category;
+    if (!DISCOUNT_CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: 'Đối tượng ưu tiên không hợp lệ.' });
+    }
+    const percent = Number(req.body?.percent);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      return res.status(400).json({ error: 'Phần trăm giảm giá không hợp lệ (0-100).' });
+    }
+    await pool.query(
+      `INSERT INTO discount_rates (category, percent) VALUES ($1, $2)
+       ON CONFLICT (category) DO UPDATE SET percent = EXCLUDED.percent`,
+      [category, percent]
+    );
+    res.json({ category, percent });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
@@ -103,6 +143,15 @@ router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
     }
     const consultationFee = priceRow.rows[0].price;
 
+    // Giảm giá theo đối tượng ưu tiên (BHYT/thẻ sinh viên) bệnh nhân khai lúc
+    // đặt lịch — chỉ áp lên phí khám, không cộng dồn (lịch hẹn chỉ lưu 1 loại).
+    let discountAmount = 0;
+    if (appt.discount_category) {
+      const rateRow = await pool.query('SELECT percent FROM discount_rates WHERE category = $1', [appt.discount_category]);
+      const percent = rateRow.rows[0]?.percent ?? 0;
+      discountAmount = Math.round((consultationFee * percent) / 100);
+    }
+
     const recordRes = await pool.query('SELECT id FROM medical_records WHERE appointment_id = $1', [appointmentId]);
     let prescriptionItems = [];
     if (recordRes.rows.length > 0) {
@@ -116,6 +165,10 @@ router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
 
     const lineItems = [
       { description: `Phí khám: ${appt.specialty}`, quantity: 1, unitPrice: consultationFee, subtotal: consultationFee },
+      ...(discountAmount > 0 ? [{
+        description: `Giảm giá (${DISCOUNT_CATEGORY_LABELS[appt.discount_category]})`,
+        quantity: 1, unitPrice: -discountAmount, subtotal: -discountAmount,
+      }] : []),
       ...prescriptionItems.map((it) => ({
         description: it.name,
         quantity: it.quantity,

@@ -59,6 +59,7 @@
 <header>
   <div class="bar">
     <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/khong-gian.html" class="back" style="margin-right:14px;">Không gian của tôi</a>
     <a href="/hang-doi.html" class="back">← Về hàng đợi khám</a>
   </div>
 </header>
@@ -77,7 +78,7 @@
       <p class="sub" style="margin:4px 0 0;">Chỉ hiện các lịch hẹn đã Hoàn thành khám nhưng chưa có hoá đơn.</p>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Ngày</th><th>Giờ</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th></th></tr></thead>
+          <thead><tr><th>Ngày</th><th>Giờ</th><th>Bệnh nhân</th><th>Chuyên khoa</th><th>Đối tượng ưu tiên</th><th></th></tr></thead>
           <tbody id="pendingBody"></tbody>
         </table>
       </div>
@@ -107,6 +108,7 @@
   const token = localStorage.getItem('dm_token');
   const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
   const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
+  const DISCOUNT_LABELS = { bhyt: 'BHYT', sinh_vien: 'Thẻ sinh viên' };
 
   function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
 
@@ -131,6 +133,7 @@
         <td>${a.time}</td>
         <td>${a.patientName}</td>
         <td>${a.specialty}</td>
+        <td>${DISCOUNT_LABELS[a.discountCategory] || '—'}</td>
         <td><button class="ghost create-invoice" data-id="${a.id}">Lập hoá đơn</button></td>
       </tr>
     `).join('');

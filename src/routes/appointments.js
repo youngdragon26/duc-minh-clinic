@@ -59,6 +59,7 @@ function publicAppointment(a) {
     contactPhone: a.contact_phone,
     age: a.age,
     gender: a.gender,
+    discountCategory: a.discount_category,
     hasInvoice: a.has_invoice,
     createdAt: a.created_at,
   };
@@ -87,9 +88,9 @@ router.get('/doctors', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { specialty, doctorId, date, time, note, contactName, contactPhone, age, gender } = req.body || {};
+    const { specialty, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory } = req.body || {};
     const id = await createAppointment({
-      patientId: req.user.id, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender,
+      patientId: req.user.id, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory,
     });
     const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [id]);
     res.status(201).json({ appointment: publicAppointment(full.rows[0]) });
@@ -131,8 +132,8 @@ router.patch('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy lịch hẹn.' });
-    const { doctorId, date, time, note, contactName, contactPhone, age, gender } = req.body || {};
-    await updateAppointment({ id, requester: req.user, doctorId, date, time, note, contactName, contactPhone, age, gender });
+    const { doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory } = req.body || {};
+    await updateAppointment({ id, requester: req.user, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory });
     const full = await pool.query(APPT_SELECT + ' WHERE a.id = $1', [id]);
     res.json({ appointment: publicAppointment(full.rows[0]) });
   } catch (e) {

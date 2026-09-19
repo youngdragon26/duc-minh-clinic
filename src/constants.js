@@ -45,6 +45,14 @@ const INVOICE_STATUS_LABELS = {
 const GENDERS = ['nam', 'nu', 'khac'];
 const GENDER_LABELS = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
 
+// Đối tượng ưu tiên khai lúc đặt lịch — bệnh nhân tự khai, nhân viên xác minh
+// thẻ thật khi lập hoá đơn. Chỉ chọn được 1 loại, không cộng dồn nhiều ưu đãi.
+const DISCOUNT_CATEGORIES = ['bhyt', 'sinh_vien'];
+const DISCOUNT_CATEGORY_LABELS = {
+  bhyt: 'Bảo hiểm y tế (BHYT)',
+  sinh_vien: 'Thẻ sinh viên',
+};
+
 // Hình thức thanh toán hoá đơn — ghi nhận khi nhân viên xác nhận đã thu tiền.
 const PAYMENT_METHODS = ['tien_mat', 'chuyen_khoan'];
 const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
@@ -55,4 +63,5 @@ module.exports = {
   INVOICE_STATUSES, INVOICE_STATUS_LABELS,
   GENDERS, GENDER_LABELS,
   PAYMENT_METHODS, PAYMENT_METHOD_LABELS,
+  DISCOUNT_CATEGORIES, DISCOUNT_CATEGORY_LABELS,
 };

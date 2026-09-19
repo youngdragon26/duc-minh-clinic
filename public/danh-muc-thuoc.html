@@ -73,7 +73,7 @@
 <header>
   <div class="bar">
     <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
-    <a href="/tai-khoan.html" class="back">← Về trang quản trị</a>
+    <a href="/khong-gian.html" class="back">← Không gian làm việc</a>
   </div>
 </header>
 
@@ -126,6 +126,17 @@
         <table>
           <thead><tr><th>Chuyên khoa</th><th>Giá khám (đ)</th><th></th></tr></thead>
           <tbody id="servicePriceBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <b>% giảm phí khám theo đối tượng ưu tiên</b>
+      <p class="hint">Áp dụng lên phí khám (không áp lên tiền thuốc) khi bệnh nhân khai BHYT hoặc thẻ sinh viên lúc đặt lịch. Mỗi lịch hẹn chỉ tính 1 loại, không cộng dồn.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Đối tượng</th><th>Giảm (%)</th></tr></thead>
+          <tbody id="discountRateBody"></tbody>
         </table>
       </div>
     </div>
@@ -292,6 +303,27 @@
     });
   }
 
+  async function loadDiscountRates() {
+    const { rates } = await api('/api/billing/discount-rates');
+    const body = document.getElementById('discountRateBody');
+    body.innerHTML = rates.map(r => `
+      <tr>
+        <td>${r.label}</td>
+        <td><input type="number" class="disc-rate" data-category="${r.category}" min="0" max="100" step="1" value="${r.percent}" style="width:90px;"></td>
+      </tr>
+    `).join('');
+    body.querySelectorAll('.disc-rate').forEach(input => {
+      input.addEventListener('change', async () => {
+        try {
+          await api('/api/billing/discount-rates/' + input.dataset.category, {
+            method: 'PUT', body: JSON.stringify({ percent: input.value }),
+          });
+          loadDiscountRates();
+        } catch (e) { alert(e.message); loadDiscountRates(); }
+      });
+    });
+  }
+
   document.getElementById('interactionForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('interactionMsg');
@@ -325,6 +357,7 @@
     await loadMedicines();
     await loadInteractions();
     await loadServicePrices();
+    await loadDiscountRates();
   })();
 </script>
 </body>

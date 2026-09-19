@@ -67,6 +67,17 @@ async function init() {
       CHECK (gender IS NULL OR gender IN ('nam','nu','khac'));
   `);
 
+  // Đối tượng ưu tiên bệnh nhân tự khai lúc đặt lịch (BHYT/thẻ sinh viên) — chỉ
+  // 1 loại, không cộng dồn. NULL nghĩa là không thuộc đối tượng ưu tiên nào.
+  // Nhân viên vẫn phải xác minh thẻ thật khi lập hoá đơn, khai sai chỉ ảnh
+  // hưởng tới % giảm giá áp cho phí khám, không tự động miễn phí gì cả.
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_category TEXT;`);
+  await pool.query(`
+    ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_discount_category_check;
+    ALTER TABLE appointments ADD CONSTRAINT appointments_discount_category_check
+      CHECK (discount_category IS NULL OR discount_category IN ('bhyt','sinh_vien'));
+  `);
+
   // Chặn 2 lịch hẹn trùng giờ của cùng 1 bác sĩ ở tầng CSDL (không chỉ kiểm tra
   // ở code) để tránh race condition khi 2 người đặt cùng lúc — lịch đã huỷ thì
   // không tính vào, nên giờ đó lại đặt được cho người khác.
@@ -169,6 +180,15 @@ async function init() {
     CREATE TABLE IF NOT EXISTS service_prices (
       specialty TEXT PRIMARY KEY,
       price INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  // % giảm giá theo đối tượng ưu tiên (BHYT/thẻ sinh viên), admin thiết lập
+  // trong "Bảng giá dịch vụ" — không có dòng cho 1 loại nghĩa là 0% (chưa giảm).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS discount_rates (
+      category TEXT PRIMARY KEY CHECK (category IN ('bhyt','sinh_vien')),
+      percent INTEGER NOT NULL DEFAULT 0 CHECK (percent >= 0 AND percent <= 100)
     );
   `);
 

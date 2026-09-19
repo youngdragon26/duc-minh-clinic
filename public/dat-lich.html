@@ -115,6 +115,7 @@
   <div class="bar">
     <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
     <span>
+      <a href="/khong-gian.html" class="back" style="margin-right:14px;">Không gian của tôi</a>
       <a href="/ho-so.html" class="back" style="margin-right:14px;">Hồ sơ khám bệnh →</a>
       <a href="/" class="back">← Về trang chủ</a>
     </span>
@@ -217,6 +218,14 @@
           </div>
         </div>
 
+        <label>Đối tượng ưu tiên (nếu có)</label>
+        <select id="fDiscountCategory">
+          <option value="">Không có</option>
+          <option value="bhyt">Bảo hiểm y tế (BHYT)</option>
+          <option value="sinh_vien">Thẻ sinh viên</option>
+        </select>
+        <p class="hint" style="margin:4px 0 0;">Vui lòng mang theo thẻ thật khi đến khám để nhân viên xác minh và áp giá ưu đãi lúc lập hoá đơn.</p>
+
         <label>Lý do khám / triệu chứng (không bắt buộc)</label>
         <textarea id="fNote" placeholder="Ví dụ: ho, sốt nhẹ 2 ngày..."></textarea>
 
@@ -257,6 +266,7 @@
   };
   const CANCELLABLE = ['cho_xac_nhan', 'da_xac_nhan'];
   const GENDER_LABELS = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
+  const DISCOUNT_LABELS = { bhyt: 'Bảo hiểm y tế (BHYT)', sinh_vien: 'Thẻ sinh viên' };
   const DAY_NAMES = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
   // 07:00 - 20:30, mỗi 30 phút 1 slot — phải khớp đúng FIXED_SLOTS ở src/lib/availability.js.
   const FIXED_SLOTS = Array.from({ length: 28 }, (_, i) => {
@@ -353,6 +363,7 @@
     document.getElementById('fPhone').value = meCache?.phone || '';
     document.getElementById('fAge').value = '';
     document.getElementById('fGender').value = '';
+    document.getElementById('fDiscountCategory').value = '';
     document.getElementById('fNote').value = '';
   }
 
@@ -376,6 +387,7 @@
     document.getElementById('fPhone').value = appt.contactPhone || '';
     document.getElementById('fAge').value = appt.age != null ? appt.age : '';
     document.getElementById('fGender').value = appt.gender || '';
+    document.getElementById('fDiscountCategory').value = appt.discountCategory || '';
     document.getElementById('fNote').value = appt.note || '';
 
     const apptDateStr = appt.date.slice(0, 10);
@@ -411,6 +423,7 @@
       ${appt.doctorBio ? `<div class="field"><b>Lý lịch bác sĩ</b>${esc(appt.doctorBio).replace(/\n/g, '<br>')}</div>` : ''}
       <div class="field"><b>Người khám</b>${esc(appt.contactName) || '—'} · ${genderLabel}${appt.age != null ? ', ' + appt.age + ' tuổi' : ''}</div>
       <div class="field"><b>Số điện thoại</b>${esc(appt.contactPhone) || '—'}</div>
+      <div class="field"><b>Đối tượng ưu tiên</b>${DISCOUNT_LABELS[appt.discountCategory] || 'Không có'}</div>
       ${appt.note ? `<div class="field"><b>Lý do khám</b>${esc(appt.note)}</div>` : ''}
       <div class="field"><b>Trạng thái</b><span class="pill ${appt.status}">${STATUS_LABELS[appt.status] || appt.status}</span></div>
       ${editable ? `
@@ -591,6 +604,7 @@
       contactPhone: document.getElementById('fPhone').value,
       age: Number(document.getElementById('fAge').value),
       gender: document.getElementById('fGender').value,
+      discountCategory: document.getElementById('fDiscountCategory').value || null,
     };
 
     submitBtn.disabled = true;
