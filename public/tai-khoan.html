@@ -330,7 +330,7 @@
       });
       token = t; me = user;
       localStorage.setItem('dm_token', token);
-      renderLoggedIn();
+      location.href = '/khong-gian.html';
     } catch (e) {
       msg.textContent = e.message; msg.className = 'msg err';
     }
@@ -353,7 +353,7 @@
       });
       token = t; me = user;
       localStorage.setItem('dm_token', token);
-      renderLoggedIn();
+      location.href = '/khong-gian.html';
     } catch (e) {
       msg.textContent = e.message; msg.className = 'msg err';
     }
