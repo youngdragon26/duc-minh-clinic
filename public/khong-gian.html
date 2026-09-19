@@ -61,8 +61,26 @@
 
   .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:26px;}
   .stat{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px; border-left:4px solid var(--role);}
+  .stat{font:inherit; color:inherit; text-align:left; width:100%;}
+  button.stat{cursor:pointer; transition:transform .15s, box-shadow .15s, border-color .15s;}
+  button.stat:hover, button.stat:focus-visible{transform:translateY(-2px); box-shadow:var(--shadow); border-color:var(--role); outline:none;}
   .stat .n{font-family:"Lora",serif; font-size:1.9rem; font-weight:600; line-height:1.1;}
   .stat .l{font-size:.8rem; color:var(--ink-muted); margin-top:4px;}
+  .stat .more{display:block; font-size:.72rem; font-weight:700; color:var(--role); margin-top:8px;}
+
+  /* Cửa sổ chi tiết khi bấm vào ô số liệu */
+  .overlay{position:fixed; inset:0; background:rgba(10,24,21,.55); display:grid; place-items:center; padding:20px; z-index:300;}
+  .modal{background:var(--surface); border:1px solid var(--line); border-radius:16px; width:100%; max-width:560px; max-height:82vh; display:flex; flex-direction:column; box-shadow:var(--shadow);}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; border-bottom:1px solid var(--line);}
+  .modal-head b{font-family:"Lora",serif; font-size:1.15rem;}
+  .modal-head .cnt{font-size:.78rem; color:var(--ink-muted); margin-left:8px; font-family:"Be Vietnam Pro",sans-serif;}
+  .modal-x{font:inherit; font-size:1.3rem; line-height:1; border:0; background:transparent; color:var(--ink-muted); cursor:pointer; padding:4px 8px; border-radius:8px;}
+  .modal-x:hover{background:var(--surface-2); color:var(--ink);}
+  .modal-body{padding:6px 20px; overflow-y:auto;}
+  .modal-foot{padding:12px 20px; border-top:1px solid var(--line); text-align:right;}
+  .modal-foot a{font-weight:600; font-size:.88rem; color:var(--role); text-decoration:none;}
+  .list a.rowlink{color:var(--ink); text-decoration:none; font-weight:700;}
+  .list a.rowlink:hover{color:var(--role); text-decoration:underline;}
 
   h2{font-size:.78rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 12px;}
   .section{margin-bottom:30px;}
@@ -241,6 +259,14 @@
   </div>
 </div>
 
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head"><div><b id="modalTitle"></b><span class="cnt" id="modalCnt"></span></div><button type="button" class="modal-x" id="modalClose" aria-label="Đóng">×</button></div>
+    <div class="modal-body"><ul class="list" id="modalList"></ul></div>
+    <div class="modal-foot" id="modalFoot" hidden><a id="modalLink" href="#"></a></div>
+  </div>
+</div>
+
 <div class="center" id="needLogin" hidden>
   <h1>Bạn chưa đăng nhập</h1>
   <p class="sub">Đăng nhập để vào không gian làm việc riêng của tài khoản.</p>
@@ -319,10 +345,34 @@
   }
   const safe = (p, fallback) => p.catch(() => fallback);
 
+  // items: [số, nhãn, chi tiết?]. Có chi tiết ({title, rows, empty, href, hrefLabel}) thì ô là nút bấm mở cửa sổ danh sách.
   function setStats(items) {
-    $('stats').innerHTML = items.map(([n, l]) =>
-      `<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+    const box = $('stats');
+    box.innerHTML = items.map(([n, l, detail], i) => detail
+      ? `<button type="button" class="stat" data-i="${i}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div><span class="more">Xem chi tiết →</span></button>`
+      : `<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+    box.querySelectorAll('button.stat').forEach((b) => b.addEventListener('click', () => openDetail(items[Number(b.dataset.i)][2])));
   }
+  let lastFocus = null;
+  function openDetail(d) {
+    lastFocus = document.activeElement;
+    $('modalTitle').textContent = d.title;
+    $('modalCnt').textContent = d.rows.length ? d.rows.length + ' mục' : '';
+    $('modalList').innerHTML = d.rows.length
+      ? d.rows.map((r) => `<li><div><b>${r.href ? `<a class="rowlink" href="${esc(r.href)}" target="_blank">${esc(r.main)}</a>` : esc(r.main)}</b><div class="meta">${esc(r.meta || '')}</div></div>${r.pill ? `<span class="pill ${r.cls || ''}">${esc(r.pill)}</span>` : ''}</li>`).join('')
+      : `<li><p class="empty">${esc(d.empty || 'Chưa có dữ liệu.')}</p></li>`;
+    $('modalFoot').hidden = !d.href;
+    if (d.href) { $('modalLink').href = d.href; $('modalLink').textContent = d.hrefLabel || 'Mở trang đầy đủ →'; }
+    $('overlay').hidden = false;
+    $('modalClose').focus();
+  }
+  function closeDetail() {
+    $('overlay').hidden = true;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  $('modalClose').addEventListener('click', closeDetail);
+  $('overlay').addEventListener('click', (e) => { if (e.target === $('overlay')) closeDetail(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('overlay').hidden) closeDetail(); });
   function setList(title, rows, emptyText) {
     $('listTitle').textContent = title;
     $('list').innerHTML = rows.length
@@ -572,11 +622,12 @@
       ]);
       const c = (r) => users.users.filter((u) => u.role === r).length;
       const unpaidTotal = unpaid.invoices.reduce((s, i) => s + i.totalAmount, 0);
+      const userRow = (u) => ({ main: u.name, meta: u.email + (u.specialty ? ' · ' + u.specialty : '') + (u.phone ? ' · ' + u.phone : ''), pill: ROLE_LABEL[u.role] || u.role });
       setStats([
-        [users.users.length, 'Tổng tài khoản'],
-        [c('doctor') + ' / ' + c('staff'), 'Bác sĩ / Nhân viên'],
-        [appts.appointments.length, 'Lịch hẹn hôm nay'],
-        [unpaid.invoices.length + ' · ' + money(unpaidTotal), 'Hoá đơn chưa thu · Tổng tiền'],
+        [users.users.length, 'Tổng tài khoản', { title: 'Tất cả tài khoản', rows: users.users.map(userRow), href: '/tai-khoan.html', hrefLabel: 'Quản lý tài khoản →' }],
+        [c('doctor') + ' / ' + c('staff'), 'Bác sĩ / Nhân viên', { title: 'Bác sĩ và nhân viên', rows: users.users.filter((u) => u.role === 'doctor' || u.role === 'staff').map(userRow), empty: 'Chưa có bác sĩ hoặc nhân viên.', href: '/tai-khoan.html', hrefLabel: 'Quản lý tài khoản →' }],
+        [appts.appointments.length, 'Lịch hẹn hôm nay', { title: 'Lịch hẹn hôm nay', rows: appts.appointments.map((a) => apptRow(a)), empty: 'Hôm nay chưa có lịch hẹn.', href: '/hang-doi.html', hrefLabel: 'Mở hàng đợi khám →' }],
+        [unpaid.invoices.length + ' · ' + money(unpaidTotal), 'Hoá đơn chưa thu · Tổng tiền', { title: 'Hoá đơn chưa thu tiền', rows: unpaid.invoices.map((i) => ({ main: i.code + ' · ' + i.patientName, meta: fmtDate(i.date) + ' · ' + i.specialty + ' · ' + money(i.totalAmount), pill: 'Chưa thu', cls: 'warn', href: '/in.html?type=hd&id=' + i.id })), empty: 'Không có hoá đơn nào chưa thu.', href: '/hoa-don.html', hrefLabel: 'Mở trang hoá đơn →' }],
       ]);
       setList('Lịch hẹn hôm nay', appts.appointments.map((a) => apptRow(a)), 'Hôm nay chưa có lịch hẹn.');
 
@@ -605,11 +656,13 @@
       const mine = appointments.filter((a) => a.doctorId === user.id && a.status !== 'da_huy');
       const n = (s) => mine.filter((a) => a.status === s).length;
       const fu = (b) => followups.filter((f) => f.bucket === b).length;
+      const byStatus = (...ss) => mine.filter((a) => ss.includes(a.status)).map((a) => apptRow(a, 'doctor'));
+      const fuRow = (f) => ({ main: fmtDate(f.date) + ' · ' + f.patientName, meta: (f.patientPhone ? 'SĐT ' + f.patientPhone + ' · ' : '') + 'Chẩn đoán: ' + f.diagnosis + (f.note ? ' · ' + f.note : ''), pill: f.bucket === 'qua_han' ? 'Quá hạn' : 'Hôm nay', cls: f.bucket === 'qua_han' ? 'bad' : 'warn' });
       setStats([
-        [mine.length, 'Lịch của bạn hôm nay'],
-        [n('da_checkin') + n('dang_kham'), 'Đang chờ / đang khám'],
-        [n('hoan_thanh'), 'Đã khám xong'],
-        [fu('qua_han') + ' / ' + fu('hom_nay'), 'Tái khám quá hạn / hôm nay'],
+        [mine.length, 'Lịch của bạn hôm nay', { title: 'Lịch khám của bạn hôm nay', rows: mine.map((a) => apptRow(a, 'doctor')), empty: 'Hôm nay bạn chưa có lịch khám.', href: '/hang-doi.html', hrefLabel: 'Mở hàng đợi khám →' }],
+        [n('da_checkin') + n('dang_kham'), 'Đang chờ / đang khám', { title: 'Đang chờ khám / đang khám', rows: byStatus('da_checkin', 'dang_kham'), empty: 'Chưa có bệnh nhân nào đang chờ.', href: '/hang-doi.html', hrefLabel: 'Mở hàng đợi khám →' }],
+        [n('hoan_thanh'), 'Đã khám xong', { title: 'Đã khám xong hôm nay', rows: byStatus('hoan_thanh'), empty: 'Chưa khám xong ca nào.' }],
+        [fu('qua_han') + ' / ' + fu('hom_nay'), 'Tái khám quá hạn / hôm nay', { title: 'Tái khám quá hạn và hôm nay', rows: followups.filter((f) => f.bucket === 'qua_han' || f.bucket === 'hom_nay').map(fuRow), empty: 'Không có ca tái khám quá hạn hoặc hôm nay.' }],
       ]);
       setList('Lịch khám của bạn hôm nay', mine.map((a) => apptRow(a, 'doctor')), 'Hôm nay bạn chưa có lịch khám.');
       renderFollowups(followups, 'doctor');
@@ -621,11 +674,12 @@
       ]);
       const list = appts.appointments.filter((a) => a.status !== 'da_huy');
       const n = (s) => list.filter((a) => a.status === s).length;
+      const byStatus = (...ss) => list.filter((a) => ss.includes(a.status)).map((a) => apptRow(a));
       setStats([
-        [list.length, 'Lịch hẹn hôm nay'],
-        [n('cho_xac_nhan'), 'Chờ xác nhận'],
-        [n('da_checkin') + n('dang_kham'), 'Đang tại phòng khám'],
-        [unpaid.invoices.length, 'Hoá đơn chưa thanh toán'],
+        [list.length, 'Lịch hẹn hôm nay', { title: 'Lịch hẹn hôm nay', rows: list.map((a) => apptRow(a)), empty: 'Hôm nay chưa có lịch hẹn.', href: '/hang-doi.html', hrefLabel: 'Mở hàng đợi khám →' }],
+        [n('cho_xac_nhan'), 'Chờ xác nhận', { title: 'Lịch chờ xác nhận', rows: byStatus('cho_xac_nhan'), empty: 'Không có lịch nào chờ xác nhận.', href: '/hang-doi.html', hrefLabel: 'Mở hàng đợi khám →' }],
+        [n('da_checkin') + n('dang_kham'), 'Đang tại phòng khám', { title: 'Đang tại phòng khám', rows: byStatus('da_checkin', 'dang_kham'), empty: 'Chưa có ai đang tại phòng khám.', href: '/hang-doi.html', hrefLabel: 'Mở hàng đợi khám →' }],
+        [unpaid.invoices.length, 'Hoá đơn chưa thanh toán', { title: 'Hoá đơn chưa thu tiền', rows: unpaid.invoices.map((i) => ({ main: i.code + ' · ' + i.patientName, meta: fmtDate(i.date) + ' · ' + i.specialty + ' · ' + money(i.totalAmount), pill: 'Chưa thu', cls: 'warn', href: '/in.html?type=hd&id=' + i.id })), empty: 'Không có hoá đơn nào chưa thu.', href: '/hoa-don.html', hrefLabel: 'Mở trang hoá đơn →' }],
       ]);
       setList('Việc cần xử lý hôm nay', list.filter((a) => a.status === 'cho_xac_nhan' || a.status === 'da_xac_nhan').map((a) => apptRow(a)), 'Không có lịch nào đang chờ xử lý.');
       renderFollowups(followups, 'staff');
@@ -638,10 +692,11 @@
       const upcoming = appts.appointments
         .filter((a) => a.date.slice(0, 10) >= t && !['da_huy', 'hoan_thanh'].includes(a.status))
         .sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+      const activeFu = followups.filter((f) => f.bucket !== 'xong');
       setStats([
-        [upcoming.length, 'Lịch hẹn sắp tới'],
-        [(recs.records || []).length, 'Lần khám đã có hồ sơ'],
-        [followups.filter((f) => f.bucket !== 'xong').length, 'Lịch tái khám đang chờ'],
+        [upcoming.length, 'Lịch hẹn sắp tới', { title: 'Lịch hẹn sắp tới', rows: upcoming.map((a) => ({ main: fmtDate(a.date) + ' · ' + a.time, meta: a.specialty + (a.doctorName ? ' · BS. ' + a.doctorName : ''), pill: STATUS[a.status] || a.status })), empty: 'Bạn chưa có lịch hẹn nào sắp tới.', href: '/dat-lich.html', hrefLabel: 'Đặt lịch khám →' }],
+        [(recs.records || []).length, 'Lần khám đã có hồ sơ', { title: 'Hồ sơ khám bệnh của bạn', rows: (recs.records || []).map((r) => ({ main: fmtDate(r.date) + ' · ' + r.specialty, meta: 'BS. ' + r.doctorName + ' · Chẩn đoán: ' + r.diagnosis, pill: r.code, href: '/in.html?type=dt&id=' + r.id })), empty: 'Bạn chưa có hồ sơ khám nào.', href: '/ho-so.html', hrefLabel: 'Mở hồ sơ khám bệnh →' }],
+        [activeFu.length, 'Lịch tái khám đang chờ', { title: 'Lịch tái khám của bạn', rows: activeFu.map((f) => ({ main: fmtDate(f.date), meta: 'BS. ' + f.doctorName + (f.note ? ' · ' + f.note : ''), pill: f.bucket === 'qua_han' ? 'Quá hạn' : f.bucket === 'hom_nay' ? 'Hôm nay' : 'Sắp tới', cls: f.bucket === 'qua_han' ? 'bad' : f.bucket === 'hom_nay' ? 'warn' : '' })), empty: 'Bác sĩ chưa hẹn bạn tái khám.', href: '/dat-lich.html', hrefLabel: 'Đặt lịch khám →' }],
       ]);
       setList('Lịch hẹn sắp tới', upcoming.map((a) => ({
         main: `${a.date.slice(0, 10)} · ${a.time}`,
