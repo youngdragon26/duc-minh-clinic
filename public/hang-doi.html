@@ -211,7 +211,7 @@
 
     body.innerHTML = appointments.map(a => `
       <tr class="clickable-row" data-id="${a.id}">
-        <td>${a.time}</td>
+        <td>${a.time}${a.isSunday ? '<br><span class="pill" style="background:#e9d7ff; color:#5b21b6;">Chủ nhật</span>' : ''}</td>
         <td>${esc(a.patientName)}</td>
         <td>${a.patientPhone ? esc(a.patientPhone) : '—'}</td>
         <td>${esc(a.specialty)}</td>
@@ -224,6 +224,7 @@
               <select class="role-select status-select" data-id="${a.id}">
                 ${Object.keys(STATUS_LABELS).map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`).join('')}
               </select>
+              ${a.isSunday && a.status === 'cho_xac_nhan' ? '<span class="muted" style="font-size:.72rem;">Cần bác sĩ phụ trách xác nhận</span>' : ''}
               ${!a.doctorId && myRole === 'doctor' ? '<span class="muted" style="font-size:.72rem;">Chọn trạng thái để nhận ca</span>' : ''}
             ` : `<span class="muted" style="font-size:.78rem;">Đã chỉ định BS. ${esc(a.doctorName || '')}</span>`}
             ${myRole === 'doctor' && a.status !== 'da_huy' && canAct(a) ? `<a class="ghost" style="text-decoration:none; display:inline-block;" href="/kham-benh.html?appointmentId=${a.id}">Khám →</a>` : ''}

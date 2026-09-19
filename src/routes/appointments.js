@@ -36,6 +36,7 @@ router.use(authenticate);
 
 const APPT_SELECT = `
   SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name, d.bio AS doctor_bio,
+         (EXTRACT(DOW FROM a.appointment_date) = 0) AS is_sunday,
          EXISTS(SELECT 1 FROM invoices i WHERE i.appointment_id = a.id) AS has_invoice
   FROM appointments a
   JOIN users p ON p.id = a.patient_id
@@ -55,6 +56,7 @@ function publicAppointment(a) {
     date: a.appointment_date,
     time: a.appointment_time,
     status: a.status,
+    isSunday: a.is_sunday,
     note: a.note,
     contactName: a.contact_name,
     contactPhone: a.contact_phone,
@@ -214,6 +216,15 @@ router.patch('/:id/status', async (req, res) => {
     const appt = existing.rows[0];
     const isStaffLike = STAFF_ROLES.includes(req.user.role);
     const isOwner = appt.patient_id === req.user.id;
+
+    // Lịch khám Chủ nhật là khám theo hẹn trước, chỉ có hiệu lực khi chính bác sĩ
+    // phụ trách (hoặc admin) đồng ý — nhân viên không được xác nhận thay.
+    if (status === 'da_xac_nhan' && appt.status === 'cho_xac_nhan' && req.user.role !== 'admin' && appt.doctor_id !== req.user.id) {
+      const dow = await pool.query('SELECT EXTRACT(DOW FROM appointment_date)::int AS dow FROM appointments WHERE id = $1', [id]);
+      if (dow.rows[0].dow === 0) {
+        return res.status(403).json({ error: 'Lịch khám Chủ nhật cần chính bác sĩ phụ trách xác nhận (bác sĩ đồng ý thì mới có hiệu lực).' });
+      }
+    }
 
     // Bác sĩ chỉ được đổi trạng thái lịch hẹn ĐÃ CHỈ ĐỊNH cho chính mình — không
     // được đụng vào lịch của bác sĩ khác. Lịch chưa chỉ định bác sĩ cụ thể thì bác

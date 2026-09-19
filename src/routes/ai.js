@@ -5,7 +5,7 @@ const { SPECIALTIES, GENDERS } = require('../constants');
 const { chunkText } = require('../lib/chunk');
 const { embedText, toVectorLiteral } = require('../lib/embeddings');
 const { getAvailableSlots } = require('../lib/availability');
-const { createAppointment, BookingError } = require('../lib/appointmentService');
+const { createAppointment, BookingError, isSundayISO, sundayDeadlineISO } = require('../lib/appointmentService');
 const { toolsForRole, runTool } = require('../lib/assistantTools');
 
 const router = express.Router();
@@ -93,7 +93,7 @@ async function buildClinicContext() {
     '- Tên: Phòng khám Đa khoa Đức Minh.',
     '- Địa chỉ: Phường Túc Duyên, TP. Thái Nguyên.',
     '- Hotline: 0974 755 333.',
-    '- Giờ làm việc: 7:00–21:00, Thứ 2 – Thứ 7 (không khám Chủ nhật).',
+    '- Giờ làm việc: 7:00–21:00, Thứ 2 – Thứ 7. Chủ nhật KHÔNG khám thường xuyên, chỉ có người trực cho trường hợp đột xuất: muốn khám Chủ nhật phải hẹn trước với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 của tuần đó, và chỉ được khám khi chính bác sĩ đó đồng ý (lịch sẽ ở trạng thái chờ xác nhận cho tới khi bác sĩ đồng ý).',
     '- Cách đặt lịch: đăng nhập/đăng ký tại /tai-khoan.html rồi đặt lịch tại /dat-lich.html.',
     '',
     'Chuyên khoa, giá khám và bác sĩ hiện có:',
@@ -130,7 +130,10 @@ async function checkAvailableSlots({ specialty, date }) {
   if (doctors.length === 0) {
     return { specialty, date, available: false, message: `Chuyên khoa ${specialty} hiện chưa có bác sĩ phụ trách.` };
   }
-  return { specialty, date, available: doctors.some((d) => d.freeSlots.length > 0), doctors };
+  const sundayNote = isSundayISO(date)
+    ? `Ngày này là CHỦ NHẬT: không khám thường xuyên, chỉ khám theo hẹn trước với 1 bác sĩ cụ thể, phải đặt chậm nhất ngày ${sundayDeadlineISO(date)} (Thứ 3), và cần bác sĩ đồng ý. Các khung giờ dưới đây chỉ là giờ chưa có ai đặt, KHÔNG có nghĩa là chắc chắn được khám.`
+    : undefined;
+  return { specialty, date, available: doctors.some((d) => d.freeSlots.length > 0), doctors, ...(sundayNote ? { sundayNote } : {}) };
 }
 
 // Tool Gemini gọi để ĐẶT LỊCH THẬT cho khách — chỉ nên gọi sau khi đã thu thập
@@ -189,7 +192,9 @@ async function bookAppointmentTool(args, user) {
     return {
       success: true,
       appointmentId,
-      message: `Đặt lịch thành công (mã #${appointmentId}), trạng thái: chờ nhân viên xác nhận.`,
+      message: isSundayISO(args.date)
+        ? `Đã gửi yêu cầu khám Chủ nhật (mã #${appointmentId}). Lịch CHỈ có hiệu lực khi bác sĩ đã chọn đồng ý — khách sẽ thấy trạng thái đổi sang Đã xác nhận; nếu cần gấp nên gọi hotline 0974 755 333.`
+        : `Đặt lịch thành công (mã #${appointmentId}), trạng thái: chờ nhân viên xác nhận.`,
     };
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
@@ -376,6 +381,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '- Với trẻ em: luôn hỏi rõ tuổi/cân nặng trước khi nêu bất kỳ thông tin liều dùng nào từ tài liệu tham khảo, và luôn khuyên nên để bác sĩ khám trực tiếp thay vì tự dùng thuốc tại nhà.',
       '- Nếu triệu chứng nghe nghiêm trọng/cấp cứu (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...), khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.',
       '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0974 755 333.',
+      '- Khám Chủ nhật: nói rõ đây không phải ngày khám thường, chỉ khám theo hẹn trước, phải chọn 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 của tuần đó và cần bác sĩ đồng ý. Không hứa chắc chắn khám được; nếu công cụ báo lỗi thì báo đúng lý do đó cho khách.',
       '- Nếu khách chỉ hỏi lịch trống (chưa nhờ đặt giúp), báo lịch trống rồi hỏi khách có muốn AI đặt giúp luôn không, hoặc nhắc khách có thể tự đặt tại /dat-lich.html.',
     ].join('\n');
 

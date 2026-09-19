@@ -158,6 +158,9 @@
     <div class="card">
       <h2>Chọn ngày &amp; giờ khám</h2>
       <p class="hint">Bấm vào một ô còn trống trên lịch để chọn khung giờ. Ô có màu là lịch hẹn bạn đã đặt.</p>
+      <p class="hint" style="background:#f3ecff; color:#4c1d95; border-radius:10px; padding:10px 12px;">
+        <b>Chủ nhật</b> phòng khám không khám thường xuyên, chỉ có người trực khi có việc đột xuất. Muốn khám Chủ nhật, bạn cần <b>chọn một bác sĩ cụ thể</b> ở trên và đặt <b>chậm nhất Thứ 3 của tuần đó</b>. Lịch sẽ ở trạng thái <i>Chờ xác nhận</i> cho tới khi <b>chính bác sĩ đồng ý</b>.
+      </p>
 
       <div class="cal-toolbar">
         <div class="cal-nav">
@@ -474,7 +477,7 @@
     row.innerHTML = '<th class="timehead"></th>' + dates.map(d => {
       const iso = toISODate(d);
       const isToday = iso === todayISO;
-      return `<th class="${isToday ? 'today' : ''}"><span class="dname">${DAY_NAMES[d.getDay()]}</span><span class="dnum">${d.getDate()}</span></th>`;
+      return `<th class="${isToday ? 'today' : ''}"><span class="dname">${DAY_NAMES[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>${d.getDay() === 0 ? '<span class="dname" style="color:#7c3aed;">hẹn trước</span>' : ''}</th>`;
     }).join('');
 
     const first = dates[0], last = dates[6];
@@ -507,6 +510,17 @@
         const isPastSlot = date < todayISO || (date === todayISO && time <= nowTimeVN);
         if (isPastSlot) {
           return `<td class="slot past" data-date="${date}" data-time="${time}">—</td>`;
+        }
+
+        // Chủ nhật: chỉ đặt được khi đã chọn bác sĩ cụ thể và còn trong hạn (chậm nhất Thứ 3 cùng tuần).
+        if (new Date(date + 'T00:00:00').getDay() === 0) {
+          const deadline = toISODate(addDays(new Date(date + 'T00:00:00'), -5));
+          if (todayISO > deadline) {
+            return `<td class="slot past" data-date="${date}" data-time="${time}" title="Đã quá hạn hẹn trước (Thứ 3)">—</td>`;
+          }
+          if (!fDoctor.value) {
+            return `<td class="slot busy" data-date="${date}" data-time="${time}" title="Chọn bác sĩ cụ thể để hẹn Chủ nhật">Chọn BS</td>`;
+          }
         }
 
         const available = (availabilityByDate[date] || {})[time];
@@ -615,7 +629,9 @@
         msg.textContent = 'Đã lưu thay đổi lịch hẹn.';
       } else {
         await api('/api/appointments', { method: 'POST', body: JSON.stringify(payload) });
-        msg.textContent = 'Đặt lịch thành công! Nhân viên sẽ xác nhận sớm.';
+        msg.textContent = new Date(payload.date + 'T00:00:00').getDay() === 0
+          ? 'Đã gửi yêu cầu khám Chủ nhật! Lịch chỉ có hiệu lực khi bác sĩ bạn chọn đồng ý.'
+          : 'Đặt lịch thành công! Nhân viên sẽ xác nhận sớm.';
       }
       msg.className = 'msg ok';
       if (wasEditing) {

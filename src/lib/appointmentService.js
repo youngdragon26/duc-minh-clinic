@@ -7,6 +7,24 @@ const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 // khám đang/đã diễn ra.
 const EDITABLE_STATUSES = ['cho_xac_nhan', 'da_xac_nhan'];
 
+// Chủ nhật phòng khám KHÔNG khám thường xuyên: chỉ khám theo hẹn trước với 1 bác
+// sĩ cụ thể, phải đặt chậm nhất vào Thứ 3 của tuần đó, và chỉ có hiệu lực khi
+// chính bác sĩ đó xác nhận (xem route đổi trạng thái). Bệnh nhân/AI phải theo đủ
+// quy tắc này; nhân viên/bác sĩ/admin nhập hộ thì không bị giới hạn hạn chót
+// (vì đã trao đổi trực tiếp với bác sĩ).
+function isSundayISO(dateStr) {
+  return new Date(dateStr + 'T00:00:00Z').getUTCDay() === 0;
+}
+function vnTodayISO() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
+// Hạn chót đặt lịch cho 1 ngày Chủ nhật = Thứ 3 cùng tuần = 5 ngày trước đó.
+function sundayDeadlineISO(sundayStr) {
+  const d = new Date(sundayStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 5);
+  return d.toISOString().slice(0, 10);
+}
+
 // Lỗi do dữ liệu đầu vào sai (khách nhập thiếu/sai, giờ đã có người đặt...) —
 // khác lỗi hệ thống, để nơi gọi (route HTTP hoặc tool AI) biết trả thông báo
 // rõ ràng cho người dùng thay vì báo "lỗi máy chủ" chung chung.
@@ -19,7 +37,7 @@ class BookingError extends Error {
 
 // Kiểm tra + chuẩn hoá các trường chung cho cả tạo mới lẫn sửa lịch hẹn — dùng
 // chung để 2 đường (đặt lịch lần đầu / sửa lịch đã đặt) luôn áp cùng 1 quy tắc.
-function validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory }) {
+function validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory, doctorId, skipSundayDeadline }) {
   if (!specialty || !date || !time) {
     throw new BookingError('Thiếu chuyên khoa, ngày hoặc giờ khám.');
   }
@@ -54,6 +72,12 @@ function validateBookingFields({ specialty, date, time, contactName, contactPhon
   if (!FIXED_SLOTS.includes(time)) {
     throw new BookingError('Giờ khám không hợp lệ.');
   }
+  if (isSundayISO(date)) {
+    if (!doctorId) throw new BookingError('Chủ nhật phòng khám chỉ khám theo hẹn trước với một bác sĩ cụ thể. Vui lòng chọn bác sĩ muốn khám.');
+    if (!skipSundayDeadline && vnTodayISO() > sundayDeadlineISO(date)) {
+      throw new BookingError('Lịch khám Chủ nhật cần đặt chậm nhất vào Thứ 3 của tuần đó để bác sĩ kịp xem xét. Vui lòng chọn ngày khác hoặc gọi hotline 0974 755 333.');
+    }
+  }
   const discountCategoryNorm = discountCategory || null;
   if (discountCategoryNorm && !DISCOUNT_CATEGORIES.includes(discountCategoryNorm)) {
     throw new BookingError('Đối tượng ưu tiên không hợp lệ.');
@@ -83,7 +107,7 @@ async function resolveDoctorId(doctorId, specialty) {
 // /api/appointments) và tool book_appointment mà trợ lý AI gọi, để 2 đường
 // đặt lịch luôn áp dụng đúng 1 bộ quy tắc kiểm tra, không lệch nhau.
 async function createAppointment({ patientId, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory }) {
-  const normalized = validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory });
+  const normalized = validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory, doctorId });
   const doctorIdNum = await resolveDoctorId(doctorId, specialty);
 
   try {
@@ -123,6 +147,7 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
 
   const normalized = validateBookingFields({
     specialty: appt.specialty, date, time, contactName, contactPhone, age, gender, discountCategory,
+    doctorId, skipSundayDeadline: isStaffLike,
   });
   const doctorIdNum = await resolveDoctorId(doctorId, appt.specialty);
 
@@ -143,4 +168,4 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
   }
 }
 
-module.exports = { createAppointment, updateAppointment, BookingError };
+module.exports = { createAppointment, updateAppointment, BookingError, isSundayISO, sundayDeadlineISO };
