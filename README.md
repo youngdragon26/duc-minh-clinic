@@ -3,7 +3,7 @@
 Một web Node.js/Express thật, đã triển khai công khai tại **https://duc-minh-clinic.onrender.com**, gồm:
 
 - **Trang chủ** (`/`) — landing page giới thiệu phòng khám, có khung chat AI.
-- **Tài khoản** (`/tai-khoan.html`) — đăng ký/đăng nhập bằng Email hoặc SĐT + mật khẩu + mã OTP gửi qua email (2FA), 4 vai trò: Bệnh nhân, Bác sĩ, Nhân viên, Quản trị viên.
+- **Tài khoản** (`/tai-khoan.html`) — đăng ký/đăng nhập bằng Email hoặc SĐT + mật khẩu, 4 vai trò: Bệnh nhân, Bác sĩ, Nhân viên, Quản trị viên. Có sẵn xác thực OTP qua email (2FA) nhưng đang tắt mặc định — xem Bước 5.5.
 - **Đặt lịch khám** (`/dat-lich.html`) — bệnh nhân chọn chuyên khoa/bác sĩ/giờ, xem lịch của mình.
 - **Hàng đợi khám** (`/hang-doi.html`) — nhân viên/bác sĩ/admin xem và cập nhật trạng thái lịch hẹn.
 - **Khám bệnh** (`/kham-benh.html`) — bác sĩ ghi chẩn đoán, kê đơn thuốc, có cảnh báo tương tác thuốc kèm gợi ý thuốc thay thế cùng nhóm, và tóm tắt AI bệnh sử.
@@ -73,22 +73,24 @@ git push -u origin main
 Vào link công khai ở trên → `/tai-khoan.html` → tab **Đăng ký**:
 - Vũ điền tên, email, số điện thoại, mật khẩu thật của Vũ.
 - Ở ô **Mã quản trị**, nhập đúng giá trị đã đặt ở `ADMIN_REGISTER_CODE` (Bước 4).
-- Bấm **Tạo tài khoản** → hệ thống gửi mã OTP 6 số tới email vừa nhập (xem Bước 5.5 nếu chưa cấu hình gửi email thật) → nhập đúng mã thì tài khoản mới thật sự được tạo. Vũ đăng nhập vào sẽ thấy ngay bảng **"Danh sách tài khoản"** ở dưới — xem toàn bộ người dùng đã đăng ký, cấp/hạ quyền admin cho người khác, hoặc xoá tài khoản.
+- Bấm **Tạo tài khoản** → tài khoản được tạo và đăng nhập ngay (xem Bước 5.5 về bước OTP đang tắt mặc định). Vũ đăng nhập vào sẽ thấy ngay bảng **"Danh sách tài khoản"** ở dưới — xem toàn bộ người dùng đã đăng ký, cấp/hạ quyền admin cho người khác, hoặc xoá tài khoản.
 
-Từ đây về sau, **mỗi lần đăng nhập** (mọi vai trò) cũng đều phải qua bước nhập mã OTP gửi tới email tài khoản đó — đây là lớp xác thực 2 bước (2FA) bắt buộc theo yêu cầu bảo mật của đồ án.
+## Bước 5.5 — Về bước xác thực OTP (2FA)
 
-## Bước 5.5 — Bật gửi OTP qua email thật (không bắt buộc để chạy thử)
+Hệ thống có sẵn đầy đủ code xác thực OTP 2 bước qua email (đăng ký/đăng nhập phải nhập thêm mã 6 số gửi tới email) — **nhưng đang TẮT mặc định** (biến `REQUIRE_OTP` không đặt hoặc khác `true`), nên hiện tại đăng ký/đăng nhập chỉ cần đúng mật khẩu là cấp tài khoản ngay, không cần nhập OTP. Lý do tắt: OTP cần gửi được email thật qua SMTP, mà tài khoản Google dùng thử lại không tạo được "Mật khẩu ứng dụng" (cần bật Xác minh 2 bước trước, một số tài khoản Google còn bị ẩn hẳn tính năng này).
 
-Mặc định (chưa cấu hình `SMTP_*`), mã OTP được **in ra log server** thay vì gửi email thật — đủ để tự test đăng ký/đăng nhập cục bộ, nhưng người dùng thật trên link công khai sẽ không nhận được mã. Để gửi email thật (miễn phí bằng Gmail):
+Muốn bật lại OTP (vd để demo/báo cáo đúng như đặc tả UC001), làm theo thứ tự:
 
-1. Bật xác minh 2 bước cho tài khoản Gmail sẽ dùng để gửi OTP.
-2. Vào https://myaccount.google.com/apppasswords → tạo 1 "Mật khẩu ứng dụng" (khác với mật khẩu Gmail thật).
-3. Vào Render → **Environment** → thêm:
+1. Bật xác minh 2 bước cho 1 tài khoản Gmail, vào https://myaccount.google.com/apppasswords tạo "Mật khẩu ứng dụng" (khác mật khẩu Gmail thật). Nếu tài khoản đó không cho tạo (báo "cài đặt không khả dụng"), thử tài khoản Gmail cá nhân khác, hoặc dùng SMTP miễn phí khác (vd Brevo/Sendinblue) — chỉ cần đổi `SMTP_HOST`.
+2. Vào Render → **Environment** → thêm:
    - `SMTP_HOST` = `smtp.gmail.com`
    - `SMTP_PORT` = `587`
    - `SMTP_USER` = địa chỉ Gmail dùng để gửi
-   - `SMTP_PASS` = mật khẩu ứng dụng vừa tạo ở bước 2
-4. Render tự deploy lại — từ lúc này OTP được gửi email thật thay vì chỉ in ra log.
+   - `SMTP_PASS` = mật khẩu ứng dụng vừa tạo ở bước 1
+   - `REQUIRE_OTP` = `true`
+3. Render tự deploy lại — từ lúc này đăng ký/đăng nhập bắt buộc qua OTP thật gửi email, đúng lớp xác thực 2 bước (2FA) theo yêu cầu bảo mật của đồ án.
+
+Không cần sửa code gì để bật/tắt — chỉ cần đổi 4 biến môi trường ở trên.
 
 Ai đăng ký công khai (không biết mã) sẽ luôn thành tài khoản **bệnh nhân** thường — chỉ người biết mã mới tạo được tài khoản admin. Sau khi có 1 admin rồi, admin đó có thể cấp quyền admin cho người khác ngay trong bảng, không cần dùng lại mã nữa.
 
@@ -115,10 +117,10 @@ Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiế
 
 | Method | Endpoint | Ai gọi được | Việc làm |
 |---|---|---|---|
-| POST | `/api/auth/register` | Ai cũng gọi được | Bước 1/2 đăng ký: kiểm tra thông tin, gửi mã OTP tới email → trả về `ticket` (chưa tạo tài khoản) |
-| POST | `/api/auth/register/verify` | Ai cũng gọi được | Bước 2/2 đăng ký: đúng `ticket` + mã OTP thì mới tạo tài khoản thật → trả về `token` |
-| POST | `/api/auth/login` | Ai cũng gọi được | Bước 1/2 đăng nhập: kiểm tra Email/SĐT + mật khẩu, gửi mã OTP tới email → trả về `ticket` |
-| POST | `/api/auth/login/verify` | Ai cũng gọi được | Bước 2/2 đăng nhập: đúng `ticket` + mã OTP thì mới cấp `token` (2FA) |
+| POST | `/api/auth/register` | Ai cũng gọi được | `REQUIRE_OTP=true`: gửi mã OTP tới email, trả `ticket` (chưa tạo tài khoản). Mặc định (tắt): tạo tài khoản luôn, trả `token` |
+| POST | `/api/auth/register/verify` | Ai cũng gọi được | Chỉ dùng khi `REQUIRE_OTP=true` — đúng `ticket` + mã OTP thì mới tạo tài khoản thật → trả về `token` |
+| POST | `/api/auth/login` | Ai cũng gọi được | `REQUIRE_OTP=true`: kiểm tra mật khẩu rồi gửi mã OTP, trả `ticket`. Mặc định (tắt): kiểm tra mật khẩu rồi cấp `token` luôn |
+| POST | `/api/auth/login/verify` | Ai cũng gọi được | Chỉ dùng khi `REQUIRE_OTP=true` — đúng `ticket` + mã OTP thì mới cấp `token` (2FA) |
 | GET | `/api/auth/me` | Đã đăng nhập | Thông tin tài khoản đang đăng nhập |
 | GET / POST | `/api/admin/users` | Chỉ admin | Danh sách / tạo tài khoản mới (kể cả Bác sĩ, Nhân viên) |
 | PATCH / DELETE | `/api/admin/users/:id` | Chỉ admin | Đổi vai trò / xoá tài khoản |

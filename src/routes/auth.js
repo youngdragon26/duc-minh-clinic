@@ -10,6 +10,15 @@ const router = express.Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Công tắc bật/tắt bước OTP (2FA) khi đăng ký/đăng nhập — mặc định TẮT (chỉ bật
+// khi đặt đúng REQUIRE_OTP=true trong .env). Toàn bộ code OTP (otp.js, mailer.js,
+// route /register/verify và /login/verify bên dưới) vẫn giữ nguyên, không xoá gì —
+// chỉ cần bật lại biến này (và cấu hình SMTP_* để gửi email thật) là dùng lại được
+// ngay, không phải sửa code. Lý do mặc định tắt: chưa cấu hình SMTP thật thì OTP
+// chỉ in ra log server, người dùng thật trên link công khai sẽ không đăng nhập
+// được — tắt đi để website dùng được ngay trong lúc chưa kịp cấu hình SMTP.
+const OTP_REQUIRED = process.env.REQUIRE_OTP === 'true';
+
 function signToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role, name: user.name },
@@ -67,14 +76,28 @@ router.post('/register', async (req, res) => {
       : 'patient';
 
     const passwordHash = bcrypt.hashSync(password, 10);
+    const normalizedPhone = phone ? String(phone).trim() : null;
+
+    if (!OTP_REQUIRED) {
+      // OTP đang tắt (xem OTP_REQUIRED ở đầu file) -> tạo tài khoản ngay, đăng nhập luôn.
+      const result = await pool.query(
+        'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [name.trim(), normalizedEmail, normalizedPhone, passwordHash, role]
+      );
+      const user = result.rows[0];
+      return res.status(201).json({ token: signToken(user), user: publicUser(user) });
+    }
 
     const { ticket, expiresAt } = await createOtp({
       destination: normalizedEmail,
       purpose: 'register',
-      payload: { name: name.trim(), email: normalizedEmail, phone: phone ? String(phone).trim() : null, passwordHash, role },
+      payload: { name: name.trim(), email: normalizedEmail, phone: normalizedPhone, passwordHash, role },
     });
     res.json({ ticket, expiresAt, email: maskEmail(normalizedEmail), message: 'Đã gửi mã xác thực OTP tới email của bạn.' });
   } catch (e) {
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'Email hoặc số điện thoại này đã được sử dụng.' });
+    }
     otpErrorOr500(e, res);
   }
 });
@@ -133,6 +156,12 @@ router.post('/login', async (req, res) => {
     if (!user.is_active) {
       await logAudit(user, 'auth.login_blocked', 'user', user.id, {});
       return res.status(403).json({ error: 'Tài khoản của bạn đã bị khoá, vui lòng liên hệ quản trị viên.' });
+    }
+
+    if (!OTP_REQUIRED) {
+      // OTP đang tắt (xem OTP_REQUIRED ở đầu file) -> cấp JWT ngay, bỏ qua bước OTP.
+      await logAudit(user, 'auth.login', 'user', user.id, {});
+      return res.json({ token: signToken(user), user: publicUser(user) });
     }
     if (!user.email) {
       return res.status(400).json({ error: 'Tài khoản chưa có email để nhận mã OTP, liên hệ quản trị viên.' });

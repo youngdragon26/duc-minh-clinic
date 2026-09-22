@@ -396,14 +396,25 @@
     });
   }
 
+  // Server có thể tắt bước OTP (biến môi trường REQUIRE_OTP, xem src/routes/auth.js)
+  // — khi đó /register và /login trả về token luôn, không có "ticket". Kiểm tra
+  // ngay ở đây để form hoạt động đúng trong CẢ 2 chế độ mà không cần sửa gì thêm
+  // khi bật/tắt OTP phía server.
+  function finishLogin(data) {
+    token = data.token; me = data.user;
+    localStorage.setItem('dm_token', token);
+    location.href = '/khong-gian.html';
+  }
+
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('loginMsg');
     msg.textContent = ''; msg.className = 'msg';
     try {
-      const { ticket, email } = await requestLoginOtp();
-      pendingAuth = { mode: 'login', ticket };
-      showOtpStep(email);
+      const data = await requestLoginOtp();
+      if (data.token) { finishLogin(data); return; }
+      pendingAuth = { mode: 'login', ticket: data.ticket };
+      showOtpStep(data.email);
     } catch (e) {
       msg.textContent = e.message; msg.className = 'msg err';
     }
@@ -414,9 +425,10 @@
     const msg = document.getElementById('registerMsg');
     msg.textContent = ''; msg.className = 'msg';
     try {
-      const { ticket, email } = await requestRegisterOtp();
-      pendingAuth = { mode: 'register', ticket };
-      showOtpStep(email);
+      const data = await requestRegisterOtp();
+      if (data.token) { finishLogin(data); return; }
+      pendingAuth = { mode: 'register', ticket: data.ticket };
+      showOtpStep(data.email);
     } catch (e) {
       msg.textContent = e.message; msg.className = 'msg err';
     }
@@ -428,13 +440,11 @@
     otpMsg.textContent = ''; otpMsg.className = 'msg';
     try {
       const endpoint = pendingAuth.mode === 'login' ? '/api/auth/login/verify' : '/api/auth/register/verify';
-      const { token: t, user } = await api(endpoint, {
+      const data = await api(endpoint, {
         method: 'POST',
         body: JSON.stringify({ ticket: pendingAuth.ticket, code: otpCode.value.trim() }),
       });
-      token = t; me = user;
-      localStorage.setItem('dm_token', token);
-      location.href = '/khong-gian.html';
+      finishLogin(data);
     } catch (e) {
       otpMsg.textContent = e.message; otpMsg.className = 'msg err';
     }
