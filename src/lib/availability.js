@@ -80,4 +80,16 @@ async function getAvailableSlots({ specialty, date, doctorId = null, excludeAppo
   return { doctors, slots };
 }
 
-module.exports = { getAvailableSlots, FIXED_SLOTS };
+// Kiểm tra 1 bác sĩ có đang trong ca trực vào đúng ngày/giờ cụ thể hay không —
+// dùng ở BƯỚC ĐẶT LỊCH THẬT (appointmentService.js) để chặn đặt/sửa lịch vào giờ
+// bác sĩ không làm việc, khác với getAvailableSlots ở trên chỉ phục vụ HIỂN THỊ
+// lưới giờ trống. Cùng quy tắc "chưa cấu hình ca nào thì coi như làm cả ngày".
+async function isDoctorWorkingAt(doctorId, date, time) {
+  const shiftsRes = await pool.query('SELECT weekday, start_time, end_time FROM doctor_shifts WHERE doctor_id = $1', [doctorId]);
+  if (shiftsRes.rows.length === 0) return true;
+  const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
+  return shiftsRes.rows.some((s) => s.weekday === weekday
+    && time >= String(s.start_time).slice(0, 5) && time < String(s.end_time).slice(0, 5));
+}
+
+module.exports = { getAvailableSlots, FIXED_SLOTS, isDoctorWorkingAt };

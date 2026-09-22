@@ -1,6 +1,6 @@
 const { pool } = require('../db');
 const { SPECIALTIES, GENDERS, DISCOUNT_CATEGORIES } = require('../constants');
-const { FIXED_SLOTS } = require('./availability');
+const { FIXED_SLOTS, isDoctorWorkingAt } = require('./availability');
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 // Chỉ sửa/huỷ được lịch hẹn khi chưa bắt đầu khám — tránh sửa "sau lưng" 1 buổi
@@ -109,6 +109,9 @@ async function resolveDoctorId(doctorId, specialty) {
 async function createAppointment({ patientId, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory }) {
   const normalized = validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory, doctorId });
   const doctorIdNum = await resolveDoctorId(doctorId, specialty);
+  if (doctorIdNum && !(await isDoctorWorkingAt(doctorIdNum, date, time))) {
+    throw new BookingError('Bác sĩ không có ca trực vào khung giờ này, vui lòng chọn giờ khác trong lịch làm việc của bác sĩ.');
+  }
 
   try {
     const inserted = await pool.query(
@@ -150,6 +153,12 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
     doctorId, skipSundayDeadline: isStaffLike,
   });
   const doctorIdNum = await resolveDoctorId(doctorId, appt.specialty);
+  // Nhân viên/bác sĩ/admin sửa lịch coi như đã trao đổi trực tiếp với bác sĩ
+  // (giống lý do bỏ qua hạn chót Chủ nhật ở trên) nên không bị chặn bởi ca trực;
+  // bệnh nhân tự sửa lịch của mình vẫn phải theo đúng ca trực như lúc đặt mới.
+  if (!isStaffLike && doctorIdNum && !(await isDoctorWorkingAt(doctorIdNum, date, time))) {
+    throw new BookingError('Bác sĩ không có ca trực vào khung giờ này, vui lòng chọn giờ khác trong lịch làm việc của bác sĩ.');
+  }
 
   try {
     const updated = await pool.query(
