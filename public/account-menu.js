@@ -20,9 +20,9 @@
   const css = document.createElement('style');
   css.textContent = `
     .acm{position:relative; display:inline-block;}
-    .acm-btn{font:inherit; font-weight:600; font-size:.92rem; color:var(--ink); background:transparent; border:0; cursor:pointer; padding:8px 4px; display:flex; align-items:center; gap:8px;}
+    .acm-btn{font:inherit; font-weight:600; font-size:.92rem; color:var(--ink); background:transparent; border:0; cursor:pointer; padding:8px 4px; display:flex; align-items:center; gap:8px; white-space:nowrap; flex-shrink:0;}
     .acm-btn:hover{color:var(--accent-deep);}
-    .acm-role{font-size:.68rem; font-weight:700; letter-spacing:.03em; padding:2px 8px; border-radius:20px; background:var(--surface-2); color:var(--accent-deep); border:1px solid var(--line);}
+    .acm-role{font-size:.68rem; font-weight:700; letter-spacing:.03em; padding:2px 8px; border-radius:20px; background:var(--surface-2); color:var(--accent-deep); border:1px solid var(--line); white-space:nowrap;}
     .acm-caret{font-size:.65rem; opacity:.6;}
     .acm-pop{position:absolute; right:0; top:calc(100% + 8px); min-width:260px; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:8px; z-index:200;}
     .acm-pop[hidden]{display:none;}
