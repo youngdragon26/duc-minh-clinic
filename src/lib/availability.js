@@ -45,9 +45,31 @@ async function getAvailableSlots({ specialty, date, doctorId = null, excludeAppo
     bookedByDoctor[row.doctor_id].add(row.appointment_time);
   }
 
+  // Ca trực theo tuần (UC009) — bác sĩ CHƯA được admin phân ca nào (0 dòng, ở bất
+  // kỳ thứ nào) thì coi như làm việc cả ngày theo khung giờ chung (hành vi mặc
+  // định cũ, để không phá vỡ các bác sĩ chưa cấu hình lịch riêng); bác sĩ đã có
+  // ít nhất 1 ca thì CHỈ mở đúng khung giờ ca trực của ĐÚNG thứ trong tuần này —
+  // không có ca cho thứ này nghĩa là bác sĩ nghỉ hôm đó.
+  const shiftsRes = await pool.query(
+    'SELECT doctor_id, weekday, start_time, end_time FROM doctor_shifts WHERE doctor_id = ANY($1::int[])',
+    [doctorIds]
+  );
+  const shiftsByDoctor = {};
+  for (const row of shiftsRes.rows) {
+    (shiftsByDoctor[row.doctor_id] ||= []).push(row);
+  }
+  // getUTCDay() cùng quy ước 0=Chủ nhật với EXTRACT(DOW) của Postgres — parse mốc
+  // UTC 00:00 để không lệch thứ theo múi giờ máy chủ.
+  const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
+
   const doctors = doctorsRes.rows.map((d) => {
     const booked = bookedByDoctor[d.id] || new Set();
-    return { doctorId: d.id, doctorName: d.name, freeSlots: FIXED_SLOTS.filter((s) => !booked.has(s)) };
+    const allShifts = shiftsByDoctor[d.id] || [];
+    const allowedSlots = allShifts.length === 0
+      ? FIXED_SLOTS
+      : FIXED_SLOTS.filter((time) => allShifts.some((s) => s.weekday === weekday
+          && time >= String(s.start_time).slice(0, 5) && time < String(s.end_time).slice(0, 5)));
+    return { doctorId: d.id, doctorName: d.name, freeSlots: allowedSlots.filter((s) => !booked.has(s)) };
   });
 
   const slots = FIXED_SLOTS.map((time) => ({

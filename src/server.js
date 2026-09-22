@@ -12,6 +12,7 @@ const billingRoutes = require('./routes/billing');
 const aiRoutes = require('./routes/ai');
 const followupRoutes = require('./routes/followups');
 const statsRoutes = require('./routes/stats');
+const scheduleRoutes = require('./routes/schedule');
 
 if (!process.env.JWT_SECRET) {
   console.error('Thiếu JWT_SECRET trong file .env — xem .env.example.');
@@ -31,6 +32,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/followups', followupRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/schedule', scheduleRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

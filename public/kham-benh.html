@@ -163,7 +163,7 @@
     return medicines.map(m => `<option value="${m.id}">${m.name} (${m.unit})</option>`).join('');
   }
 
-  function addMedRow() {
+function addMedRow() {
     const row = document.createElement('div');
     row.className = 'med-row';
     row.innerHTML = `
@@ -181,15 +181,77 @@
       </div>
       <button type="button" class="remove-med">✕</button>
     `;
-    row.querySelector('.remove-med').addEventListener('click', () => { row.remove(); checkWarnings(); });
-    row.querySelector('.med-select').addEventListener('change', checkWarnings);
-    medRows.appendChild(row);
+    const wrap = document.createElement('div');
+    wrap.appendChild(row);
+    const subRow = document.createElement('div');
+    subRow.style.marginTop = '4px';
+    subRow.innerHTML = `<a href="#" class="sub-toggle" style="font-size:.78rem;">🔁 Xem thuốc thay thế</a><div class="sub-box" hidden style="margin-top:6px;"></div>`;
+    wrap.appendChild(subRow);
+
+    row.querySelector('.remove-med').addEventListener('click', () => { wrap.remove(); checkWarnings(); });
+    row.querySelector('.med-select').addEventListener('change', () => { subRow.querySelector('.sub-box').hidden = true; checkWarnings(); });
+    subRow.querySelector('.sub-toggle').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await showSubstitutes(row.querySelector('.med-select'), subRow.querySelector('.sub-box'));
+    });
+
+    medRows.appendChild(wrap);
     checkWarnings();
   }
   document.getElementById('addMedBtn').addEventListener('click', addMedRow);
 
   function currentMedicineIds() {
     return Array.from(medRows.querySelectorAll('.med-select')).map(s => s.value).filter(Boolean);
+  }
+
+  // Hiển thị (hoặc ẩn nếu đang mở) danh sách thuốc thay thế cho đúng ô <select>
+  // đang chọn — chọn 1 thuốc thay thế trong danh sách sẽ đổi thẳng ô đó.
+  async function showSubstitutes(selectEl, box) {
+    if (!box.hidden) { box.hidden = true; return; }
+    const medId = selectEl.value;
+    if (!medId) return;
+    box.hidden = false;
+    box.innerHTML = '<span class="sub" style="font-size:.8rem;">Đang tải...</span>';
+    try {
+      const otherIds = currentMedicineIds().filter(id => id !== medId);
+      const { substitutes } = await api(`/api/clinical/medicines/${medId}/substitutes?otherMedicineIds=${otherIds.join(',')}`);
+      if (substitutes.length === 0) {
+        box.innerHTML = '<span class="sub" style="font-size:.8rem;">Thuốc này chưa được xếp vào nhóm thuốc thay thế nào (cấu hình ở trang Danh mục thuốc).</span>';
+        return;
+      }
+      box.innerHTML = substitutes.map(s => `
+        <button type="button" class="ghost pick-sub" data-id="${s.id}" style="margin:2px 4px 2px 0; ${s.safe ? '' : 'border-color:var(--err); color:var(--err);'}">
+          ${s.name} (${s.unit})${s.safe ? '' : ' ⚠ vẫn tương tác với thuốc khác trong đơn'}
+        </button>
+      `).join('');
+      box.querySelectorAll('.pick-sub').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectEl.value = btn.dataset.id;
+          box.hidden = true;
+          checkWarnings();
+        });
+      });
+    } catch (e) {
+      box.innerHTML = '<span class="sub" style="font-size:.8rem;">' + e.message + '</span>';
+    }
+  }
+
+  // Đổi thuốc ở dòng ĐẦU TIÊN trong đơn đang chọn đúng oldMedicineId sang
+  // newMedicineId — dùng khi bác sĩ bấm 1 gợi ý thay thế ngay trong ô cảnh báo.
+  function swapMedicineInForm(oldMedicineId, newMedicineId) {
+    const select = Array.from(medRows.querySelectorAll('.med-select')).find(s => s.value === String(oldMedicineId));
+    if (!select) return;
+    select.value = newMedicineId;
+    checkWarnings();
+  }
+
+  function substituteButtons(medicineId, substitutes) {
+    if (!substitutes || substitutes.length === 0) return '';
+    return '<div style="margin-top:4px;">Có thể thay bằng: ' + substitutes.map(s => `
+      <button type="button" class="ghost pick-sub-warn" data-old="${medicineId}" data-new="${s.id}" style="margin:2px 4px 0 0; ${s.safe ? '' : 'border-color:var(--err); color:var(--err);'}">
+        ${s.name}${s.safe ? '' : ' ⚠ vẫn tương tác'}
+      </button>
+    `).join('') + '</div>';
   }
 
   async function checkWarnings() {
@@ -207,8 +269,13 @@
         <div style="margin-top:6px;">
           <span class="pill ${w.severity}">${SEVERITY_LABELS[w.severity]}</span>
           <b>${w.medicineAName}</b> + <b>${w.medicineBName}</b>: ${w.description}
+          ${substituteButtons(w.medicineAId, w.substitutesA)}
+          ${substituteButtons(w.medicineBId, w.substitutesB)}
         </div>
       `).join('');
+      warnBox.querySelectorAll('.pick-sub-warn').forEach(btn => {
+        btn.addEventListener('click', () => swapMedicineInForm(btn.dataset.old, btn.dataset.new));
+      });
     } catch (e) { /* im lặng, không chặn thao tác kê đơn vì thiếu cảnh báo */ }
   }
 

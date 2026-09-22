@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lịch trực bác sĩ — Đa Khoa Đức Minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#f7f4ee; --surface:#fff; --surface-2:#f1ede3; --ink:#142e29; --ink-muted:#52685f;
+    --line:#dfdacc; --accent:#0e8e7d; --accent-deep:#0b6f62; --accent-warm:#dd9636; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1f1c; --surface:#142e29; --surface-2:#193732; --ink:#ecece2; --ink-muted:#9fb4ac;
+      --line:#26443d; --accent:#38c8b1; --accent-deep:#2ba892; --accent-warm:#f0b25a; --err:#ff8a80;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line);}
+  header .bar{max-width:1000px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand em{color:var(--accent-deep); font-style:normal;}
+  .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
+  .back:hover{color:var(--ink);}
+
+  .wrap{max-width:1000px; margin:0 auto; padding:32px 20px 48px;}
+  h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:12px; line-height:1.6;}
+  .notice{
+    background:color-mix(in srgb, var(--accent-warm) 16%, var(--surface));
+    border:1px solid var(--accent-warm); border-radius:10px; padding:12px 14px;
+    font-size:.82rem; color:var(--ink); margin-bottom:24px; line-height:1.55;
+  }
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  label{display:block; font-size:.8rem; color:var(--ink-muted); margin:0 0 4px;}
+  select, input{padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:var(--ground); color:var(--ink); font-family:inherit;}
+  select:focus, input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  #doctorSelect{width:100%; max-width:360px;}
+  .week{display:grid; grid-template-columns:repeat(7, 1fr); gap:12px; margin-top:18px;}
+  .day{background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:12px;}
+  .day b{display:block; font-size:.82rem; margin-bottom:8px;}
+  .shift{display:flex; align-items:center; justify-content:space-between; gap:6px; background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:5px 8px; margin-bottom:6px; font-size:.8rem;}
+  .shift button{background:none; border:0; cursor:pointer; color:var(--err); font-size:.85rem; padding:0 2px;}
+  .empty-day{color:var(--ink-muted); font-size:.76rem; margin-bottom:6px;}
+  .add-shift{display:flex; gap:4px; align-items:center; margin-top:6px;}
+  .add-shift input[type=time]{width:auto; flex:1; padding:6px 6px; font-size:.78rem;}
+  .add-shift button{padding:6px 8px; border-radius:6px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.78rem; color:var(--ink); font-family:inherit;}
+  .add-shift button:hover{border-color:var(--accent);}
+  .msg{margin-top:10px; font-size:.85rem;}
+  .msg.err{color:var(--err);}
+  @media (max-width:820px){ .week{grid-template-columns:repeat(2, 1fr);} }
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="/" class="brand">Đa Khoa <em>Đức Minh</em></a>
+    <a href="/khong-gian.html" class="back">← Không gian làm việc</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1>Lịch trực bác sĩ</h1>
+  <p class="sub">Phân công ca trực và lịch làm việc theo tuần cho từng bác sĩ.</p>
+  <div class="notice">
+    ⚠ Bác sĩ <b>chưa được thiết lập ca trực nào</b> sẽ mặc định làm việc theo khung giờ chung của phòng khám
+    (07:00–20:30, tất cả các ngày) như trước đây. Chỉ khi bạn thêm ít nhất 1 ca cho bác sĩ đó, hệ thống mới
+    giới hạn đúng theo lịch bạn phân công — ngày nào không có ca thì bác sĩ đó coi như nghỉ hôm đó.
+  </div>
+
+  <div class="card" id="noAccessCard" hidden>
+    <p style="margin:0;">Bạn không có quyền truy cập trang này (chỉ dành cho Quản trị viên).</p>
+  </div>
+
+  <div id="content" hidden>
+    <div class="card">
+      <label>Chọn bác sĩ</label>
+      <select id="doctorSelect"></select>
+      <div class="week" id="week"></div>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  const token = localStorage.getItem('dm_token');
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+
+  // weekday khớp EXTRACT(DOW) của Postgres: 0 = Chủ nhật ... 6 = Thứ 7. Hiển thị
+  // theo thứ tự quen thuộc của người Việt (Thứ 2 trước, Chủ nhật cuối).
+  const DAYS = [
+    { weekday: 1, label: 'Thứ 2' }, { weekday: 2, label: 'Thứ 3' }, { weekday: 3, label: 'Thứ 4' },
+    { weekday: 4, label: 'Thứ 5' }, { weekday: 5, label: 'Thứ 6' }, { weekday: 6, label: 'Thứ 7' },
+    { weekday: 0, label: 'Chủ nhật' },
+  ];
+
+  let doctors = [];
+  let shifts = [];
+
+  function renderWeek() {
+    const week = document.getElementById('week');
+    week.innerHTML = DAYS.map((d) => {
+      const dayShifts = shifts.filter((s) => s.weekday === d.weekday).sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const rows = dayShifts.length
+        ? dayShifts.map((s) => `<div class="shift"><span>${s.startTime}–${s.endTime}</span><button type="button" class="del-shift" data-id="${s.id}">✕</button></div>`).join('')
+        : '<div class="empty-day">Nghỉ (chưa có ca)</div>';
+      return `
+        <div class="day" data-weekday="${d.weekday}">
+          <b>${d.label}</b>
+          ${rows}
+          <div class="add-shift">
+            <input type="time" class="new-start" value="07:00" step="1800">
+            <input type="time" class="new-end" value="11:30" step="1800">
+            <button type="button" class="add-shift-btn" data-weekday="${d.weekday}">+ Thêm</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    week.querySelectorAll('.del-shift').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api('/api/schedule/doctor-shifts/' + btn.dataset.id, { method: 'DELETE' });
+          await loadShifts();
+        } catch (e) { showMsg(e.message); }
+      });
+    });
+    week.querySelectorAll('.add-shift-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const dayEl = btn.closest('.day');
+        const startTime = dayEl.querySelector('.new-start').value;
+        const endTime = dayEl.querySelector('.new-end').value;
+        try {
+          await api('/api/schedule/doctor-shifts', {
+            method: 'POST',
+            body: JSON.stringify({ doctorId: Number(document.getElementById('doctorSelect').value), weekday: Number(btn.dataset.weekday), startTime, endTime }),
+          });
+          showMsg('');
+          await loadShifts();
+        } catch (e) { showMsg(e.message); }
+      });
+    });
+  }
+
+  function showMsg(text) {
+    const msg = document.getElementById('msg');
+    msg.textContent = text;
+    msg.className = text ? 'msg err' : 'msg';
+  }
+
+  async function loadShifts() {
+    const doctorId = document.getElementById('doctorSelect').value;
+    if (!doctorId) { shifts = []; renderWeek(); return; }
+    const { shifts: list } = await api('/api/schedule/doctor-shifts?doctorId=' + doctorId);
+    shifts = list;
+    renderWeek();
+  }
+
+  (async function init() {
+    if (!token) { document.getElementById('noAccessCard').hidden = false; return; }
+    try {
+      const { user } = await api('/api/auth/me');
+      if (user.role !== 'admin') { document.getElementById('noAccessCard').hidden = false; return; }
+    } catch (e) {
+      document.getElementById('noAccessCard').hidden = false; return;
+    }
+    document.getElementById('content').hidden = false;
+
+    const { users } = await api('/api/admin/users');
+    doctors = users.filter((u) => u.role === 'doctor');
+    const select = document.getElementById('doctorSelect');
+    select.innerHTML = doctors.length
+      ? doctors.map((d) => `<option value="${d.id}">${d.name}${d.specialty ? ' — ' + d.specialty : ''}</option>`).join('')
+      : '<option value="">Chưa có bác sĩ nào</option>';
+    select.addEventListener('change', loadShifts);
+    await loadShifts();
+  })();
+</script>
+</body>
+</html>

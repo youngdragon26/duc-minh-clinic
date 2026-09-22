@@ -40,6 +40,26 @@ async function init() {
   // tiết lịch hẹn (chỉ có ý nghĩa với tài khoản role = 'doctor').
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;`);
 
+  // Trạng thái tài khoản (UC012: "quản lý trạng thái tài khoản", tách biệt với vai
+  // trò RBAC) — admin khoá tạm 1 tài khoản (vd nhân viên nghỉ việc) mà không cần
+  // xoá hẳn, giữ lại toàn bộ lịch sử/hồ sơ liên quan. Tài khoản bị khoá không đăng
+  // nhập được (chặn ngay ở bước 1, trước khi gửi OTP) nhưng dữ liệu vẫn còn nguyên.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;`);
+
+  // SĐT dùng để đăng nhập thay email (UC001) nên phải là duy nhất — nhưng có thể
+  // NULL/rỗng (chưa khai báo) và nhiều tài khoản cùng để trống thì không tính là
+  // trùng. Bọc try/catch vì CSDL cũ có thể đã lỡ có SĐT trùng nhau trước khi ràng
+  // buộc này tồn tại — không nên làm sập cả server chỉ vì lỗi này, chỉ cảnh báo để
+  // admin tự dọn dữ liệu.
+  try {
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_users_phone ON users (phone)
+      WHERE phone IS NOT NULL AND phone <> '';
+    `);
+  } catch (e) {
+    console.warn('Không tạo được ràng buộc SĐT duy nhất (có thể do dữ liệu cũ bị trùng SĐT):', e.message);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointments (
       id SERIAL PRIMARY KEY,
@@ -174,6 +194,12 @@ async function init() {
 
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
 
+  // Nhóm thuốc/hoạt chất (vd "Hạ sốt - giảm đau (Paracetamol)") — admin tự đặt tên
+  // nhóm khi 2 thuốc có thể dùng thay thế nhau. Cùng group_name (khác NULL) thì
+  // được coi là thuốc thay thế của nhau (UC006: "hỗ trợ gợi ý thuốc thay thế").
+  await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS group_name TEXT;`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ix_medicines_group ON medicines (group_name) WHERE group_name IS NOT NULL;`);
+
   // Giá khám theo từng chuyên khoa — admin thiết lập trong "Bảng giá dịch vụ".
   // Không có dòng cho 1 chuyên khoa nghĩa là CHƯA thiết lập giá (khác với giá 0đ = miễn phí).
   await pool.query(`
@@ -212,6 +238,13 @@ async function init() {
     ALTER TABLE invoices ADD CONSTRAINT invoices_payment_method_check
       CHECK (payment_method IS NULL OR payment_method IN ('tien_mat','chuyen_khoan'));
   `);
+
+  // Bệnh nhân tự bấm "Tôi đã chuyển khoản" sau khi quét mã QR thanh toán online —
+  // KHÔNG tự động đánh dấu đã thu tiền (chưa có cổng thanh toán/webhook ngân hàng
+  // thật, đúng tinh thần "Human-in-the-Loop" của đồ án): nhân viên vẫn phải đối
+  // chiếu sao kê rồi mới xác nhận qua PATCH .../status như cũ. Cột này chỉ để nhân
+  // viên biết hoá đơn nào cần ưu tiên kiểm tra.
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS online_payment_claimed_at TIMESTAMPTZ;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS invoice_items (
@@ -256,6 +289,59 @@ async function init() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_followups_doctor_date ON followups (doctor_id, followup_date);`);
+
+  // Ca trực / lịch làm việc theo tuần của bác sĩ (UC009). weekday khớp đúng quy
+  // ước EXTRACT(DOW) của Postgres và Date.getUTCDay() của JS: 0 = Chủ nhật ... 6 =
+  // Thứ 7 — để so trực tiếp không cần quy đổi qua lại. Bác sĩ CHƯA có dòng nào ở
+  // đây thì mặc định coi như làm việc cả ngày theo khung giờ chung của phòng khám
+  // (như hành vi cũ trước khi có bảng này) — xem lib/availability.js.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS doctor_shifts (
+      id SERIAL PRIMARY KEY,
+      doctor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+      start_time TIME NOT NULL,
+      end_time TIME NOT NULL,
+      CHECK (start_time < end_time)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ix_doctor_shifts_doctor ON doctor_shifts (doctor_id, weekday);`);
+
+  // Mã OTP xác thực đăng ký/đăng nhập (UC001, 2FA). "payload" chứa dữ liệu tạm
+  // cần thiết để hoàn tất hành động SAU KHI xác thực đúng mã — vd lúc đăng ký thì
+  // tài khoản CHƯA được tạo ở bước gửi OTP, chỉ tạo thật khi verify đúng mã, nên
+  // phải giữ tạm name/email/sđt/mật khẩu đã băm ở đây.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS otp_codes (
+      id SERIAL PRIMARY KEY,
+      ticket TEXT NOT NULL UNIQUE,
+      destination TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK (purpose IN ('register','login')),
+      code_hash TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ix_otp_codes_destination ON otp_codes (destination, purpose);`);
+
+  // Thông tin tài khoản ngân hàng phòng khám dùng để sinh mã QR thanh toán online
+  // (VietQR) — luôn đúng 1 dòng duy nhất (id cố định = 1), admin thiết lập trong
+  // "Danh mục thuốc & tương tác thuốc". bank_bin là mã ngân hàng theo chuẩn Napas/
+  // VietQR (vd 970436 = Vietcombank), KHÔNG phải mã số thuế hay số điện thoại.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bank_account (
+      id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      bank_bin TEXT,
+      bank_name TEXT,
+      account_number TEXT,
+      account_name TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
 
 const ROLES = ['admin', 'patient', 'doctor', 'staff'];

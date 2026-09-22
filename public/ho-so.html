@@ -80,20 +80,57 @@
   const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
   function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
 
-  async function api(path) {
+  async function api(path, opts = {}) {
     const res = await fetch(API + path, {
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || ('Lỗi ' + res.status));
     return data;
   }
 
+  // Thông tin nhận thanh toán chỉ cần lấy 1 lần cho cả trang (dùng chung cho mọi hoá đơn).
+  let bankAccountPromise = null;
+  function getBankAccount() {
+    if (!bankAccountPromise) {
+      bankAccountPromise = api('/api/billing/bank-account').then(r => r.bankAccount).catch(() => ({ configured: false }));
+    }
+    return bankAccountPromise;
+  }
+
   async function invoiceHtml(appointmentId) {
     try {
       const { invoice } = await api('/api/billing/invoices/by-appointment/' + appointmentId);
       const methodPart = invoice.paymentMethod ? ` · ${PAYMENT_METHOD_LABELS[invoice.paymentMethod]}` : '';
-      return `<div class="field"><b>Hoá đơn ${invoice.code}</b><span class="money">${money(invoice.totalAmount)}</span> · <span class="pill ${invoice.status}">${STATUS_LABELS[invoice.status]}</span>${methodPart} · <a href="/in.html?type=hd&id=${invoice.id}" target="_blank">🖨 In hoá đơn</a></div>`;
+      const base = `<div class="field"><b>Hoá đơn ${invoice.code}</b><span class="money">${money(invoice.totalAmount)}</span> · <span class="pill ${invoice.status}">${STATUS_LABELS[invoice.status]}</span>${methodPart} · <a href="/in.html?type=hd&id=${invoice.id}" target="_blank">🖨 In hoá đơn</a></div>`;
+
+      if (invoice.status !== 'chua_thanh_toan') return base;
+
+      const bank = await getBankAccount();
+      if (!bank.configured) return base;
+
+      if (invoice.onlinePaymentClaimedAt) {
+        return base + `<div class="field"><b>Thanh toán QR online</b>Bạn đã báo chuyển khoản lúc ${new Date(invoice.onlinePaymentClaimedAt).toLocaleString('vi-VN')} — nhân viên sẽ đối chiếu sao kê và xác nhận sớm.</div>`;
+      }
+
+      const addInfo = encodeURIComponent((invoice.code + ' ' + (invoice.patientName || '')).trim());
+      const accountName = encodeURIComponent(bank.accountName || '');
+      const qrUrl = `https://img.vietqr.io/image/${bank.bankBin}-${bank.accountNumber}-compact2.png?amount=${invoice.totalAmount}&addInfo=${addInfo}&accountName=${accountName}`;
+      return base + `
+        <div class="field">
+          <b>Thanh toán QR online</b>
+          <div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-top:4px;">
+            <img src="${qrUrl}" alt="Mã QR chuyển khoản" width="160" height="160" style="border-radius:8px; border:1px solid var(--line);">
+            <div style="flex:1; min-width:180px;">
+              <div>Quét mã bằng app ngân hàng/Ví điện tử để chuyển khoản đúng số tiền ${money(invoice.totalAmount)}. Nội dung chuyển khoản đã điền sẵn mã hoá đơn.</div>
+              <button type="button" class="claim-online-paid" data-invoice-id="${invoice.id}"
+                style="margin-top:8px; padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.82rem; color:var(--ink); font-family:inherit;">
+                Tôi đã chuyển khoản
+              </button>
+            </div>
+          </div>
+        </div>`;
     } catch (e) {
       return '';
     }
@@ -134,6 +171,21 @@
       </div>
     `));
     list.innerHTML = cards.join('');
+
+    list.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.claim-online-paid');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = 'Đang xử lý...';
+      try {
+        await api('/api/billing/invoices/' + btn.dataset.invoiceId + '/claim-online-payment', { method: 'PATCH' });
+        location.reload();
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+        btn.textContent = 'Tôi đã chuyển khoản';
+      }
+    });
   })();
 </script>
 </body>

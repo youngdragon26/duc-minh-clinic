@@ -93,6 +93,54 @@ router.put('/discount-rates/:category', requireAdmin, async (req, res) => {
   }
 });
 
+// ---------- Tài khoản ngân hàng nhận thanh toán QR online (VietQR) ----------
+
+function publicBankAccount(row) {
+  if (!row) return { bankBin: null, bankName: null, accountNumber: null, accountName: null, configured: false };
+  return {
+    bankBin: row.bank_bin,
+    bankName: row.bank_name,
+    accountNumber: row.account_number,
+    accountName: row.account_name,
+    configured: Boolean(row.bank_bin && row.account_number),
+  };
+}
+
+// Ai đăng nhập cũng xem được (bệnh nhân cần thông tin này để tự sinh mã QR ở
+// trang Hồ sơ khám bệnh) — đây chỉ là số tài khoản nhận tiền, không phải dữ liệu nhạy cảm.
+router.get('/bank-account', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM bank_account WHERE id = 1');
+    res.json({ bankAccount: publicBankAccount(result.rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.put('/bank-account', requireAdmin, async (req, res) => {
+  try {
+    const { bankBin, bankName, accountNumber, accountName } = req.body || {};
+    if (!bankBin || !accountNumber || !accountName) {
+      return res.status(400).json({ error: 'Thiếu mã ngân hàng, số tài khoản hoặc tên chủ tài khoản.' });
+    }
+    await pool.query(
+      `INSERT INTO bank_account (id, bank_bin, bank_name, account_number, account_name, updated_at)
+       VALUES (1, $1, $2, $3, $4, now())
+       ON CONFLICT (id) DO UPDATE SET
+         bank_bin = EXCLUDED.bank_bin, bank_name = EXCLUDED.bank_name,
+         account_number = EXCLUDED.account_number, account_name = EXCLUDED.account_name, updated_at = now()`,
+      [String(bankBin).trim(), bankName ? String(bankName).trim() : null, String(accountNumber).trim(), String(accountName).trim().toUpperCase()]
+    );
+    await logAudit(req.user, 'bank_account.update', 'bank_account', null, { bankName, accountNumber });
+    const result = await pool.query('SELECT * FROM bank_account WHERE id = 1');
+    res.json({ bankAccount: publicBankAccount(result.rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
 // ---------- Hoá đơn ----------
 
 // Số hoá đơn hiển thị: HD-000001 (lấy từ id tự tăng nên luôn tăng dần, không trùng).
@@ -111,6 +159,7 @@ function publicInvoice(inv) {
     status: inv.status,
     paymentMethod: inv.payment_method,
     paidAt: inv.paid_at,
+    onlinePaymentClaimedAt: inv.online_payment_claimed_at,
     createdAt: inv.created_at,
   };
 }
@@ -222,10 +271,16 @@ router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
   }
 });
 
+// Bệnh nhân xem hoá đơn của chính mình — ghi audit log lượt tự truy cập (yêu cầu
+// bảo mật NFR: "Ghi nhật ký mọi lượt bệnh nhân tự truy cập hồ sơ hoặc thanh toán online").
 router.get('/invoices/mine', async (req, res) => {
   try {
     const result = await pool.query(INVOICE_SELECT + ' WHERE inv.patient_id = $1 ORDER BY inv.created_at DESC', [req.user.id]);
-    res.json({ invoices: await Promise.all(result.rows.map(attachInvoiceItems)) });
+    const invoices = await Promise.all(result.rows.map(attachInvoiceItems));
+    if (req.user.role === 'patient') {
+      await logAudit(req.user, 'invoice.self_view', 'invoice', null, { count: invoices.length });
+    }
+    res.json({ invoices });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
@@ -256,6 +311,9 @@ router.get('/invoices/by-appointment/:appointmentId', async (req, res) => {
     if (!STAFF_ROLES.includes(req.user.role) && inv.patient_id !== req.user.id) {
       return res.status(403).json({ error: 'Bạn không có quyền xem hoá đơn này.' });
     }
+    if (req.user.role === 'patient') {
+      await logAudit(req.user, 'invoice.self_view', 'invoice', inv.id, { via: 'by-appointment' });
+    }
     res.json({ invoice: await attachInvoiceItems(inv) });
   } catch (e) {
     console.error(e);
@@ -275,6 +333,9 @@ router.get('/invoices/:id', async (req, res) => {
     if (!STAFF_ROLES.includes(req.user.role) && inv.patient_id !== req.user.id) {
       return res.status(403).json({ error: 'Bạn không có quyền xem hoá đơn này.' });
     }
+    if (req.user.role === 'patient') {
+      await logAudit(req.user, 'invoice.self_view', 'invoice', inv.id, { via: 'by-id' });
+    }
     res.json({ invoice: await attachInvoiceItems(inv) });
   } catch (e) {
     console.error(e);
@@ -293,7 +354,8 @@ router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, 
     }
     const result = await pool.query(
       `UPDATE invoices SET status = $1, paid_at = CASE WHEN $1 = 'da_thanh_toan' THEN now() ELSE NULL END,
-              payment_method = CASE WHEN $1 = 'da_thanh_toan' THEN $3 ELSE NULL END
+              payment_method = CASE WHEN $1 = 'da_thanh_toan' THEN $3 ELSE NULL END,
+              online_payment_claimed_at = NULL
        WHERE id = $2 RETURNING id`,
       [status, Number(req.params.id), status === 'da_thanh_toan' ? paymentMethod : null]
     );
@@ -301,6 +363,32 @@ router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, 
     const full = await pool.query(INVOICE_SELECT + ' WHERE inv.id = $1', [result.rows[0].id]);
     await logAudit(req.user, status === 'da_thanh_toan' ? 'invoice.paid' : 'invoice.unpaid', 'invoice', result.rows[0].id,
       { total: full.rows[0].total_amount, paymentMethod: status === 'da_thanh_toan' ? paymentMethod : null });
+    res.json({ invoice: await attachInvoiceItems(full.rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Bệnh nhân tự bấm sau khi quét mã QR và chuyển khoản xong — CHƯA đánh dấu hoá
+// đơn là đã thanh toán (chưa có cổng thanh toán/webhook ngân hàng thật để xác
+// minh tự động), chỉ đánh dấu "cần nhân viên ưu tiên đối chiếu sao kê" — nhân
+// viên vẫn xác nhận thật qua PATCH .../status như luồng tiền mặt/chuyển khoản cũ.
+router.patch('/invoices/:id/claim-online-payment', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const result = await pool.query('SELECT patient_id, status FROM invoices WHERE id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
+    const inv = result.rows[0];
+    if (inv.patient_id !== req.user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền thao tác trên hoá đơn này.' });
+    }
+    if (inv.status !== 'chua_thanh_toan') {
+      return res.status(400).json({ error: 'Hoá đơn này đã được xử lý.' });
+    }
+    await pool.query('UPDATE invoices SET online_payment_claimed_at = now() WHERE id = $1', [id]);
+    await logAudit(req.user, 'invoice.online_payment_claimed', 'invoice', id, {});
+    const full = await pool.query(INVOICE_SELECT + ' WHERE inv.id = $1', [id]);
     res.json({ invoice: await attachInvoiceItems(full.rows[0]) });
   } catch (e) {
     console.error(e);

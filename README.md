@@ -3,13 +3,15 @@
 Một web Node.js/Express thật, đã triển khai công khai tại **https://duc-minh-clinic.onrender.com**, gồm:
 
 - **Trang chủ** (`/`) — landing page giới thiệu phòng khám, có khung chat AI.
-- **Tài khoản** (`/tai-khoan.html`) — đăng ký/đăng nhập, 4 vai trò: Bệnh nhân, Bác sĩ, Nhân viên, Quản trị viên.
+- **Tài khoản** (`/tai-khoan.html`) — đăng ký/đăng nhập bằng Email hoặc SĐT + mật khẩu + mã OTP gửi qua email (2FA), 4 vai trò: Bệnh nhân, Bác sĩ, Nhân viên, Quản trị viên.
 - **Đặt lịch khám** (`/dat-lich.html`) — bệnh nhân chọn chuyên khoa/bác sĩ/giờ, xem lịch của mình.
 - **Hàng đợi khám** (`/hang-doi.html`) — nhân viên/bác sĩ/admin xem và cập nhật trạng thái lịch hẹn.
-- **Khám bệnh** (`/kham-benh.html`) — bác sĩ ghi chẩn đoán, kê đơn thuốc, có cảnh báo tương tác thuốc và tóm tắt AI bệnh sử.
-- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn.
-- **Danh mục thuốc** (`/danh-muc-thuoc.html`) — admin quản lý thuốc, giá thuốc, quy tắc tương tác, giá khám theo chuyên khoa.
-- **Hoá đơn** (`/hoa-don.html`) — nhân viên/admin lập hoá đơn và xác nhận thu tiền.
+- **Khám bệnh** (`/kham-benh.html`) — bác sĩ ghi chẩn đoán, kê đơn thuốc, có cảnh báo tương tác thuốc kèm gợi ý thuốc thay thế cùng nhóm, và tóm tắt AI bệnh sử.
+- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn, tự thanh toán hoá đơn chưa trả bằng mã QR chuyển khoản (VietQR).
+- **Danh mục thuốc** (`/danh-muc-thuoc.html`) — admin quản lý thuốc (kèm nhóm thuốc/hoạt chất để hệ thống gợi ý thay thế), giá thuốc, quy tắc tương tác, giá khám theo chuyên khoa, và thông tin tài khoản nhận thanh toán QR.
+- **Hoá đơn** (`/hoa-don.html`) — nhân viên/admin lập hoá đơn và xác nhận thu tiền; được nhắc khi bệnh nhân đã báo chuyển khoản qua QR để ưu tiên đối chiếu.
+- **Lịch trực bác sĩ** (`/lich-truc.html`) — admin phân công ca trực/lịch làm việc theo tuần cho từng bác sĩ; trang đặt lịch chỉ mở đúng khung giờ đã phân công (bác sĩ chưa cấu hình thì mặc định làm việc cả ngày như cũ).
+- **Không gian làm việc** (`/khong-gian.html`) — ngoài biểu đồ doanh thu/lượt khám, admin xuất được báo cáo ra file Excel (.xlsx) thật hoặc in/lưu PDF; admin cũng khoá/mở khoá được tài khoản (tách biệt với đổi vai trò RBAC), và nhật ký hoạt động ghi lại cả các lượt đăng nhập thành công/thất bại.
 
 CSDL **PostgreSQL thật** (Neon, miễn phí) — không mất dữ liệu khi deploy công khai và server khởi động lại.
 
@@ -71,7 +73,22 @@ git push -u origin main
 Vào link công khai ở trên → `/tai-khoan.html` → tab **Đăng ký**:
 - Vũ điền tên, email, số điện thoại, mật khẩu thật của Vũ.
 - Ở ô **Mã quản trị**, nhập đúng giá trị đã đặt ở `ADMIN_REGISTER_CODE` (Bước 4).
-- Bấm **Tạo tài khoản** → Vũ đăng nhập vào sẽ thấy ngay bảng **"Danh sách tài khoản"** ở dưới — xem toàn bộ người dùng đã đăng ký, cấp/hạ quyền admin cho người khác, hoặc xoá tài khoản.
+- Bấm **Tạo tài khoản** → hệ thống gửi mã OTP 6 số tới email vừa nhập (xem Bước 5.5 nếu chưa cấu hình gửi email thật) → nhập đúng mã thì tài khoản mới thật sự được tạo. Vũ đăng nhập vào sẽ thấy ngay bảng **"Danh sách tài khoản"** ở dưới — xem toàn bộ người dùng đã đăng ký, cấp/hạ quyền admin cho người khác, hoặc xoá tài khoản.
+
+Từ đây về sau, **mỗi lần đăng nhập** (mọi vai trò) cũng đều phải qua bước nhập mã OTP gửi tới email tài khoản đó — đây là lớp xác thực 2 bước (2FA) bắt buộc theo yêu cầu bảo mật của đồ án.
+
+## Bước 5.5 — Bật gửi OTP qua email thật (không bắt buộc để chạy thử)
+
+Mặc định (chưa cấu hình `SMTP_*`), mã OTP được **in ra log server** thay vì gửi email thật — đủ để tự test đăng ký/đăng nhập cục bộ, nhưng người dùng thật trên link công khai sẽ không nhận được mã. Để gửi email thật (miễn phí bằng Gmail):
+
+1. Bật xác minh 2 bước cho tài khoản Gmail sẽ dùng để gửi OTP.
+2. Vào https://myaccount.google.com/apppasswords → tạo 1 "Mật khẩu ứng dụng" (khác với mật khẩu Gmail thật).
+3. Vào Render → **Environment** → thêm:
+   - `SMTP_HOST` = `smtp.gmail.com`
+   - `SMTP_PORT` = `587`
+   - `SMTP_USER` = địa chỉ Gmail dùng để gửi
+   - `SMTP_PASS` = mật khẩu ứng dụng vừa tạo ở bước 2
+4. Render tự deploy lại — từ lúc này OTP được gửi email thật thay vì chỉ in ra log.
 
 Ai đăng ký công khai (không biết mã) sẽ luôn thành tài khoản **bệnh nhân** thường — chỉ người biết mã mới tạo được tài khoản admin. Sau khi có 1 admin rồi, admin đó có thể cấp quyền admin cho người khác ngay trong bảng, không cần dùng lại mã nữa.
 
@@ -98,8 +115,10 @@ Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiế
 
 | Method | Endpoint | Ai gọi được | Việc làm |
 |---|---|---|---|
-| POST | `/api/auth/register` | Ai cũng gọi được | Tạo tài khoản mới (mặc định vai trò Bệnh nhân; `adminCode` đúng thì thành Admin) |
-| POST | `/api/auth/login` | Ai cũng gọi được | Đăng nhập → trả về `token` |
+| POST | `/api/auth/register` | Ai cũng gọi được | Bước 1/2 đăng ký: kiểm tra thông tin, gửi mã OTP tới email → trả về `ticket` (chưa tạo tài khoản) |
+| POST | `/api/auth/register/verify` | Ai cũng gọi được | Bước 2/2 đăng ký: đúng `ticket` + mã OTP thì mới tạo tài khoản thật → trả về `token` |
+| POST | `/api/auth/login` | Ai cũng gọi được | Bước 1/2 đăng nhập: kiểm tra Email/SĐT + mật khẩu, gửi mã OTP tới email → trả về `ticket` |
+| POST | `/api/auth/login/verify` | Ai cũng gọi được | Bước 2/2 đăng nhập: đúng `ticket` + mã OTP thì mới cấp `token` (2FA) |
 | GET | `/api/auth/me` | Đã đăng nhập | Thông tin tài khoản đang đăng nhập |
 | GET / POST | `/api/admin/users` | Chỉ admin | Danh sách / tạo tài khoản mới (kể cả Bác sĩ, Nhân viên) |
 | PATCH / DELETE | `/api/admin/users/:id` | Chỉ admin | Đổi vai trò / xoá tài khoản |
@@ -108,11 +127,18 @@ Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiế
 | PATCH | `/api/appointments/:id/status` | Theo vai trò | Đổi trạng thái lịch hẹn (bệnh nhân chỉ tự huỷ được) |
 | GET / POST / PATCH / DELETE | `/api/clinical/medicines` | Xem: ai cũng được; Sửa: admin | Danh mục thuốc + giá |
 | GET / POST / DELETE | `/api/clinical/interactions` | Xem: ai cũng được; Sửa: admin | Quy tắc tương tác thuốc |
+| GET / POST / DELETE | `/api/schedule/doctor-shifts` | Xem: admin (mọi bác sĩ) hoặc bác sĩ (của mình); Sửa: admin | Ca trực/lịch làm việc theo tuần của bác sĩ |
+| PATCH | `/api/admin/users/:id/status` | Chỉ admin | Khoá/mở khoá tài khoản (JWT cũ mất hiệu lực ngay khi khoá) |
+| GET | `/api/stats/export.xlsx` | Chỉ admin | Xuất báo cáo thống kê ra file Excel (.xlsx) thật |
+| POST | `/api/clinical/check-interactions` | Đã đăng nhập | Kiểm tra cảnh báo tương tác cho 1 danh sách thuốc, kèm gợi ý thuốc thay thế (`substitutesA`/`substitutesB`) cho từng cảnh báo |
+| GET | `/api/clinical/medicines/:id/substitutes` | Đã đăng nhập | Thuốc thay thế (cùng nhóm) cho 1 thuốc cụ thể, đánh dấu thuốc nào vẫn tương tác với các thuốc khác đang kê (`otherMedicineIds`) |
 | POST | `/api/clinical/records` | Bác sĩ | Tạo hồ sơ khám + đơn thuốc, tự hoàn thành lịch hẹn |
 | GET | `/api/clinical/records/mine` | Bệnh nhân | Lịch sử khám của chính mình |
 | GET / PUT | `/api/billing/service-prices` | Xem: nhân viên/bác sĩ/admin; Sửa: admin | Giá khám theo chuyên khoa |
+| GET / PUT | `/api/billing/bank-account` | Xem: đã đăng nhập; Sửa: admin | Tài khoản ngân hàng nhận thanh toán QR (VietQR) |
 | POST / GET | `/api/billing/invoices` | Lập: nhân viên/admin | Lập hoá đơn cho lịch hẹn đã khám xong |
 | PATCH | `/api/billing/invoices/:id/status` | Nhân viên/admin | Xác nhận đã thu tiền |
+| PATCH | `/api/billing/invoices/:id/claim-online-payment` | Bệnh nhân (chủ hoá đơn) | Báo đã chuyển khoản qua QR — chỉ đánh dấu để nhân viên ưu tiên đối chiếu, KHÔNG tự động xác nhận đã thu tiền |
 | POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `GEMINI_API_KEY`) |
 | POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 

@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const { authenticate } = require('../middleware/auth');
+const { createOtp, verifyOtp, OtpError } = require('../lib/otp');
+const { logAudit } = require('../lib/audit');
 
 const router = express.Router();
 
@@ -17,9 +19,27 @@ function signToken(user) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, specialty: u.specialty, createdAt: u.created_at };
+  return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, specialty: u.specialty, isActive: u.is_active, createdAt: u.created_at };
 }
 
+// Che bớt email khi trả về cho client lúc chờ nhập OTP (vd "mi***@gmail.com") —
+// đủ để người dùng nhận ra đúng email của mình mà không lộ nguyên vẹn qua response.
+function maskEmail(email) {
+  const [user, domain] = String(email).split('@');
+  if (!domain) return String(email);
+  const visible = user.slice(0, Math.min(2, user.length));
+  return `${visible}${'*'.repeat(Math.max(user.length - visible.length, 1))}@${domain}`;
+}
+
+function otpErrorOr500(e, res) {
+  if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
+  console.error(e);
+  return res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+}
+
+// Bước 1/2 đăng ký: kiểm tra thông tin hợp lệ rồi gửi mã OTP tới email — CHƯA tạo
+// tài khoản ở bước này (tài khoản chỉ thật sự được tạo khi verify đúng mã ở dưới),
+// để không tạo rác tài khoản "chưa xác thực" nếu người dùng bỏ dở giữa chừng.
 router.post('/register', async (req, res) => {
   try {
     const { name, email, phone, password, adminCode } = req.body || {};
@@ -34,7 +54,8 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự.' });
     }
 
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    const normalizedEmail = email.toLowerCase();
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'Email này đã được đăng ký.' });
     }
@@ -47,36 +68,107 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
 
+    const { ticket, expiresAt } = await createOtp({
+      destination: normalizedEmail,
+      purpose: 'register',
+      payload: { name: name.trim(), email: normalizedEmail, phone: phone ? String(phone).trim() : null, passwordHash, role },
+    });
+    res.json({ ticket, expiresAt, email: maskEmail(normalizedEmail), message: 'Đã gửi mã xác thực OTP tới email của bạn.' });
+  } catch (e) {
+    otpErrorOr500(e, res);
+  }
+});
+
+// Bước 2/2 đăng ký: xác thực đúng mã OTP thì mới thật sự tạo tài khoản + đăng nhập luôn.
+router.post('/register/verify', async (req, res) => {
+  try {
+    const { ticket, code } = req.body || {};
+    if (!ticket || !code) return res.status(400).json({ error: 'Thiếu mã xác thực.' });
+
+    const payload = await verifyOtp({ ticket, code, purpose: 'register' });
+
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [payload.email]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Email này đã được đăng ký.' });
+    }
+
     const result = await pool.query(
       'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name.trim(), email.toLowerCase(), phone || null, passwordHash, role]
+      [payload.name, payload.email, payload.phone, payload.passwordHash, payload.role]
     );
 
     const user = result.rows[0];
     const token = signToken(user);
     res.status(201).json({ token, user: publicUser(user) });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'Email hoặc số điện thoại này đã được sử dụng.' });
+    }
+    otpErrorOr500(e, res);
   }
 });
 
+// Bước 1/2 đăng nhập: xác thực SĐT/Email + mật khẩu, nếu đúng thì gửi mã OTP
+// (2FA) tới email tài khoản trước khi cấp JWT — chưa cấp token ở bước này.
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Thiếu email hoặc mật khẩu.' });
+    const { identifier, email, password } = req.body || {};
+    const rawIdentifier = String(identifier || email || '').trim();
+    if (!rawIdentifier || !password) {
+      return res.status(400).json({ error: 'Thiếu email/số điện thoại hoặc mật khẩu.' });
     }
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [String(email).toLowerCase()]);
+
+    const isEmail = EMAIL_RE.test(rawIdentifier);
+    const result = isEmail
+      ? await pool.query('SELECT * FROM users WHERE email = $1', [rawIdentifier.toLowerCase()])
+      : await pool.query('SELECT * FROM users WHERE phone = $1', [rawIdentifier]);
     const user = result.rows[0];
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-      return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng.' });
+      // Ghi log kể cả khi không tìm thấy tài khoản (user=null) — logAudit tự chịu
+      // được user rỗng, dòng log khi đó chỉ thiếu user_id nhưng vẫn thấy identifier
+      // trong detail, đủ để admin phát hiện dò mật khẩu hàng loạt.
+      await logAudit(user || null, 'auth.login_failed', 'user', user?.id ?? null, { identifier: rawIdentifier });
+      return res.status(401).json({ error: 'Email/số điện thoại hoặc mật khẩu không đúng.' });
     }
+    if (!user.is_active) {
+      await logAudit(user, 'auth.login_blocked', 'user', user.id, {});
+      return res.status(403).json({ error: 'Tài khoản của bạn đã bị khoá, vui lòng liên hệ quản trị viên.' });
+    }
+    if (!user.email) {
+      return res.status(400).json({ error: 'Tài khoản chưa có email để nhận mã OTP, liên hệ quản trị viên.' });
+    }
+
+    const { ticket, expiresAt } = await createOtp({
+      destination: user.email,
+      purpose: 'login',
+      payload: { userId: user.id },
+    });
+    res.json({ ticket, expiresAt, email: maskEmail(user.email), message: 'Đã gửi mã xác thực OTP tới email của bạn.' });
+  } catch (e) {
+    otpErrorOr500(e, res);
+  }
+});
+
+// Bước 2/2 đăng nhập: xác thực đúng mã OTP thì mới cấp JWT.
+router.post('/login/verify', async (req, res) => {
+  try {
+    const { ticket, code } = req.body || {};
+    if (!ticket || !code) return res.status(400).json({ error: 'Thiếu mã xác thực.' });
+
+    const payload = await verifyOtp({ ticket, code, purpose: 'login' });
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [payload.userId]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+    // Phòng trường hợp tài khoản bị khoá đúng lúc đang chờ nhập OTP (giữa bước 1 và 2).
+    if (!user.is_active) {
+      return res.status(403).json({ error: 'Tài khoản của bạn đã bị khoá, vui lòng liên hệ quản trị viên.' });
+    }
+
     const token = signToken(user);
+    await logAudit(user, 'auth.login', 'user', user.id, {});
     res.json({ token, user: publicUser(user) });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+    otpErrorOr500(e, res);
   }
 });
 

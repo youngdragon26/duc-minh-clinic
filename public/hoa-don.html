@@ -161,7 +161,7 @@
         <td>${inv.patientName}</td>
         <td>${inv.specialty}</td>
         <td class="money">${money(inv.totalAmount)}</td>
-        <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span></td>
+        <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span>${inv.onlinePaymentClaimedAt ? `<div style="color:var(--accent-deep); font-size:.76rem; margin-top:3px;">🔔 BN báo đã CK lúc ${new Date(inv.onlinePaymentClaimedAt).toLocaleString('vi-VN')}</div>` : ''}</td>
         <td>${inv.paymentMethod ? `<span class="method-tag">${PAYMENT_METHOD_LABELS[inv.paymentMethod]}</span>` : '—'}</td>
         <td><a class="ghost" style="text-decoration:none; display:inline-block; margin-bottom:6px;" href="/in.html?type=hd&id=${inv.id}" target="_blank">🖨 In ${inv.code}</a></td>
         <td>${inv.status === 'chua_thanh_toan' ? `

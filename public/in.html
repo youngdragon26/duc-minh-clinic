@@ -111,6 +111,36 @@
       <div class="foot">Đơn thuốc chỉ có giá trị khi có chữ ký bác sĩ. Dùng thuốc đúng liều bác sĩ chỉ định; khám lại nếu triệu chứng nặng hơn.</div>`;
   }
 
+  function report(data) {
+    const periodLabel = (p) => data.group === 'month' ? p.replace('-', '/') : fmtDate(p);
+    const revRows = data.revenue.length
+      ? data.revenue.map((r) => `<tr><td>${periodLabel(r.period)}</td><td class="num">${r.invoices}</td><td class="num">${money(r.total)}</td></tr>`).join('')
+      : '<tr><td colspan="3">Chưa có doanh thu trong khoảng này.</td></tr>';
+    const specRows = data.specialties.length
+      ? data.specialties.map((s) => `<tr><td>${esc(s.specialty)}</td><td class="num">${s.total}</td><td class="num">${s.completed}</td><td class="num">${s.cancelled}</td></tr>`).join('')
+      : '<tr><td colspan="4">Chưa có lịch hẹn trong khoảng này.</td></tr>';
+    return head + `
+      <div class="doc-title"><h1>BÁO CÁO THỐNG KÊ</h1><div class="date">Từ ${fmtDate(data.from)} đến ${fmtDate(data.to)} · theo ${data.group === 'month' ? 'tháng' : 'ngày'}</div></div>
+      <div class="grid">
+        <div><span>Doanh thu đã thu:</span> <b>${money(data.summary.revenue)}</b></div>
+        <div><span>Số hoá đơn đã thu:</span> ${data.summary.paidInvoices}</div>
+        <div><span>Công nợ chưa thu (toàn hệ thống):</span> ${money(data.summary.unpaidAmount)}</div>
+        <div><span>Số hoá đơn chưa thu:</span> ${data.summary.unpaidInvoices}</div>
+        <div><span>Số lịch hẹn trong khoảng:</span> ${data.summary.appointments}</div>
+      </div>
+      <div class="block"><b>Doanh thu theo ${data.group === 'month' ? 'tháng' : 'ngày'}</b></div>
+      <table>
+        <thead><tr><th>${data.group === 'month' ? 'Tháng' : 'Ngày'}</th><th class="num">Số hoá đơn</th><th class="num">Doanh thu</th></tr></thead>
+        <tbody>${revRows}</tbody>
+      </table>
+      <div class="block"><b>Số ca khám theo chuyên khoa</b></div>
+      <table>
+        <thead><tr><th>Chuyên khoa</th><th class="num">Tổng</th><th class="num">Hoàn thành</th><th class="num">Huỷ</th></tr></thead>
+        <tbody>${specRows}</tbody>
+      </table>
+      <div class="foot">Doanh thu tính theo hoá đơn đã thu tiền, theo ngày thu — Báo cáo xuất lúc ${new Date().toLocaleString('vi-VN')}.</div>`;
+  }
+
   function invoice(inv) {
     const paid = inv.status === 'da_thanh_toan';
     const rows = inv.items.map((it, i) => `<tr><td>${i + 1}</td><td>${esc(it.description)}</td><td class="num">${esc(it.quantity)}</td><td class="num">${money(it.unitPrice)}</td><td class="num">${money(it.subtotal)}</td></tr>`).join('');
@@ -134,11 +164,21 @@
 
   (async function () {
     if (!token) return fail('Bạn cần đăng nhập để in chứng từ.');
-    if (!['dt', 'hd'].includes(type) || !Number.isInteger(id)) return fail('Đường dẫn in không hợp lệ.');
+    if (!['dt', 'hd', 'baocao'].includes(type)) return fail('Đường dẫn in không hợp lệ.');
+    if (type !== 'baocao' && !Number.isInteger(id)) return fail('Đường dẫn in không hợp lệ.');
     try {
       let html, code;
       if (type === 'dt') { const { record } = await api('/api/clinical/records/' + id); html = prescription(record); code = record.code; }
-      else { const { invoice: inv } = await api('/api/billing/invoices/' + id); html = invoice(inv); code = inv.code; }
+      else if (type === 'hd') { const { invoice: inv } = await api('/api/billing/invoices/' + id); html = invoice(inv); code = inv.code; }
+      else {
+        const group = params.get('group') === 'month' ? 'month' : 'day';
+        const qs = new URLSearchParams({ group });
+        if (params.get('from')) qs.set('from', params.get('from'));
+        if (params.get('to')) qs.set('to', params.get('to'));
+        const data = await api('/api/stats?' + qs.toString());
+        html = report(data);
+        code = 'Bao-cao-thong-ke_' + data.from + '_' + data.to;
+      }
       document.title = code + ' — Đa Khoa Đức Minh';
       const sheet = document.getElementById('sheet');
       sheet.innerHTML = html;

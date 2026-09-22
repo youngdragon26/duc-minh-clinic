@@ -13,7 +13,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function publicUser(u) {
   return {
     id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role,
-    specialty: u.specialty, bio: u.bio, createdAt: u.created_at,
+    specialty: u.specialty, bio: u.bio, isActive: u.is_active, createdAt: u.created_at,
   };
 }
 
@@ -62,6 +62,9 @@ router.post('/users', async (req, res) => {
     await logAudit(req.user, 'user.create', 'user', result.rows[0].id, { name: result.rows[0].name, role: result.rows[0].role });
     res.status(201).json({ user: publicUser(result.rows[0]) });
   } catch (e) {
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'Email hoặc số điện thoại này đã được sử dụng.' });
+    }
     console.error(e);
     res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
   }
@@ -81,6 +84,29 @@ router.patch('/users/:id/role', async (req, res) => {
     const result = await pool.query('UPDATE users SET role = $1 WHERE id = $2 RETURNING *', [role, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
     await logAudit(req.user, 'user.role_change', 'user', id, { name: result.rows[0].name, from: before.rows[0]?.role, to: role });
+    res.json({ user: publicUser(result.rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Khoá/mở khoá tài khoản (UC012: quản lý trạng thái tài khoản, tách biệt với
+// RBAC ở trên) — tài khoản bị khoá không đăng nhập được và JWT cũ (nếu có) cũng
+// mất hiệu lực ngay (xem middleware/auth.js), nhưng toàn bộ dữ liệu vẫn giữ nguyên.
+router.patch('/users/:id/status', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { isActive } = req.body || {};
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ error: 'Thiếu trạng thái tài khoản (isActive).' });
+    }
+    if (id === req.user.id && !isActive) {
+      return res.status(400).json({ error: 'Không thể tự khoá tài khoản của chính mình.' });
+    }
+    const result = await pool.query('UPDATE users SET is_active = $1 WHERE id = $2 RETURNING *', [isActive, id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+    await logAudit(req.user, 'user.status_change', 'user', id, { name: result.rows[0].name, isActive });
     res.json({ user: publicUser(result.rows[0]) });
   } catch (e) {
     console.error(e);

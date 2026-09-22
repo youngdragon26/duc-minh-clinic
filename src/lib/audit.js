@@ -29,6 +29,16 @@ const ACTION_LABELS = {
   'invoice.unpaid': 'Bỏ đánh dấu đã thu tiền',
   'record.create': 'Lưu hồ sơ khám',
   'followup.create': 'Đặt lịch tái khám',
+  'record.self_view': 'Bệnh nhân tự xem hồ sơ khám',
+  'invoice.self_view': 'Bệnh nhân tự xem hoá đơn',
+  'invoice.online_payment_claimed': 'Bệnh nhân báo đã chuyển khoản QR',
+  'bank_account.update': 'Sửa thông tin nhận thanh toán QR',
+  'schedule.shift_add': 'Thêm ca trực bác sĩ',
+  'schedule.shift_remove': 'Xoá ca trực bác sĩ',
+  'user.status_change': 'Khoá/Mở khoá tài khoản',
+  'auth.login': 'Đăng nhập thành công',
+  'auth.login_failed': 'Đăng nhập thất bại (sai thông tin)',
+  'auth.login_blocked': 'Đăng nhập bị chặn (tài khoản đã khoá)',
 };
 
 module.exports = { logAudit, ACTION_LABELS };

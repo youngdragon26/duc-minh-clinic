@@ -104,19 +104,49 @@
             <input type="text" id="medUnit" placeholder="viên, gói, chai..." value="viên">
           </div>
         </div>
-        <label>Giá bán (đ / đơn vị)</label>
-        <input type="number" id="medPrice" min="0" step="1000" value="0">
+        <div class="grid2">
+          <div>
+            <label>Giá bán (đ / đơn vị)</label>
+            <input type="number" id="medPrice" min="0" step="1000" value="0">
+          </div>
+          <div>
+            <label>Nhóm thuốc / hoạt chất (không bắt buộc)</label>
+            <input type="text" id="medGroup" placeholder="Vd: Hạ sốt - giảm đau (Paracetamol)">
+          </div>
+        </div>
+        <p class="hint" style="margin-top:4px;">Các thuốc cùng tên nhóm sẽ được hệ thống gợi ý thay thế cho nhau khi bác sĩ kê đơn.</p>
         <button class="primary" type="submit">Thêm thuốc</button>
         <div class="msg" id="medMsg"></div>
       </form>
 
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Tên thuốc</th><th>Đơn vị</th><th>Giá bán</th><th></th></tr></thead>
+          <thead><tr><th>Tên thuốc</th><th>Đơn vị</th><th>Giá bán</th><th>Nhóm thuốc / hoạt chất</th><th></th></tr></thead>
           <tbody id="medBody"></tbody>
         </table>
       </div>
       <div class="empty" id="medEmpty" hidden>Chưa có thuốc nào trong danh mục.</div>
+    </div>
+
+    <div class="card">
+      <b>Thông tin nhận thanh toán QR online (VietQR)</b>
+      <p class="hint">Bệnh nhân sẽ thấy mã QR này ở trang Hồ sơ khám bệnh để tự chuyển khoản thanh toán hoá đơn — nhân viên vẫn cần đối chiếu sao kê rồi xác nhận thủ công ở trang Hoá đơn, hệ thống chưa tự động xác nhận đã nhận tiền.</p>
+      <form id="bankForm">
+        <div class="grid2">
+          <div>
+            <label>Ngân hàng</label>
+            <select id="bankBin"></select>
+          </div>
+          <div>
+            <label>Số tài khoản</label>
+            <input type="text" id="bankAccountNumber" inputmode="numeric" required>
+          </div>
+        </div>
+        <label>Tên chủ tài khoản (không dấu, đúng như trên thẻ)</label>
+        <input type="text" id="bankAccountName" placeholder="PHONG KHAM DA KHOA DUC MINH" required>
+        <button class="primary" type="submit">Lưu thông tin nhận thanh toán</button>
+        <div class="msg" id="bankMsg"></div>
+      </form>
     </div>
 
     <div class="card">
@@ -209,6 +239,7 @@
         <td>${m.name}</td>
         <td>${m.unit}</td>
         <td><input type="number" class="med-price" data-id="${m.id}" min="0" step="1000" value="${m.price}" style="width:110px;"></td>
+        <td><input type="text" class="med-group" data-id="${m.id}" value="${m.groupName || ''}" placeholder="—" style="min-width:180px;"></td>
         <td><button class="ghost del-med" data-id="${m.id}">Xoá</button></td>
       </tr>
     `).join('');
@@ -226,6 +257,13 @@
       input.addEventListener('change', async () => {
         try {
           await api('/api/clinical/medicines/' + input.dataset.id, { method: 'PATCH', body: JSON.stringify({ price: input.value }) });
+        } catch (e) { alert(e.message); loadMedicines(); }
+      });
+    });
+    body.querySelectorAll('.med-group').forEach(input => {
+      input.addEventListener('change', async () => {
+        try {
+          await api('/api/clinical/medicines/' + input.dataset.id, { method: 'PATCH', body: JSON.stringify({ groupName: input.value }) });
         } catch (e) { alert(e.message); loadMedicines(); }
       });
     });
@@ -270,6 +308,7 @@
           name: document.getElementById('medName').value,
           unit: document.getElementById('medUnit').value,
           price: document.getElementById('medPrice').value,
+          groupName: document.getElementById('medGroup').value,
         }),
       });
       e.target.reset();
@@ -324,6 +363,56 @@
     });
   }
 
+  // Danh sách ngân hàng + mã BIN theo chuẩn Napas/VietQR — chỉ để dựng sẵn dropdown,
+  // không gọi API ngoài nào (không cần khoá bí mật để hiển thị danh sách này).
+  const VIETQR_BANKS = [
+    { bin: '970436', name: 'Vietcombank' },
+    { bin: '970415', name: 'VietinBank' },
+    { bin: '970418', name: 'BIDV' },
+    { bin: '970405', name: 'Agribank' },
+    { bin: '970407', name: 'Techcombank' },
+    { bin: '970422', name: 'MB Bank' },
+    { bin: '970416', name: 'ACB' },
+    { bin: '970423', name: 'TPBank' },
+    { bin: '970432', name: 'VPBank' },
+    { bin: '970403', name: 'Sacombank' },
+    { bin: '970437', name: 'HDBank' },
+    { bin: '970441', name: 'VIB' },
+    { bin: '970454', name: 'VietCapitalBank' },
+    { bin: '970431', name: 'Eximbank' },
+    { bin: '970448', name: 'OCB' },
+    { bin: '970426', name: 'MSB' },
+  ];
+  document.getElementById('bankBin').innerHTML = VIETQR_BANKS.map(b => `<option value="${b.bin}">${b.name} (${b.bin})</option>`).join('');
+
+  async function loadBankAccount() {
+    const { bankAccount } = await api('/api/billing/bank-account');
+    if (bankAccount.bankBin) document.getElementById('bankBin').value = bankAccount.bankBin;
+    document.getElementById('bankAccountNumber').value = bankAccount.accountNumber || '';
+    document.getElementById('bankAccountName').value = bankAccount.accountName || '';
+  }
+
+  document.getElementById('bankForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('bankMsg');
+    msg.textContent = ''; msg.className = 'msg';
+    try {
+      const bankSelect = document.getElementById('bankBin');
+      await api('/api/billing/bank-account', {
+        method: 'PUT',
+        body: JSON.stringify({
+          bankBin: bankSelect.value,
+          bankName: bankSelect.options[bankSelect.selectedIndex].textContent.replace(/\s*\(\d+\)$/, ''),
+          accountNumber: document.getElementById('bankAccountNumber').value,
+          accountName: document.getElementById('bankAccountName').value,
+        }),
+      });
+      msg.textContent = 'Đã lưu.'; msg.className = 'msg ok';
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    }
+  });
+
   document.getElementById('interactionForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('interactionMsg');
@@ -358,6 +447,7 @@
     await loadInteractions();
     await loadServicePrices();
     await loadDiscountRates();
+    await loadBankAccount();
   })();
 </script>
 </body>

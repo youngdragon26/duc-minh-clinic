@@ -201,6 +201,8 @@
           <button type="button" data-g="month">12 tháng · theo tháng</button>
         </div>
         <button type="button" class="linkbtn" id="tableToggle">Xem dạng bảng</button>
+        <button type="button" class="linkbtn" id="exportXlsxBtn">⬇ Xuất Excel</button>
+        <a class="linkbtn" id="exportPdfLink" href="#" target="_blank">🖨 In báo cáo (PDF)</a>
       </div>
       <div class="charts" id="chartsView">
         <div>
@@ -521,11 +523,42 @@
     $('revTable').innerHTML = series.map((s) => `<tr><td>${periodLabel(s.period, group)}</td><td class="num">${s.invoices}</td><td class="num">${money(s.total)}</td></tr>`).join('');
     $('specTable').innerHTML = data.specialties.map((r) => `<tr><td>${esc(r.specialty)}</td><td class="num">${r.total}</td><td class="num">${r.completed}</td><td class="num">${r.cancelled}</td></tr>`).join('')
       || '<tr><td colspan="4">Chưa có dữ liệu.</td></tr>';
+    $('exportPdfLink').href = `/in.html?type=baocao&group=${group}&from=${data.from}&to=${data.to}`;
     return data;
   }
 
+  // Tải file .xlsx thật (không phải CSV) — phải fetch bằng JS kèm header
+  // Authorization rồi tự tạo link tải, vì thẻ <a href> thường không gửi kèm được
+  // token đăng nhập.
+  document.getElementById('exportXlsxBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('exportXlsxBtn');
+    const original = btn.textContent;
+    btn.textContent = 'Đang xuất...';
+    try {
+      const res = await fetch(`/api/stats/export.xlsx?group=${chartGroup}`, { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || ('Lỗi ' + res.status));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bao-cao-thong-ke_${statsData?.from || ''}_${statsData?.to || ''}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.textContent = original;
+    }
+  });
+
   /* ---------- Nhật ký hoạt động (admin) ---------- */
   const DISCOUNT_LABEL = { bhyt: 'BHYT', sinh_vien: 'Thẻ sinh viên' };
+  const WEEKDAY_VN = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
   function describe(l) {
     const d = l.detail || {};
     const st = (s) => STATUS[s] || s;
@@ -533,6 +566,7 @@
       case 'user.role_change': return `${d.name}: ${ROLE_LABEL[d.from] || d.from} → ${ROLE_LABEL[d.to] || d.to}`;
       case 'user.create': return `${d.name} (${ROLE_LABEL[d.role] || d.role})`;
       case 'user.delete': return `${d.name || '#' + l.entityId} (${ROLE_LABEL[d.role] || d.role || '—'})`;
+      case 'user.status_change': return `${d.name || '#' + l.entityId}: ${d.isActive ? 'Mở khoá' : 'Khoá tài khoản'}`;
       case 'price.service': return `${d.specialty}: ${d.from == null ? 'chưa có' : money(d.from)} → ${money(d.to)}`;
       case 'price.medicine': return `${d.name}: ${d.from == null ? '—' : money(d.from)} → ${money(d.to)}`;
       case 'price.discount': return `${DISCOUNT_LABEL[d.category] || d.category}: ${d.from}% → ${d.to}%`;
@@ -541,12 +575,21 @@
       case 'invoice.create': return `HD-${String(l.entityId).padStart(6, '0')} · ${money(d.total)}`;
       case 'invoice.paid': return `HD-${String(l.entityId).padStart(6, '0')} · ${money(d.total)} · ${d.paymentMethod === 'chuyen_khoan' ? 'Chuyển khoản' : 'Tiền mặt'}`;
       case 'invoice.unpaid': return `HD-${String(l.entityId).padStart(6, '0')} · ${money(d.total)}`;
+      case 'invoice.online_payment_claimed': return `HD-${String(l.entityId).padStart(6, '0')} · bệnh nhân báo đã chuyển khoản`;
+      case 'bank_account.update': return `${d.bankName || ''} · STK ${d.accountNumber || ''}`;
       case 'record.create': return `DT-${String(l.entityId).padStart(6, '0')} · ${d.medicines || 0} thuốc`;
+      case 'record.self_view': return d.count != null ? `Xem ${d.count} hồ sơ khám` : `Xem hồ sơ khám #${l.entityId}`;
+      case 'invoice.self_view': return d.count != null ? `Xem ${d.count} hoá đơn` : `Xem hoá đơn #${l.entityId}`;
       case 'followup.create': return `Tái khám ngày ${fmtDate(d.date)}`;
+      case 'schedule.shift_add': return `${d.doctorName || ''} · ${WEEKDAY_VN[d.weekday]} ${d.startTime}–${d.endTime}`;
+      case 'schedule.shift_remove': return `${WEEKDAY_VN[d.weekday]} ${d.startTime}–${d.endTime}`;
+      case 'auth.login': return '';
+      case 'auth.login_failed': return `Thử đăng nhập: ${d.identifier || '—'}`;
+      case 'auth.login_blocked': return 'Tài khoản đã bị khoá';
       default: return l.detail ? JSON.stringify(l.detail) : '';
     }
   }
-  const badAction = (a) => ['user.delete', 'appointment.cancel', 'invoice.unpaid'].includes(a);
+  const badAction = (a) => ['user.delete', 'appointment.cancel', 'invoice.unpaid', 'auth.login_failed', 'auth.login_blocked'].includes(a);
   let auditActionsLoaded = false;
   async function loadAudit() {
     const action = $('auditFilter').value;

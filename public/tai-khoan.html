@@ -64,6 +64,7 @@
   .pill.patient{background:#d7f0ea; color:var(--accent-deep);}
   .pill.doctor{background:#dbe8ff; color:#1d4ed8;}
   .pill.staff{background:#ffe9cc; color:#9a5b00;}
+  .pill.locked{background:#f3d9d6; color:#8f2c22;}
   .role-select{padding:5px 8px; font-size:.78rem; border-radius:6px; width:auto;}
   .row-actions{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
   .table-scroll{overflow-x:auto;}
@@ -97,8 +98,8 @@
     </div>
 
     <form id="loginForm">
-      <label>Email</label>
-      <input type="email" id="loginEmail" required autocomplete="username">
+      <label>Email hoặc số điện thoại</label>
+      <input type="text" id="loginEmail" required autocomplete="username">
       <label>Mật khẩu</label>
       <input type="password" id="loginPassword" required autocomplete="current-password">
       <button class="primary" type="submit">Đăng nhập</button>
@@ -118,6 +119,15 @@
       <input type="text" id="regAdminCode" placeholder="Chỉ nhân viên phòng khám mới có mã này">
       <button class="primary" type="submit">Tạo tài khoản</button>
       <div class="msg" id="registerMsg"></div>
+    </form>
+
+    <form id="otpForm" hidden>
+      <p class="hint" id="otpHint"></p>
+      <label>Mã xác thực OTP (6 số, gửi qua email)</label>
+      <input type="text" id="otpCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="one-time-code">
+      <button class="primary" type="submit">Xác nhận</button>
+      <div class="msg" id="otpMsg"></div>
+      <p class="hint"><a href="#" id="otpResend">Gửi lại mã</a> · <a href="#" id="otpBack">Quay lại</a></p>
     </form>
   </div>
 
@@ -155,7 +165,7 @@
     <b>Danh sách tài khoản</b>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Chuyên khoa</th><th>Ngày tạo</th><th></th></tr></thead>
+        <thead><tr><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Trạng thái</th><th>Chuyên khoa</th><th>Ngày tạo</th><th></th></tr></thead>
         <tbody id="usersBody"></tbody>
       </table>
     </div>
@@ -239,7 +249,7 @@
     const quickLinks = document.getElementById('quickLinks');
     const link = (href, label) => `<a class="ghost" style="text-decoration:none; display:inline-block;" href="${href}">${label}</a>`;
     if (me.role === 'admin') {
-      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/danh-muc-thuoc.html', 'Danh mục thuốc →') + link('/hoa-don.html', 'Hoá đơn →') + link('/co-so-tri-thuc.html', 'Cơ sở tri thức AI →');
+      quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/danh-muc-thuoc.html', 'Danh mục thuốc →') + link('/hoa-don.html', 'Hoá đơn →') + link('/lich-truc.html', 'Lịch trực bác sĩ →') + link('/co-so-tri-thuc.html', 'Cơ sở tri thức AI →');
     } else if (me.role === 'staff') {
       quickLinks.innerHTML = link('/hang-doi.html', 'Hàng đợi khám →') + link('/hoa-don.html', 'Hoá đơn →');
     } else if (me.role === 'doctor') {
@@ -265,6 +275,7 @@
         <td>${u.email}</td>
         <td>${u.phone || '—'}</td>
         <td><span class="pill ${u.role}">${roleLabel(u.role)}</span></td>
+        <td>${u.isActive === false ? '<span class="pill locked">Đã khoá</span>' : '<span class="pill patient">Hoạt động</span>'}</td>
         <td>${u.specialty || '—'}</td>
         <td>${new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
         <td>
@@ -274,6 +285,7 @@
             <select class="role-select" data-id="${u.id}">
               ${Object.keys(ROLE_LABELS).map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('')}
             </select>
+            <button class="ghost toggle-status" data-id="${u.id}" data-active="${u.isActive !== false}">${u.isActive === false ? 'Mở khoá' : 'Khoá'}</button>
             <button class="ghost delete-user" data-id="${u.id}">Xoá</button>
           `}
           </div>
@@ -292,6 +304,21 @@
         } catch (e) {
           alert(e.message);
           loadUsers();
+        }
+      });
+    });
+    body.querySelectorAll('.toggle-status').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const willActivate = btn.dataset.active === 'false';
+        if (!willActivate && !confirm('Khoá tài khoản này? Người dùng sẽ không đăng nhập được cho tới khi được mở khoá lại.')) return;
+        try {
+          await api(`/api/admin/users/${btn.dataset.id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isActive: willActivate }),
+          });
+          loadUsers();
+        } catch (e) {
+          alert(e.message);
         }
       });
     });
@@ -316,21 +343,67 @@
     });
   }
 
+  // Đăng nhập/đăng ký đều xác thực qua 2 bước (2FA — UC001): bước 1 gửi thông tin
+  // và nhận mã OTP qua email, bước 2 nhập mã OTP mới thật sự cấp token. pendingAuth
+  // giữ lại thông tin bước 1 để "Gửi lại mã" chỉ cần gọi lại đúng bước 1 đó.
+  let pendingAuth = null;
+
+  const otpForm = document.getElementById('otpForm');
+  const otpHint = document.getElementById('otpHint');
+  const otpMsg = document.getElementById('otpMsg');
+  const otpCode = document.getElementById('otpCode');
+
+  function showOtpStep(maskedEmail) {
+    document.getElementById('loginForm').hidden = true;
+    document.getElementById('registerForm').hidden = true;
+    document.querySelector('.tabs').hidden = true;
+    otpForm.hidden = false;
+    otpMsg.textContent = ''; otpMsg.className = 'msg';
+    otpCode.value = '';
+    otpHint.textContent = `Nhập mã 6 số vừa gửi tới ${maskedEmail}. Mã có hiệu lực trong 5 phút.`;
+    otpCode.focus();
+  }
+
+  function backToAuthForms() {
+    pendingAuth = null;
+    otpForm.hidden = true;
+    document.querySelector('.tabs').hidden = false;
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab || 'login';
+    document.getElementById('loginForm').hidden = activeTab !== 'login';
+    document.getElementById('registerForm').hidden = activeTab !== 'register';
+  }
+
+  async function requestLoginOtp() {
+    return api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        identifier: document.getElementById('loginEmail').value,
+        password: document.getElementById('loginPassword').value,
+      }),
+    });
+  }
+
+  async function requestRegisterOtp() {
+    return api('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: document.getElementById('regName').value,
+        email: document.getElementById('regEmail').value,
+        phone: document.getElementById('regPhone').value,
+        password: document.getElementById('regPassword').value,
+        adminCode: document.getElementById('regAdminCode').value,
+      }),
+    });
+  }
+
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('loginMsg');
     msg.textContent = ''; msg.className = 'msg';
     try {
-      const { token: t, user } = await api('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: document.getElementById('loginEmail').value,
-          password: document.getElementById('loginPassword').value,
-        }),
-      });
-      token = t; me = user;
-      localStorage.setItem('dm_token', token);
-      location.href = '/khong-gian.html';
+      const { ticket, email } = await requestLoginOtp();
+      pendingAuth = { mode: 'login', ticket };
+      showOtpStep(email);
     } catch (e) {
       msg.textContent = e.message; msg.className = 'msg err';
     }
@@ -341,22 +414,49 @@
     const msg = document.getElementById('registerMsg');
     msg.textContent = ''; msg.className = 'msg';
     try {
-      const { token: t, user } = await api('/api/auth/register', {
+      const { ticket, email } = await requestRegisterOtp();
+      pendingAuth = { mode: 'register', ticket };
+      showOtpStep(email);
+    } catch (e) {
+      msg.textContent = e.message; msg.className = 'msg err';
+    }
+  });
+
+  otpForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!pendingAuth) return;
+    otpMsg.textContent = ''; otpMsg.className = 'msg';
+    try {
+      const endpoint = pendingAuth.mode === 'login' ? '/api/auth/login/verify' : '/api/auth/register/verify';
+      const { token: t, user } = await api(endpoint, {
         method: 'POST',
-        body: JSON.stringify({
-          name: document.getElementById('regName').value,
-          email: document.getElementById('regEmail').value,
-          phone: document.getElementById('regPhone').value,
-          password: document.getElementById('regPassword').value,
-          adminCode: document.getElementById('regAdminCode').value,
-        }),
+        body: JSON.stringify({ ticket: pendingAuth.ticket, code: otpCode.value.trim() }),
       });
       token = t; me = user;
       localStorage.setItem('dm_token', token);
       location.href = '/khong-gian.html';
     } catch (e) {
-      msg.textContent = e.message; msg.className = 'msg err';
+      otpMsg.textContent = e.message; otpMsg.className = 'msg err';
     }
+  });
+
+  document.getElementById('otpResend').addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!pendingAuth) return;
+    otpMsg.textContent = ''; otpMsg.className = 'msg';
+    try {
+      const { ticket, email } = pendingAuth.mode === 'login' ? await requestLoginOtp() : await requestRegisterOtp();
+      pendingAuth.ticket = ticket;
+      otpCode.value = '';
+      otpHint.textContent = `Đã gửi lại mã tới ${email}. Mã có hiệu lực trong 5 phút.`;
+    } catch (e) {
+      otpMsg.textContent = e.message; otpMsg.className = 'msg err';
+    }
+  });
+
+  document.getElementById('otpBack').addEventListener('click', (e) => {
+    e.preventDefault();
+    backToAuthForms();
   });
 
   document.getElementById('createUserForm').addEventListener('submit', async (e) => {
