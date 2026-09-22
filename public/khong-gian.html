@@ -46,7 +46,7 @@
   body{margin:0; background:var(--ground); color:var(--ink); font-family:"Be Vietnam Pro",system-ui,sans-serif; line-height:1.55;}
   header{background:var(--surface); border-bottom:1px solid var(--line); border-top:4px solid var(--role);}
   header .bar{max-width:1040px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px;}
-  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.15rem; text-decoration:none; color:var(--ink);}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.6rem; text-decoration:none; color:var(--ink);}
   .brand em{color:var(--accent-deep); font-style:normal;}
   .wrap{max-width:1040px; margin:0 auto; padding:28px 20px 60px;}
 
@@ -55,12 +55,12 @@
   h1{font-family:"Lora",serif; font-weight:600; font-size:clamp(1.6rem,3vw,2.2rem); margin:8px 0 4px;}
   .sub{color:var(--ink-muted); margin:0; font-size:.95rem;}
   .switch{display:flex; gap:8px;}
-  .switch a{font-size:.85rem; font-weight:600; text-decoration:none; padding:9px 16px; border-radius:10px; border:1px solid var(--line); color:var(--ink); background:var(--surface);}
+  .switch a{font-size:.85rem; font-weight:600; text-decoration:none; padding:9px 16px; border-radius:3px; border:1px solid var(--line); color:var(--ink); background:var(--surface);}
   .switch a:hover{border-color:var(--role);}
   .switch a.on{background:var(--role); color:#fff; border-color:var(--role);}
 
   .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:26px;}
-  .stat{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px; border-left:4px solid var(--role);}
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:3px; padding:16px 18px; border-left:4px solid var(--role);}
   .stat{font:inherit; color:inherit; text-align:left; width:100%;}
   button.stat{cursor:pointer; transition:transform .15s, box-shadow .15s, border-color .15s;}
   button.stat:hover, button.stat:focus-visible{transform:translateY(-2px); box-shadow:var(--shadow); border-color:var(--role); outline:none;}
@@ -70,11 +70,11 @@
 
   /* Cửa sổ chi tiết khi bấm vào ô số liệu */
   .overlay{position:fixed; inset:0; background:rgba(10,24,21,.55); display:grid; place-items:center; padding:20px; z-index:300;}
-  .modal{background:var(--surface); border:1px solid var(--line); border-radius:16px; width:100%; max-width:560px; max-height:82vh; display:flex; flex-direction:column; box-shadow:var(--shadow);}
+  .modal{background:var(--surface); border:1px solid var(--line); border-radius:3px; width:100%; max-width:560px; max-height:82vh; display:flex; flex-direction:column; box-shadow:var(--shadow);}
   .modal-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; border-bottom:1px solid var(--line);}
   .modal-head b{font-family:"Lora",serif; font-size:1.15rem;}
   .modal-head .cnt{font-size:.78rem; color:var(--ink-muted); margin-left:8px; font-family:"Be Vietnam Pro",sans-serif;}
-  .modal-x{font:inherit; font-size:1.3rem; line-height:1; border:0; background:transparent; color:var(--ink-muted); cursor:pointer; padding:4px 8px; border-radius:8px;}
+  .modal-x{font:inherit; font-size:1.3rem; line-height:1; border:0; background:transparent; color:var(--ink-muted); cursor:pointer; padding:4px 8px; border-radius:3px;}
   .modal-x:hover{background:var(--surface-2); color:var(--ink);}
   .modal-body{padding:6px 20px; overflow-y:auto;}
   .modal-foot{padding:12px 20px; border-top:1px solid var(--line); text-align:right;}
@@ -85,13 +85,13 @@
   h2{font-size:.78rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 12px;}
   .section{margin-bottom:30px;}
   .tools{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;}
-  .tool{display:block; text-decoration:none; color:inherit; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px; transition:transform .15s, box-shadow .15s, border-color .15s;}
+  .tool{display:block; text-decoration:none; color:inherit; background:var(--surface); border:1px solid var(--line); border-radius:3px; padding:18px; transition:transform .15s, box-shadow .15s, border-color .15s;}
   .tool:hover{transform:translateY(-2px); box-shadow:var(--shadow); border-color:var(--role);}
-  .tool .ic{width:38px; height:38px; border-radius:10px; background:var(--role-soft); color:var(--role); display:grid; place-items:center; font-size:1.15rem; margin-bottom:10px;}
+  .tool .ic{width:38px; height:38px; border-radius:3px; background:var(--role-soft); color:var(--role); display:grid; place-items:center; font-size:1.15rem; margin-bottom:10px;}
   .tool b{display:block; font-size:.98rem; margin-bottom:2px;}
   .tool span{font-size:.82rem; color:var(--ink-muted);}
 
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow);}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:3px; padding:18px 20px; box-shadow:var(--shadow);}
   .list{list-style:none; margin:0; padding:0;}
   .list li{display:flex; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); font-size:.9rem;}
   .list li:last-child{border-bottom:0;}
@@ -101,10 +101,10 @@
   .pill.bad{background:var(--bad-soft); color:var(--bad);}
   .empty{color:var(--ink-muted); margin:0; font-size:.9rem;}
   .center{max-width:420px; margin:80px auto; text-align:center;}
-  .btn{display:inline-block; margin-top:12px; padding:10px 20px; border-radius:10px; background:var(--accent); color:var(--on-accent); font-weight:600; text-decoration:none;}
-  button.mini{font:inherit; font-size:.75rem; font-weight:600; padding:5px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer;}
+  .btn{display:inline-block; margin-top:12px; padding:10px 20px; border-radius:3px; background:var(--accent); color:var(--on-accent); font-weight:600; text-decoration:none;}
+  button.mini{font:inherit; font-size:.75rem; font-weight:600; padding:5px 10px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer;}
   button.mini:hover{border-color:var(--role);}
-  select.mini, input.mini{font:inherit; font-size:.8rem; padding:6px 9px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
+  select.mini, input.mini{font:inherit; font-size:.8rem; padding:6px 9px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
 
   /* Nhóm tái khám */
   .fu-group{margin-bottom:14px;}
@@ -117,7 +117,7 @@
 
   /* Biểu đồ */
   .chart-bar{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
-  .seg{display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden;}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:3px; overflow:hidden;}
   .seg button{font:inherit; font-size:.8rem; font-weight:600; padding:7px 14px; border:0; background:var(--surface); color:var(--ink-muted); cursor:pointer;}
   .seg button.on{background:var(--role); color:#fff;}
   .charts{display:grid; grid-template-columns:1.5fr 1fr; gap:16px;}
@@ -132,7 +132,7 @@
   svg.bars .bar{fill:var(--role); transition:opacity .12s;}
   svg.bars .bar:hover, svg.bars .bar.hot{opacity:.75;}
   svg.bars .hit{fill:transparent; cursor:default;}
-  .tip{position:absolute; pointer-events:none; background:var(--ink); color:var(--ground); font-size:.78rem; padding:6px 10px; border-radius:8px; white-space:nowrap; transform:translate(-50%,-110%); z-index:5;}
+  .tip{position:absolute; pointer-events:none; background:var(--ink); color:var(--ground); font-size:.78rem; padding:6px 10px; border-radius:3px; white-space:nowrap; transform:translate(-50%,-110%); z-index:5;}
   .hbar{display:grid; grid-template-columns:120px 1fr auto; gap:10px; align-items:center; margin:8px 0; font-size:.85rem;}
   .hbar .track{height:14px; background:var(--surface-2); border-radius:0 7px 7px 0;}
   .hbar .fill{height:100%; background:var(--role); border-radius:0 7px 7px 0;}
@@ -146,19 +146,19 @@
 
   /* Trợ lý AI */
   .ai-head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
-  .ai-head .dot{width:34px; height:34px; border-radius:10px; background:var(--role); color:#fff; display:grid; place-items:center;}
+  .ai-head .dot{width:34px; height:34px; border-radius:3px; background:var(--role); color:#fff; display:grid; place-items:center;}
   .ai-head b{display:block;}
   .ai-head span{font-size:.8rem; color:var(--ink-muted);}
-  .chat{height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:10px; background:var(--surface-2); border-radius:12px; margin-bottom:10px;}
-  .msg{max-width:88%; padding:9px 13px; border-radius:12px; font-size:.9rem; white-space:pre-wrap; word-wrap:break-word;}
+  .chat{height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:10px; background:var(--surface-2); border-radius:3px; margin-bottom:10px;}
+  .msg{max-width:88%; padding:9px 13px; border-radius:3px; font-size:.9rem; white-space:pre-wrap; word-wrap:break-word;}
   .msg.bot{background:var(--surface); border:1px solid var(--line); align-self:flex-start;}
   .msg.me{background:var(--role); color:#fff; align-self:flex-end;}
   .chips{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;}
   .chip{font:inherit; font-size:.78rem; padding:6px 12px; border-radius:20px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer;}
   .chip:hover{border-color:var(--role); color:var(--role);}
   .ask{display:flex; gap:8px;}
-  .ask input{flex:1; font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
-  .ask button{font:inherit; font-weight:600; padding:10px 18px; border-radius:10px; border:0; background:var(--role); color:#fff; cursor:pointer;}
+  .ask input{flex:1; font:inherit; padding:10px 12px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
+  .ask button{font:inherit; font-weight:600; padding:10px 18px; border-radius:3px; border:0; background:var(--role); color:#fff; cursor:pointer;}
   .ask button:disabled{opacity:.6; cursor:default;}
 </style>
 </head>

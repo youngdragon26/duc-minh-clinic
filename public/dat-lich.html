@@ -24,9 +24,17 @@
     font-family:"Be Vietnam Pro",-apple-system,"Segoe UI",sans-serif;
     -webkit-font-smoothing:antialiased;
   }
+  .marquee{background:var(--accent-deep); color:#fff; overflow:hidden; white-space:nowrap;}
+  .marquee-track{
+    display:inline-block; padding:6px 0; padding-left:100%;
+    font-size:.78rem; font-weight:600; letter-spacing:.01em;
+    animation:marquee-scroll 26s linear infinite;
+  }
+  @keyframes marquee-scroll{ 0%{transform:translateX(0);} 100%{transform:translateX(-100%);} }
+  @media (prefers-reduced-motion: reduce){ .marquee-track{animation:none; padding-left:20px;} }
   header{border-bottom:1px solid var(--line);}
   header .bar{max-width:1280px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
-  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.6rem; text-decoration:none; color:var(--ink);}
   .brand em{color:var(--accent-deep); font-style:normal;}
   .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
   .back:hover{color:var(--ink);}
@@ -118,6 +126,10 @@
 </style>
 </head>
 <body>
+
+<div class="marquee">
+  <div class="marquee-track">Bệnh viện đa khoa Đức Minh — Khám chữa bệnh và điều trị tất cả các ngày — Chúng tôi luôn luôn nỗ lực để mang đến cho người bệnh "Sự phục vụ hoàn hảo" nhất.</div>
+</div>
 
 <header>
   <div class="bar">

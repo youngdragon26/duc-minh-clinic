@@ -26,7 +26,7 @@
   }
   header{border-bottom:1px solid var(--line);}
   header .bar{max-width:680px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
-  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
+  .brand{font-family:"Lora",serif; font-weight:600; font-size:1.6rem; text-decoration:none; color:var(--ink);}
   .brand em{color:var(--accent-deep); font-style:normal;}
   .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
   .back:hover{color:var(--ink);}
@@ -34,7 +34,7 @@
   .wrap{max-width:680px; margin:0 auto; padding:32px 20px 48px;}
   h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 4px;}
   .sub{color:var(--ink-muted); font-size:.88rem; margin-bottom:24px; line-height:1.6;}
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin-bottom:16px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:3px; padding:20px 22px; margin-bottom:16px;}
   .record-head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px;}
   .record-head b{font-family:"Lora",serif; font-size:1.02rem;}
   .record-head span{font-size:.8rem; color:var(--ink-muted);}
@@ -121,11 +121,11 @@
         <div class="field">
           <b>Thanh toán QR online</b>
           <div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-top:4px;">
-            <img src="${qrUrl}" alt="Mã QR chuyển khoản" width="160" height="160" style="border-radius:8px; border:1px solid var(--line);">
+            <img src="${qrUrl}" alt="Mã QR chuyển khoản" width="160" height="160" style="border-radius:3px; border:1px solid var(--line);">
             <div style="flex:1; min-width:180px;">
               <div>Quét mã bằng app ngân hàng/Ví điện tử để chuyển khoản đúng số tiền ${money(invoice.totalAmount)}. Nội dung chuyển khoản đã điền sẵn mã hoá đơn.</div>
               <button type="button" class="claim-online-paid" data-invoice-id="${invoice.id}"
-                style="margin-top:8px; padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.82rem; color:var(--ink); font-family:inherit;">
+                style="margin-top:8px; padding:7px 12px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.82rem; color:var(--ink); font-family:inherit;">
                 Tôi đã chuyển khoản
               </button>
             </div>
