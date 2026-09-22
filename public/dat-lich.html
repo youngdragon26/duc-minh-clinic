@@ -25,13 +25,21 @@
     -webkit-font-smoothing:antialiased;
   }
   header{border-bottom:1px solid var(--line);}
-  header .bar{max-width:920px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
+  header .bar{max-width:1280px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;}
   .brand{font-family:"Lora",serif; font-weight:600; font-size:1.1rem; text-decoration:none; color:var(--ink);}
   .brand em{color:var(--accent-deep); font-style:normal;}
   .back{font-size:.82rem; text-decoration:none; color:var(--ink-muted);}
   .back:hover{color:var(--ink);}
 
-  .wrap{max-width:920px; margin:0 auto; padding:32px 20px 48px;}
+  .wrap{max-width:1280px; margin:0 auto; padding:32px 20px 48px;}
+
+  /* ---------- Bố cục 2 cột: lịch bên trái, thông tin người khám bên phải ---------- */
+  .booking-grid{display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:20px; align-items:start;}
+  .booking-grid .col-right{position:sticky; top:20px;}
+  @media (max-width:1000px){
+    .booking-grid{grid-template-columns:1fr;}
+    .booking-grid .col-right{position:static;}
+  }
   h1{font-family:"Lora",serif; font-size:1.4rem; margin:0 0 20px;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
   .card h2{font-family:"Lora",serif; font-size:1rem; margin:0 0 4px;}
@@ -136,105 +144,109 @@
       <button type="button" class="ghost" id="cancelEditBtn">Huỷ sửa, đặt lịch mới</button>
     </div>
 
-    <div class="card">
-      <h2>Chuyên khoa</h2>
-      <div class="grid2">
-        <div>
-          <label>Chuyên khoa</label>
-          <select id="fSpecialty" required></select>
-        </div>
-        <div>
-          <label>Bác sĩ (không bắt buộc)</label>
-          <select id="fDoctor">
-            <option value="">Không chọn bác sĩ cụ thể</option>
-          </select>
-          <div class="doctor-row">
-            <button type="button" class="link-btn" id="viewDoctorBio" hidden>Xem lý lịch bác sĩ</button>
+    <div class="booking-grid">
+      <div class="col-left">
+        <div class="card">
+          <h2>Chuyên khoa</h2>
+          <div class="grid2">
+            <div>
+              <label>Chuyên khoa</label>
+              <select id="fSpecialty" required></select>
+            </div>
+            <div>
+              <label>Bác sĩ (không bắt buộc)</label>
+              <select id="fDoctor">
+                <option value="">Không chọn bác sĩ cụ thể</option>
+              </select>
+              <div class="doctor-row">
+                <button type="button" class="link-btn" id="viewDoctorBio" hidden>Xem lý lịch bác sĩ</button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <div class="card">
-      <h2>Chọn ngày &amp; giờ khám</h2>
-      <p class="hint">Bấm vào một ô còn trống trên lịch để chọn khung giờ. Ô có màu là lịch hẹn bạn đã đặt.</p>
-      <p class="hint" style="background:#f3ecff; color:#4c1d95; border-radius:10px; padding:10px 12px;">
-        <b>Chủ nhật</b> phòng khám không khám thường xuyên, chỉ có người trực khi có việc đột xuất. Muốn khám Chủ nhật, bạn cần <b>chọn một bác sĩ cụ thể</b> ở trên và đặt <b>chậm nhất Thứ 3 của tuần đó</b>. Lịch sẽ ở trạng thái <i>Chờ xác nhận</i> cho tới khi <b>chính bác sĩ đồng ý</b>.
-      </p>
+        <div class="card">
+          <h2>Chọn ngày &amp; giờ khám</h2>
+          <p class="hint">Bấm vào một ô còn trống trên lịch để chọn khung giờ. Ô có màu là lịch hẹn bạn đã đặt.</p>
+          <p class="hint" style="background:#f3ecff; color:#4c1d95; border-radius:10px; padding:10px 12px;">
+            <b>Chủ nhật</b> phòng khám không khám thường xuyên, chỉ có người trực khi có việc đột xuất. Muốn khám Chủ nhật, bạn cần <b>chọn một bác sĩ cụ thể</b> ở trên và đặt <b>chậm nhất Thứ 3 của tuần đó</b>. Lịch sẽ ở trạng thái <i>Chờ xác nhận</i> cho tới khi <b>chính bác sĩ đồng ý</b>.
+          </p>
 
-      <div class="cal-toolbar">
-        <div class="cal-nav">
-          <button type="button" class="icon-btn" id="prevWeek">‹</button>
-          <button type="button" class="icon-btn" id="todayWeek">Hôm nay</button>
-          <button type="button" class="icon-btn" id="nextWeek">›</button>
+          <div class="cal-toolbar">
+            <div class="cal-nav">
+              <button type="button" class="icon-btn" id="prevWeek">‹</button>
+              <button type="button" class="icon-btn" id="todayWeek">Hôm nay</button>
+              <button type="button" class="icon-btn" id="nextWeek">›</button>
+            </div>
+            <div class="cal-label" id="weekLabel"></div>
+          </div>
+
+          <div class="table-scroll">
+            <table class="cal">
+              <thead><tr id="calHeadRow"></tr></thead>
+              <tbody id="calBody"></tbody>
+            </table>
+          </div>
+
+          <div class="legend">
+            <span><i style="background:var(--accent-deep);"></i> Đã chọn</span>
+            <span><i style="background:var(--surface-2); border:1px solid var(--line);"></i> Còn trống</span>
+            <span><i style="background:var(--line);"></i> Hết chỗ / đã qua giờ</span>
+            <span><i style="background:#fdf0d0;"></i> Lịch hẹn của bạn</span>
+          </div>
+
+          <div class="far-note" id="farNote" hidden>
+            Đây là tuần xa nhất có thể tự đặt lịch online. Muốn đặt cho tháng sau hoặc một ngày cụ thể ngoài lịch, vui lòng gọi hotline <b>0974 755 333</b> để được nhân viên hỗ trợ.
+          </div>
+
+          <div class="selected-readout" id="selectedReadout">Chưa chọn khung giờ nào.</div>
         </div>
-        <div class="cal-label" id="weekLabel"></div>
       </div>
 
-      <div class="table-scroll">
-        <table class="cal">
-          <thead><tr id="calHeadRow"></tr></thead>
-          <tbody id="calBody"></tbody>
-        </table>
-      </div>
+      <div class="col-right">
+        <div class="card">
+          <h2>Thông tin người khám</h2>
+          <form id="bookForm">
+            <div>
+              <label>Họ và tên người khám</label>
+              <input type="text" id="fName" placeholder="Nguyễn Văn A" required>
+            </div>
+            <div>
+              <label>Số điện thoại liên hệ</label>
+              <input type="tel" id="fPhone" placeholder="09xxxxxxxx" required>
+            </div>
+            <div class="grid2">
+              <div>
+                <label>Tuổi</label>
+                <input type="number" id="fAge" min="0" max="120" required>
+              </div>
+              <div>
+                <label>Giới tính</label>
+                <select id="fGender" required>
+                  <option value="">— Chọn —</option>
+                  <option value="nam">Nam</option>
+                  <option value="nu">Nữ</option>
+                  <option value="khac">Khác</option>
+                </select>
+              </div>
+            </div>
 
-      <div class="legend">
-        <span><i style="background:var(--accent-deep);"></i> Đã chọn</span>
-        <span><i style="background:var(--surface-2); border:1px solid var(--line);"></i> Còn trống</span>
-        <span><i style="background:var(--line);"></i> Hết chỗ / đã qua giờ</span>
-        <span><i style="background:#fdf0d0;"></i> Lịch hẹn của bạn</span>
-      </div>
-
-      <div class="far-note" id="farNote" hidden>
-        Đây là tuần xa nhất có thể tự đặt lịch online. Muốn đặt cho tháng sau hoặc một ngày cụ thể ngoài lịch, vui lòng gọi hotline <b>0974 755 333</b> để được nhân viên hỗ trợ.
-      </div>
-
-      <div class="selected-readout" id="selectedReadout">Chưa chọn khung giờ nào.</div>
-    </div>
-
-    <div class="card">
-      <h2>Thông tin người khám</h2>
-      <form id="bookForm">
-        <div class="grid2">
-          <div>
-            <label>Họ và tên người khám</label>
-            <input type="text" id="fName" placeholder="Nguyễn Văn A" required>
-          </div>
-          <div>
-            <label>Số điện thoại liên hệ</label>
-            <input type="tel" id="fPhone" placeholder="09xxxxxxxx" required>
-          </div>
-        </div>
-        <div class="grid2">
-          <div>
-            <label>Tuổi</label>
-            <input type="number" id="fAge" min="0" max="120" required>
-          </div>
-          <div>
-            <label>Giới tính</label>
-            <select id="fGender" required>
-              <option value="">— Chọn —</option>
-              <option value="nam">Nam</option>
-              <option value="nu">Nữ</option>
-              <option value="khac">Khác</option>
+            <label>Đối tượng ưu tiên (nếu có)</label>
+            <select id="fDiscountCategory">
+              <option value="">Không có</option>
+              <option value="bhyt">Bảo hiểm y tế (BHYT)</option>
+              <option value="sinh_vien">Thẻ sinh viên</option>
             </select>
-          </div>
+            <p class="hint" style="margin:4px 0 0;">Vui lòng mang theo thẻ thật khi đến khám để nhân viên xác minh và áp giá ưu đãi lúc lập hoá đơn.</p>
+
+            <label>Lý do khám / triệu chứng (không bắt buộc)</label>
+            <textarea id="fNote" placeholder="Ví dụ: ho, sốt nhẹ 2 ngày..."></textarea>
+
+            <button class="primary" type="submit" id="bookSubmit">Đặt lịch</button>
+            <div class="msg" id="bookMsg"></div>
+          </form>
         </div>
-
-        <label>Đối tượng ưu tiên (nếu có)</label>
-        <select id="fDiscountCategory">
-          <option value="">Không có</option>
-          <option value="bhyt">Bảo hiểm y tế (BHYT)</option>
-          <option value="sinh_vien">Thẻ sinh viên</option>
-        </select>
-        <p class="hint" style="margin:4px 0 0;">Vui lòng mang theo thẻ thật khi đến khám để nhân viên xác minh và áp giá ưu đãi lúc lập hoá đơn.</p>
-
-        <label>Lý do khám / triệu chứng (không bắt buộc)</label>
-        <textarea id="fNote" placeholder="Ví dụ: ho, sốt nhẹ 2 ngày..."></textarea>
-
-        <button class="primary" type="submit" id="bookSubmit">Đặt lịch</button>
-        <div class="msg" id="bookMsg"></div>
-      </form>
+      </div>
     </div>
 
     <div class="card">
