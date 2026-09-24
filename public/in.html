@@ -55,6 +55,7 @@
 <div class="err" id="err" hidden></div>
 <div class="sheet" id="sheet" hidden></div>
 
+<script src="/invoice-sheet.js"></script>
 <script>
 (function () {
   const params = new URLSearchParams(location.search);
@@ -141,25 +142,10 @@
       <div class="foot">Doanh thu tính theo hoá đơn đã thu tiền, theo ngày thu — Báo cáo xuất lúc ${new Date().toLocaleString('vi-VN')}.</div>`;
   }
 
+  // Hoá đơn dùng chung bố cục Phiếu thu đầy đủ thông tin với cửa sổ "Xem chi tiết" (xem /invoice-sheet.js).
   function invoice(inv) {
-    const paid = inv.status === 'da_thanh_toan';
-    const rows = inv.items.map((it, i) => `<tr><td>${i + 1}</td><td>${esc(it.description)}</td><td class="num">${esc(it.quantity)}</td><td class="num">${money(it.unitPrice)}</td><td class="num">${money(it.subtotal)}</td></tr>`).join('');
-    return head + `
-      <div class="doc-title"><h1>HOÁ ĐƠN</h1><div class="code">Số: ${esc(inv.code)}</div><div class="date">Ngày khám: ${fmtDate(inv.date)}</div></div>
-      <div class="grid">
-        <div><span>Bệnh nhân:</span> <b>${esc(inv.patientName)}</b></div>
-        <div><span>Chuyên khoa:</span> ${esc(inv.specialty)}</div>
-        <div><span>Trạng thái:</span> <span class="stamp ${paid ? 'paid' : 'unpaid'}">${paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</span></div>
-        <div><span>Hình thức:</span> ${paid ? esc(METHOD[inv.paymentMethod] || '—') : '—'}</div>
-        ${paid && inv.paidAt ? `<div><span>Thu tiền lúc:</span> ${new Date(inv.paidAt).toLocaleString('vi-VN')}</div>` : ''}
-      </div>
-      <table>
-        <thead><tr><th style="width:36px">#</th><th>Nội dung</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="total"><span>Tổng cộng</span><span>${money(inv.totalAmount)}</span></div>
-      <div class="sign"><div><small>Người nộp tiền</small><div class="who">&nbsp;</div></div><div><small>Thu ngân</small><div class="who">&nbsp;</div></div></div>
-      <div class="foot">Cảm ơn quý khách đã tin tưởng Phòng khám Đa khoa Đức Minh.</div>`;
+    window.InvoiceSheet.ensureCss();
+    return window.InvoiceSheet.html(inv);
   }
 
   (async function () {

@@ -153,8 +153,20 @@ function publicInvoice(inv) {
     appointmentId: inv.appointment_id,
     patientId: inv.patient_id,
     patientName: inv.patient_name,
+    patientPhone: inv.patient_phone,
     specialty: inv.specialty,
     date: inv.appointment_date,
+    time: inv.appointment_time,
+    // Người thực sự đi khám (có thể khác chủ tài khoản, vd đặt hộ con/người thân).
+    contactName: inv.contact_name,
+    contactPhone: inv.contact_phone,
+    contactAge: inv.contact_age,
+    contactGender: inv.contact_gender,
+    doctorName: inv.doctor_name,
+    diagnosis: inv.diagnosis,
+    recordCode: inv.record_id ? 'DT-' + String(inv.record_id).padStart(6, '0') : null,
+    discountCategory: inv.discount_category,
+    createdByName: inv.created_by_name,
     totalAmount: inv.total_amount,
     status: inv.status,
     paymentMethod: inv.payment_method,
@@ -165,10 +177,16 @@ function publicInvoice(inv) {
 }
 
 const INVOICE_SELECT = `
-  SELECT inv.*, p.name AS patient_name, a.specialty, a.appointment_date
+  SELECT inv.*, p.name AS patient_name, p.phone AS patient_phone,
+         a.specialty, a.appointment_date::text AS appointment_date, a.appointment_time, a.contact_name, a.contact_phone,
+         a.age AS contact_age, a.gender AS contact_gender, a.discount_category,
+         d.name AS doctor_name, cb.name AS created_by_name, mr.id AS record_id, mr.diagnosis
   FROM invoices inv
   JOIN users p ON p.id = inv.patient_id
   JOIN appointments a ON a.id = inv.appointment_id
+  LEFT JOIN users d ON d.id = a.doctor_id
+  LEFT JOIN users cb ON cb.id = inv.created_by
+  LEFT JOIN medical_records mr ON mr.appointment_id = a.id
 `;
 
 async function attachInvoiceItems(inv) {
@@ -176,7 +194,14 @@ async function attachInvoiceItems(inv) {
     'SELECT id, description, quantity, unit_price AS "unitPrice", subtotal FROM invoice_items WHERE invoice_id = $1 ORDER BY id',
     [inv.id]
   );
-  return { ...publicInvoice(inv), items: items.rows };
+  const rows = items.rows;
+  // Tính lại các số của phiếu thu từ chính các dòng đã lưu (dòng đầu là phí khám, dòng âm là giảm giá) —
+  // nhờ vậy % giảm hiển thị luôn đúng với lúc lập hoá đơn dù admin có đổi % giảm giá sau đó.
+  const consultationFee = rows.length ? rows[0].subtotal : 0;
+  const discountAmount = -rows.filter((i) => i.subtotal < 0).reduce((s, i) => s + i.subtotal, 0);
+  const grossAmount = rows.filter((i) => i.subtotal > 0).reduce((s, i) => s + i.subtotal, 0);
+  const discountPercent = consultationFee > 0 && discountAmount > 0 ? Math.round((discountAmount * 1000) / consultationFee) / 10 : 0;
+  return { ...publicInvoice(inv), consultationFee, medicinesTotal: grossAmount - consultationFee, grossAmount, discountAmount, discountPercent, items: rows };
 }
 
 // Lập hoá đơn cho 1 lịch hẹn đã khám xong — tự tính từ phí khám (theo chuyên khoa)

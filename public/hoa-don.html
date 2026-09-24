@@ -103,6 +103,7 @@
   </div>
 </div>
 
+<script src="/invoice-sheet.js"></script>
 <script>
   const API = '';
   const token = localStorage.getItem('dm_token');
@@ -111,6 +112,7 @@
   const DISCOUNT_LABELS = { bhyt: 'BHYT', sinh_vien: 'Thẻ sinh viên' };
 
   function money(n) { return Number(n).toLocaleString('vi-VN') + 'đ'; }
+  document.head.insertAdjacentHTML('beforeend', '<style>tr.inv-row{cursor:pointer;} tr.inv-row:hover{background:var(--surface-2);} tr.inv-row:focus-visible{outline:2px solid var(--accent); outline-offset:-2px;}</style>');
 
   async function api(path, opts = {}) {
     const res = await fetch(API + path, {
@@ -155,15 +157,19 @@
     const { invoices } = await api('/api/billing/invoices?' + params.toString());
     const body = document.getElementById('invoiceBody');
     document.getElementById('invoiceEmpty').hidden = invoices.length > 0;
+    const byId = Object.fromEntries(invoices.map(i => [i.id, i]));
     body.innerHTML = invoices.map(inv => `
-      <tr>
+      <tr class="inv-row" data-id="${inv.id}" tabindex="0" title="Bấm để xem chi tiết hoá đơn">
         <td>${inv.date.slice(0, 10)}</td>
         <td>${inv.patientName}</td>
         <td>${inv.specialty}</td>
         <td class="money">${money(inv.totalAmount)}</td>
         <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span>${inv.onlinePaymentClaimedAt ? `<div style="color:var(--accent-deep); font-size:.76rem; margin-top:3px;">🔔 BN báo đã CK lúc ${new Date(inv.onlinePaymentClaimedAt).toLocaleString('vi-VN')}</div>` : ''}</td>
         <td>${inv.paymentMethod ? `<span class="method-tag">${PAYMENT_METHOD_LABELS[inv.paymentMethod]}</span>` : '—'}</td>
-        <td><a class="ghost" style="text-decoration:none; display:inline-block; margin-bottom:6px;" href="/in.html?type=hd&id=${inv.id}" target="_blank">🖨 In ${inv.code}</a></td>
+        <td>
+          <button type="button" class="ghost view-invoice" data-id="${inv.id}" style="margin-bottom:6px;">👁 Xem ${inv.code}</button><br>
+          <a class="ghost" style="text-decoration:none; display:inline-block; margin-bottom:6px;" href="/in.html?type=hd&id=${inv.id}" target="_blank">🖨 In</a>
+        </td>
         <td>${inv.status === 'chua_thanh_toan' ? `
           <div class="pay-actions">
             <select class="pay-method" data-id="${inv.id}">
@@ -175,6 +181,12 @@
         ` : ''}</td>
       </tr>
     `).join('');
+    // Bấm vào dòng (hoặc nút "Xem") để mở phiếu thu đầy đủ thông tin; các nút/ô chọn trong dòng vẫn dùng bình thường.
+    const openInvoice = (id) => window.InvoiceSheet.open(byId[id]);
+    body.querySelectorAll('.inv-row').forEach(tr => {
+      tr.addEventListener('click', (e) => { if (!e.target.closest('a, select, button:not(.view-invoice), .pay-actions')) openInvoice(tr.dataset.id); });
+      tr.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === tr) { e.preventDefault(); openInvoice(tr.dataset.id); } });
+    });
     body.querySelectorAll('.mark-paid').forEach(btn => {
       btn.addEventListener('click', async () => {
         const select = body.querySelector(`.pay-method[data-id="${btn.dataset.id}"]`);
