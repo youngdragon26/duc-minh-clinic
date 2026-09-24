@@ -1,4 +1,4 @@
-// Cụm nút liên hệ nổi ở góc phải: "Chat" mở khung chat AI chính ở trang chủ (cho bệnh nhân chỉ
+// Cụm nút liên hệ nổi ở góc phải: "Chat" mở khung chat AI chính (toàn màn hình) ở trang chủ (cho bệnh nhân chỉ
 // muốn dùng khung chat), "Zalo" mở cuộc trò chuyện Zalo với phòng khám; mũi tên thu gọn/mở rộng cụm nút.
 // Gắn vào trang bằng: <script src="/float-contact.js" data-zalo="0974755333"></script>
 (function () {
@@ -56,19 +56,13 @@
   setCollapsed(saved);
   toggle.addEventListener('click', () => setCollapsed(!wrap.classList.contains('collapsed')));
 
-  // Trang chủ có sẵn khung chat: cuộn tới và đặt con trỏ vào ô nhập. Trang khác: về trang chủ (#chat).
+  // Mở khung chat toàn màn hình (trang chủ cung cấp window.dmChat). Trang khác: về trang chủ và mở ở đó.
   function openChat() {
-    const input = document.getElementById('heroChatInput');
-    if (!input) { location.href = '/#chat'; return; }
-    const card = input.closest('.hero-chat') || input;
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => input.focus({ preventScroll: true }), 450);
-    card.style.transition = 'box-shadow .3s';
-    card.style.boxShadow = '0 0 0 3px var(--accent, #0e8e7d)';
-    setTimeout(() => { card.style.boxShadow = ''; }, 1600);
+    if (window.dmChat) { window.dmChat.openFull(); return; }
+    location.href = '/#chat-full';
   }
   wrap.querySelector('.fc-chat').addEventListener('click', openChat);
-  if (location.hash === '#chat') setTimeout(openChat, 500);
+  if (location.hash === '#chat' && window.dmChat) window.dmChat.openFull();
 
   document.addEventListener('dm:user', (e) => {
     if (e.detail && STAFF_ROLES.includes(e.detail.role)) wrap.hidden = true;

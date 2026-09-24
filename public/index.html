@@ -210,6 +210,19 @@
   .hist-del:hover{color:var(--err, #b3261e); border-color:var(--err, #b3261e);}
   .hist-empty{padding:20px 14px; color:var(--ink-muted); font-size:.86rem; line-height:1.6; text-align:center;}
   .hist-empty a{color:var(--accent-deep); font-weight:600;}
+  /* ----- Chế độ toàn màn hình (như Gemini / Claude): cột lịch sử bên trái, nội dung căn giữa ----- */
+  .chat-card.full{position:fixed; inset:0; z-index:1000; aspect-ratio:auto; border-radius:0; border:0; box-shadow:none;}
+  .chat-card.full .chat-body{padding:24px max(18px, calc((100% - 780px) / 2)); gap:14px;}
+  .chat-card.full .msg{font-size:.98rem; line-height:1.65; max-width:88%; padding:12px 16px;}
+  .chat-card.full .chat-quick{padding:0 max(18px, calc((100% - 780px) / 2)) 12px;}
+  .chat-card.full .chat-input{padding:14px max(18px, calc((100% - 780px) / 2)) 22px;}
+  .chat-card.full .chat-input input{padding:14px 16px; font-size:1rem;}
+  .chat-card.full .chat-input button{padding:0 24px; font-size:.95rem;}
+  @media (min-width:820px){
+    .chat-card.full .chat-history{right:auto; width:300px; border-right:1px solid var(--line);}
+    .chat-card.full #chatHistClose, .chat-card.full .hist-toggle{display:none;}
+    .chat-card.full .chat-head, .chat-card.full .chat-body, .chat-card.full .chat-quick, .chat-card.full .chat-input{margin-left:300px;}
+  }
   .chat-card{
     position:relative;
     aspect-ratio:5/6; border-radius:3px; overflow:hidden;
@@ -349,9 +362,15 @@
     .spec-grid{grid-template-columns:1fr 1fr;}
     footer .wrap{flex-direction:column;}
   }
+  /* Màn hình hẹp: tên phòng khám 1 hàng, cụm nút (tài khoản / Thanh toán / Đặt lịch) xuống hàng dưới —
+     nếu không, thanh menu rộng hơn màn hình và làm cả trang bị nới ngang (lệch, phải kéo qua lại). */
+  @media (max-width:900px){
+    nav.wrap{flex-wrap:wrap; gap:8px 12px; padding-top:10px; padding-bottom:10px;}
+    .nav-actions{flex-basis:100%; flex-wrap:wrap; gap:8px 10px;}
+    #navPay, .nav-actions .btn{padding:9px 14px; font-size:.84rem;}
+  }
   @media (max-width:560px){
-    .nav-actions{gap:8px;}
-    #navPay{padding:8px 10px; font-size:.82rem;}
+    .brand-mark{font-size:1.3rem;}
   }
   @media (max-width:480px){
     .spec-grid{grid-template-columns:1fr;}
@@ -426,8 +445,9 @@
           <div class="chat-head">
             <div class="who"><b>Trợ lý AI Đức Minh</b><span>Hỏi ngay, trả lời tức thì</span></div>
             <div class="chat-tools">
-              <button type="button" class="chat-tool" id="chatHistBtn" title="Xem lại các cuộc trò chuyện">Lịch sử</button>
+              <button type="button" class="chat-tool hist-toggle" id="chatHistBtn" title="Xem lại các cuộc trò chuyện">Lịch sử</button>
               <button type="button" class="chat-tool" id="chatNewBtn" title="Bắt đầu cuộc trò chuyện mới">+ Mới</button>
+              <button type="button" class="chat-tool" id="chatFullBtn" title="Phóng to khung chat toàn màn hình" aria-pressed="false">⤢ Phóng to</button>
             </div>
           </div>
           <div class="chat-body" id="heroChatBody">
@@ -613,9 +633,18 @@
   const histPanel = document.getElementById('chatHistory');
   const histList = document.getElementById('chatHistList');
 
+  const card = document.querySelector('.chat-card');
+  const heroChat = card.parentElement;
+  const fullBtn = document.getElementById('chatFullBtn');
+  const wideMQ = window.matchMedia('(min-width: 820px)');
+
   let chatHistory = [];   // chỉ dùng cho khách chưa đăng nhập (gửi kèm mỗi lần hỏi)
   let convId = null;      // id cuộc trò chuyện đang mở (chỉ khi đã đăng nhập)
   let loggedIn = false;
+
+  // Toàn màn hình trên máy tính: cột lịch sử luôn hiện bên trái (không đóng được), giống Gemini/Claude.
+  const sidebarPinned = () => card.classList.contains('full') && wideMQ.matches;
+  function closeHistory(){ if (!sidebarPinned()) histPanel.hidden = true; }
 
   const authHeaders = () => {
     const t = localStorage.getItem('dm_token');
@@ -636,7 +665,8 @@
     chatHistory = [];
     try { localStorage.removeItem(CONV_KEY); localStorage.removeItem(GUEST_KEY); } catch (e) {}
     renderMessages([]);
-    histPanel.hidden = true;
+    closeHistory();
+    if (sidebarPinned()) showHistory(true);
     input.focus();
   }
   async function openConversation(id){
@@ -646,19 +676,20 @@
     convId = id;
     try { localStorage.setItem(CONV_KEY, String(id)); } catch (e) {}
     renderMessages(data.messages);
-    histPanel.hidden = true;
+    closeHistory();
+    if (sidebarPinned()) showHistory(true);
   }
   function fmtTime(iso){
     const d = new Date(iso);
     return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   }
-  async function showHistory(){
+  async function showHistory(silent){
     histPanel.hidden = false;
     if (!loggedIn) {
       histList.innerHTML = '<div class="hist-empty">Đăng nhập để lưu và xem lại các cuộc trò chuyện với trợ lý AI.<br>Hiện cuộc trò chuyện này chỉ được nhớ tạm trên trình duyệt của bạn.<br><br><a href="/tai-khoan.html">Đăng nhập / Đăng ký</a></div>';
       return;
     }
-    histList.innerHTML = '<div class="hist-empty">Đang tải...</div>';
+    if (silent !== true) histList.innerHTML = '<div class="hist-empty">Đang tải...</div>';
     try {
       const res = await fetch('/api/ai/conversations', { headers: authHeaders() });
       if (!res.ok) throw new Error();
@@ -684,7 +715,7 @@
           if (!confirm('Xoá cuộc trò chuyện này? Không thể khôi phục.')) return;
           await fetch('/api/ai/conversations/' + c.id, { method: 'DELETE', headers: authHeaders() });
           if (c.id === convId) startNewChat();
-          showHistory();
+          showHistory(true);
         });
         row.append(open, del);
         histList.appendChild(row);
@@ -693,9 +724,33 @@
       histList.innerHTML = '<div class="hist-empty">Không tải được lịch sử, thử lại sau.</div>';
     }
   }
-  histBtn.addEventListener('click', () => { histPanel.hidden ? showHistory() : (histPanel.hidden = true); });
-  document.getElementById('chatHistClose').addEventListener('click', () => { histPanel.hidden = true; });
+  histBtn.addEventListener('click', () => { histPanel.hidden ? showHistory() : closeHistory(); });
+  document.getElementById('chatHistClose').addEventListener('click', closeHistory);
   newBtn.addEventListener('click', startNewChat);
+
+  // ---------- Phóng to toàn màn hình ----------
+  function setFull(on){
+    if (on === card.classList.contains('full')) return;
+    if (on) heroChat.style.minHeight = card.offsetHeight + 'px'; // giữ chỗ để bố cục trang chủ không nhảy
+    else heroChat.style.minHeight = '';
+    card.classList.toggle('full', on);
+    document.body.style.overflow = on ? 'hidden' : '';
+    fullBtn.textContent = on ? '✕ Thu nhỏ' : '⤢ Phóng to';
+    fullBtn.title = on ? 'Thu nhỏ về trang chủ (phím Esc)' : 'Phóng to khung chat toàn màn hình';
+    fullBtn.setAttribute('aria-pressed', String(on));
+    if (on && wideMQ.matches) showHistory(); else histPanel.hidden = true;
+    body.scrollTop = body.scrollHeight;
+    if (on) input.focus({ preventScroll: true });
+  }
+  fullBtn.addEventListener('click', () => setFull(!card.classList.contains('full')));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card.classList.contains('full') && !document.querySelector('.modal-overlay:not([hidden])')) setFull(false); });
+  // Đổi cỡ cửa sổ khi đang toàn màn hình: rộng -> cột lịch sử hiện cố định, hẹp -> thu về nút "Lịch sử".
+  wideMQ.addEventListener('change', () => {
+    if (!card.classList.contains('full')) return;
+    if (wideMQ.matches) showHistory(true); else histPanel.hidden = true;
+  });
+  window.dmChat = { openFull: () => setFull(true), closeFull: () => setFull(false) };
+  if (location.hash === '#chat-full') setFull(true);
 
   // Khôi phục cuộc trò chuyện khi vào lại trang.
   (async function restore(){
@@ -742,6 +797,7 @@
         if (data.conversationId) {
           convId = data.conversationId;
           try { localStorage.setItem(CONV_KEY, String(convId)); } catch (e) {}
+          if (sidebarPinned()) showHistory(true); // cuộc trò chuyện mới / vừa cập nhật hiện ngay ở cột trái
         }
       } else if (hasContent(q)) {
         chatHistory.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
