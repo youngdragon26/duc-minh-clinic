@@ -28,8 +28,10 @@ function analyzeMessage(message, todayISO) {
   const lower = text.toLowerCase();
   const notes = [];
 
-  // ---- Số điện thoại: chuỗi ≥6 chữ số (cho phép cách/chấm/gạch giữa các nhóm) ----
-  const phoneRe = /(?<![\d/])\+?\d[\d ._-]{4,}\d(?![\d/])/g;
+  // ---- Số điện thoại: chuỗi ≥6 chữ số liền nhau, hoặc các nhóm 3-4 số cách nhau bằng dấu cách/chấm/gạch
+  // (vd "0912 345 678"). Nhóm 1-2 chữ số phía sau KHÔNG được gộp vào — nếu không "0353102966 25 tuổi"
+  // bị hiểu thành số 12 chữ số "035310296625" và báo sai số điện thoại hợp lệ. ----
+  const phoneRe = /(?<![\d/])\+?\d+(?:[ .-]\d{3,4})*(?![\d/])/g;
   for (const m of text.matchAll(phoneRe)) {
     let digits = m[0].replace(/\D/g, '');
     if (m[0].startsWith('+84')) digits = '0' + digits.slice(2);
