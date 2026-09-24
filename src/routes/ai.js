@@ -7,6 +7,33 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 const { getAvailableSlots } = require('../lib/availability');
 const { createAppointment, BookingError, isSundayISO, sundayDeadlineISO } = require('../lib/appointmentService');
 const { toolsForRole, runTool } = require('../lib/assistantTools');
+const { analyzeMessage, isBlankMessage } = require('../lib/chatAnalysis');
+
+const MAX_MESSAGE_LENGTH = 1000;
+const HISTORY_TURNS_FOR_MODEL = 12;
+
+// Lưu 1 lượt hỏi-đáp vào lịch sử của bệnh nhân đã đăng nhập (tạo cuộc trò chuyện mới nếu
+// chưa có). Lỗi lưu không được làm hỏng câu trả lời đã có — chỉ mất phần lịch sử.
+async function persistTurn(userId, conversationId, userText, replyText) {
+  try {
+    let convId = conversationId;
+    if (!convId) {
+      const title = userText.replace(/\s+/g, ' ').trim().slice(0, 60) || 'Cuộc trò chuyện';
+      const c = await pool.query('INSERT INTO chat_conversations (user_id, title) VALUES ($1,$2) RETURNING id', [userId, title]);
+      convId = c.rows[0].id;
+    } else {
+      await pool.query('UPDATE chat_conversations SET updated_at = now() WHERE id = $1', [convId]);
+    }
+    await pool.query(
+      `INSERT INTO chat_messages (conversation_id, role, content) VALUES ($1,'user',$2), ($1,'assistant',$3)`,
+      [convId, userText, replyText]
+    );
+    return convId;
+  } catch (e) {
+    console.error('Không lưu được lịch sử chat:', e.message);
+    return conversationId || null;
+  }
+}
 
 const router = express.Router();
 
@@ -243,6 +270,10 @@ async function retrieveKnowledge(query, k = 4, taskType = 'RETRIEVAL_QUERY') {
 async function expandQuery(message) {
   const client = getClient();
   if (!client) return { queries: [], hypotheticalAnswer: null };
+  // Tin nhắn không có nội dung để mở rộng (vd chỉ gửi số điện thoại giữa lúc đang đặt
+  // lịch) thì bỏ qua — gói miễn phí chỉ có 20 lượt gọi/ngày/model, không nên tốn thêm 1
+  // lượt cho câu chỉ có số hoặc 1 từ.
+  if ((message.match(/\p{L}+/gu) || []).length < 2) return { queries: [], hypotheticalAnswer: null };
   try {
     const result = await withRetry(() =>
       client.models.generateContent({
@@ -318,16 +349,51 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
   }
   try {
-    const { message, history } = req.body || {};
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      return res.status(400).json({ error: 'Thiếu nội dung câu hỏi.' });
+    const { message, history, conversationId } = req.body || {};
+    const userText = typeof message === 'string' ? message.trim() : '';
+    let convId = req.user && Number.isInteger(Number(conversationId)) ? Number(conversationId) : null;
+
+    // Tin trống / chỉ dấu câu: trả lời hướng dẫn ngay, không tốn lượt gọi AI (gói miễn
+    // phí chỉ có 20 lượt/ngày) và không lưu vào lịch sử.
+    if (isBlankMessage(userText)) {
+      return res.json({
+        reply: 'Mình chưa nhận được nội dung nào từ bạn. Bạn nhập câu hỏi hoặc thông tin cần gửi nhé — ví dụ: "Tôi bị đau họng, nên khám khoa nào?" hoặc "Tôi muốn đặt lịch khám răng ngày mai".',
+        conversationId: convId,
+      });
+    }
+    if (userText.length > MAX_MESSAGE_LENGTH) {
+      return res.json({
+        reply: `Tin nhắn của bạn dài quá (${userText.length} ký tự, tối đa ${MAX_MESSAGE_LENGTH}). Bạn tóm tắt ngắn lại giúp mình nhé.`,
+        conversationId: convId,
+      });
+    }
+
+    // Bệnh nhân đã đăng nhập: lấy ngữ cảnh từ lịch sử lưu ở CSDL (đáng tin hơn dữ liệu
+    // client gửi lên, và chat tiếp được sau khi tải lại trang). Không đúng chủ sở hữu
+    // hoặc không tồn tại thì coi như cuộc trò chuyện mới.
+    let savedTurns = null;
+    if (convId) {
+      const owned = await pool.query('SELECT id FROM chat_conversations WHERE id = $1 AND user_id = $2', [convId, req.user.id]);
+      if (owned.rows.length === 0) {
+        convId = null;
+      } else {
+        const rows = await pool.query(
+          'SELECT role, content FROM (SELECT id, role, content FROM chat_messages WHERE conversation_id = $1 ORDER BY id DESC LIMIT $2) t ORDER BY id',
+          [convId, HISTORY_TURNS_FOR_MODEL]
+        );
+        savedTurns = rows.rows;
+      }
     }
 
     const [context, retrieved] = await Promise.all([
       buildClinicContext(),
-      retrieveKnowledgeExpanded(message.trim()),
+      retrieveKnowledgeExpanded(userText),
     ]);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const checkedNotes = analyzeMessage(userText, todayVN);
+    const analysisBlock = checkedNotes.length
+      ? ['KẾT QUẢ KIỂM TRA TỰ ĐỘNG tin nhắn MỚI NHẤT của khách (do hệ thống tính, ĐÚNG TUYỆT ĐỐI — tin theo đây, không tự đếm/tính lại):', ...checkedNotes.map((n) => `- ${n}`)].join('\n')
+      : '';
 
     const knowledgeBlock = retrieved.length
       ? [
@@ -362,6 +428,22 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '',
       groundingNote,
       '',
+      analysisBlock,
+      '',
+      'CÁCH HIỂU CÂU HỎI CỦA KHÁCH (làm trước khi trả lời):',
+      '- Luôn đọc cả lịch sử hội thoại để hiểu tin nhắn mới. Tin ngắn như "0333888999", "25/9", "9 giờ", "nam", "có", "ok" thường là CÂU TRẢ LỜI cho câu hỏi bạn vừa đặt — phải hiểu theo đúng ngữ cảnh đó và ghi nhận vào thông tin đặt lịch đang thu thập, KHÔNG coi là câu hỏi mới ngoài phạm vi.',
+      '- Khách có thể gửi nhiều thông tin trong 1 tin (vd "ngày 25/9, 9 giờ, 0333888999 Tuân, 20 tuổi, nam"): tách đủ từng phần, ghi nhận phần đúng, chỉ hỏi lại phần còn thiếu hoặc sai.',
+      '- Khi khách đổi ý (đổi ngày/giờ/chuyên khoa) thì cập nhật theo thông tin mới nhất, bỏ thông tin cũ bị thay thế.',
+      '- Khi câu hỏi mơ hồ (vd chỉ nói "đặt lịch", "đau quá") hãy hỏi lại đúng 1 câu làm rõ, đừng đoán bừa và đừng trả lời lan man.',
+      '- Nếu khách hỏi lại điều bạn đã trả lời hoặc nói "gì cơ", hãy diễn đạt lại ngắn gọn, dễ hiểu hơn thay vì lặp nguyên văn.',
+      '',
+      'KHI KHÁCH GỬI THÔNG TIN SAI, THIẾU HOẶC TRỐNG:',
+      '- Dựa vào "KẾT QUẢ KIỂM TRA TỰ ĐỘNG" ở trên: phần nào ghi HỢP LỆ thì ghi nhận luôn; phần nào KHÔNG HỢP LỆ / ĐÃ QUA / NGOÀI giờ khám thì nói RÕ đó là thông tin nào, sai ở đâu (vd "số 0123456 mới có 7 chữ số, cần 9-11 chữ số") rồi xin khách gửi lại đúng phần đó. Không hỏi lại những phần đã hợp lệ.',
+      '- Nếu khách chỉ gửi 1 phần (vd chỉ gửi số điện thoại) thì ghi nhận phần đó và hỏi tiếp phần còn thiếu, đừng bắt đầu lại từ đầu. Khi nào đủ thông tin mới tóm tắt.',
+      '- Nếu khách gửi lại đúng thông tin sai như cũ, đừng lặp nguyên câu trước — nói ngắn gọn khác đi và cho 1 ví dụ đúng định dạng (vd số điện thoại: 0912345678).',
+      '- Nếu tin nhắn khó hiểu/không rõ nghĩa, nói thẳng là bạn chưa hiểu và hỏi lại khách muốn hỏi về việc gì (giờ làm việc, chuyên khoa, đặt lịch...) kèm 1-2 gợi ý; TUYỆT ĐỐI KHÔNG trả lời "không có thông tin" hay đẩy khách sang hotline khi tin nhắn thực ra là câu trả lời cho câu hỏi của bạn.',
+      '- Nếu công cụ book_appointment trả về lỗi, báo đúng lý do lỗi đó bằng lời dễ hiểu và hỏi lại đúng thông tin cần sửa.',
+      '',
       'Bạn có 2 công cụ:',
       '- check_available_slots: tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
       '- book_appointment: đặt lịch khám THẬT vào hệ thống, chỉ dùng được khi khách đang đăng nhập.',
@@ -380,18 +462,17 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '- Chỉ được nêu tên thuốc/liều dùng/cách xử lý khi thông tin đó có sẵn trong "Tài liệu tham khảo" ở trên — TUYỆT ĐỐI KHÔNG tự bịa thêm tên thuốc hay liều dùng ngoài tài liệu. Khi nêu, luôn trích dẫn (Nguồn: ...) và kèm câu nhắc đây chỉ là thông tin tham khảo, cần đến khám bác sĩ nếu triệu chứng không đỡ hoặc nặng hơn.',
       '- Với trẻ em: luôn hỏi rõ tuổi/cân nặng trước khi nêu bất kỳ thông tin liều dùng nào từ tài liệu tham khảo, và luôn khuyên nên để bác sĩ khám trực tiếp thay vì tự dùng thuốc tại nhà.',
       '- Nếu triệu chứng nghe nghiêm trọng/cấp cứu (khó thở, đau ngực dữ dội, chảy máu nhiều, bất tỉnh...), khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.',
-      '- Nếu câu hỏi ngoài phạm vi phòng khám hoặc bạn không chắc, khuyên gọi hotline 0974 755 333.',
+      '- Chỉ khi câu hỏi thực sự ngoài phạm vi phòng khám (không phải câu trả lời cho câu hỏi bạn vừa đặt) hoặc bạn không chắc về thông tin y khoa, mới khuyên gọi hotline 0974 755 333.',
       '- Khám Chủ nhật: nói rõ đây không phải ngày khám thường, chỉ khám theo hẹn trước, phải chọn 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 của tuần đó và cần bác sĩ đồng ý. Không hứa chắc chắn khám được; nếu công cụ báo lỗi thì báo đúng lý do đó cho khách.',
       '- Nếu khách chỉ hỏi lịch trống (chưa nhờ đặt giúp), báo lịch trống rồi hỏi khách có muốn AI đặt giúp luôn không, hoặc nhắc khách có thể tự đặt tại /dat-lich.html.',
     ].join('\n');
 
     // Gemini dùng vai "model" thay vì "assistant", và lịch sử phải bắt đầu bằng "user".
-    const turns = Array.isArray(history)
-      ? history
-          .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
-          .slice(-10)
-          .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }))
-      : [];
+    const historySource = savedTurns || (Array.isArray(history) ? history : []);
+    const turns = historySource
+      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+      .slice(-HISTORY_TURNS_FOR_MODEL)
+      .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }));
     while (turns.length && turns[0].role !== 'user') turns.shift();
 
     const chat = client.chats.create({
@@ -408,7 +489,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       history: turns,
     });
 
-    let result = await withRetry(() => chat.sendMessage({ message: message.trim() }));
+    let result = await withRetry(() => chat.sendMessage({ message: userText }));
     let calls = result.functionCalls;
     let rounds = 0;
     while (calls && calls.length > 0 && rounds < 3) {
@@ -430,7 +511,9 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
 
     const text = (result.text || '').trim();
-    res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn gọi hotline 0974 755 333 để được hỗ trợ nhé.' });
+    const reply = text || 'Mình chưa hiểu rõ ý bạn. Bạn nói lại cụ thể hơn giúp mình nhé (ví dụ: hỏi giờ làm việc, chuyên khoa phù hợp hoặc đặt lịch khám).';
+    if (req.user) convId = await persistTurn(req.user.id, convId, userText, reply);
+    res.json({ reply, conversationId: convId });
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);
@@ -439,6 +522,53 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
 });
 
 router.use(authenticate);
+
+// ---------- Lịch sử trò chuyện của bệnh nhân (chỉ chủ tài khoản xem được) ----------
+
+router.get('/conversations', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.id, c.title, c.updated_at AS "updatedAt",
+              (SELECT content FROM chat_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS "lastMessage"
+       FROM chat_conversations c WHERE c.user_id = $1 ORDER BY c.updated_at DESC LIMIT 50`,
+      [req.user.id]
+    );
+    res.json({ conversations: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.get('/conversations/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy cuộc trò chuyện.' });
+    const conv = await pool.query('SELECT id, title FROM chat_conversations WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy cuộc trò chuyện.' });
+    const messages = await pool.query(
+      'SELECT role, content, created_at AS "createdAt" FROM chat_messages WHERE conversation_id = $1 ORDER BY id LIMIT 500',
+      [id]
+    );
+    res.json({ conversation: conv.rows[0], messages: messages.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+router.delete('/conversations/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy cuộc trò chuyện.' });
+    const result = await pool.query('DELETE FROM chat_conversations WHERE id = $1 AND user_id = $2 RETURNING id', [id, req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy cuộc trò chuyện.' });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
 
 // ---------- Quản lý cơ sở tri thức (Indexing phase) — chỉ admin ----------
 
