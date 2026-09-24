@@ -349,6 +349,14 @@
   }
   .chip:hover{border-color:var(--accent); color:var(--ink);}
   .chip:disabled{opacity:.5; cursor:default;}
+  a.chip{text-decoration:none; display:inline-block;}
+  .msg-actions{display:flex; gap:8px; flex-wrap:wrap; align-self:flex-start;}
+  .msg-actions .chip.primary{background:var(--accent-deep); border-color:var(--accent-deep); color:var(--on-accent); font-weight:600;}
+  .msg-actions .chip.primary:hover{background:var(--accent);}
+  .msg-actions .chip.danger{color:#b3261e; border-color:#b3261e;}
+  .msg-actions .chip.danger:hover{background:#b3261e; color:#fff; border-color:#b3261e;}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .msg-actions .chip.danger{color:#ff8a80; border-color:#ff8a80;} :root:not([data-theme="light"]) .msg-actions .chip.danger:hover{background:#ff8a80; color:#2b0b08;} }
+  .msg-actions .chip{padding:9px 16px; font-size:.86rem;}
 
   @media (max-width:1040px){
     .nav-links{display:none;}
@@ -655,10 +663,43 @@
   function saveGuest(){
     try { localStorage.setItem(GUEST_KEY, JSON.stringify(chatHistory.slice(-40))); } catch (e) {}
   }
+  // Nút gợi ý dưới câu trả lời CUỐI của trợ lý: bản tóm tắt đặt lịch chờ xác nhận -> "Xác nhận đặt lịch" /
+  // "Sửa thông tin"; vừa đặt xong -> đường dẫn tới danh sách lịch hẹn. Chỉ hiện ở tin cuối cùng.
+  function clearActions(){ body.querySelectorAll('.msg-actions').forEach(e => e.remove()); }
+  function sendFromButton(q){ addMsg(q, 'me'); askAI(q); }
+  function addActions(el, text){
+    clearActions();
+    const isSummary = /họ (và )?tên/i.test(text) && /giờ khám|ngày khám/i.test(text) && /xác nhận|chính xác chưa|chốt/i.test(text) && !/thành công/i.test(text);
+    const isBooked = /đặt lịch thành công|đã gửi yêu cầu khám chủ nhật/i.test(text);
+    if (!isSummary && !isBooked) return;
+    const box = document.createElement('div');
+    box.className = 'msg-actions';
+    const mk = (label, cls, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip ' + cls; b.textContent = label;
+      b.addEventListener('click', () => { clearActions(); onClick(); });
+      box.appendChild(b);
+    };
+    if (isSummary) {
+      // 3 lựa chọn sau khi kiểm tra lại thông tin: đặt luôn / từ chối / sửa. Nội dung gửi đi dùng đúng từ khoá
+      // mà AI nhận là xác nhận ("xác nhận") hoặc từ chối ("không muốn đặt nữa, huỷ").
+      mk('✔ OK, đặt lịch', 'primary', () => sendFromButton('Xác nhận, đặt lịch giúp mình'));
+      mk('✖ Từ chối', 'danger', () => sendFromButton('Mình không muốn đặt lịch nữa, huỷ yêu cầu này giúp mình'));
+      mk('✎ Sửa thông tin', '', () => sendFromButton('Mình muốn sửa lại thông tin đặt lịch'));
+    } else {
+      const a = document.createElement('a');
+      a.className = 'chip primary'; a.href = '/dat-lich.html'; a.textContent = 'Xem lịch hẹn của tôi →';
+      box.appendChild(a);
+    }
+    el.after(box);
+    body.scrollTop = body.scrollHeight;
+  }
   function renderMessages(list){
     body.replaceChildren();
     addMsg(GREETING, 'bot');
     list.forEach(m => addMsg(m.content, m.role === 'user' ? 'me' : 'bot'));
+    const last = list[list.length - 1];
+    if (last && last.role !== 'user') addActions(body.lastElementChild, last.content);
   }
   function startNewChat(){
     convId = null;
@@ -793,6 +834,7 @@
       }
       thinkingEl.textContent = data.reply;
       thinkingEl.style.fontStyle = 'normal';
+      addActions(thinkingEl, data.reply);
       if (loggedIn) {
         if (data.conversationId) {
           convId = data.conversationId;
@@ -816,6 +858,7 @@
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    clearActions();
     const q = input.value.trim();
     if (!q) {
       // Bấm gửi khi ô nhập trống: nhắc nhẹ thay vì im lặng (không gọi AI, không lưu lịch sử).
@@ -831,6 +874,7 @@
   chips.forEach(chip => {
     chip.addEventListener('click', () => {
       const q = chip.dataset.q;
+      clearActions();
       addMsg(q, 'me');
       askAI(q);
     });
@@ -844,7 +888,7 @@
     ['Lịch hẹn sắp tới của tôi?', 'Đơn thuốc gần nhất của tôi?', 'Tôi đã thanh toán hoá đơn chưa?', 'Bác sĩ có hẹn tôi tái khám không?'].forEach(q => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'chip'; b.textContent = q;
-      b.addEventListener('click', () => { addMsg(q, 'me'); askAI(q); });
+      b.addEventListener('click', () => { clearActions(); addMsg(q, 'me'); askAI(q); });
       box.appendChild(b);
     });
   });
