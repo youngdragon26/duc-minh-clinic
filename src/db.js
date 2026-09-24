@@ -354,6 +354,9 @@ async function init() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // channel: 'main' = khung chat chính ở trang chủ (khách + bệnh nhân),
+  // 'assistant' = trợ lý AI riêng của bác sĩ/nhân viên/admin trong không gian làm việc.
+  await pool.query(`ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'main';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_chat_conversations_user ON chat_conversations (user_id, updated_at DESC);`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_messages (

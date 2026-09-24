@@ -8,18 +8,23 @@ const { getAvailableSlots } = require('../lib/availability');
 const { createAppointment, BookingError, isSundayISO, sundayDeadlineISO } = require('../lib/appointmentService');
 const { toolsForRole, runTool } = require('../lib/assistantTools');
 const { analyzeMessage, isBlankMessage } = require('../lib/chatAnalysis');
+const { logAudit } = require('../lib/audit');
+
+// Công cụ tra cứu dữ liệu CỦA CHÍNH bệnh nhân — dùng ngay trong khung chat chính khi bệnh nhân
+// đã đăng nhập (thay cho khung "Trợ lý AI của bạn" cũ trong không gian bệnh nhân).
+const PATIENT_TOOL_NAMES = ['my_appointments', 'my_records', 'my_invoices', 'my_followups'];
 
 const MAX_MESSAGE_LENGTH = 1000;
 const HISTORY_TURNS_FOR_MODEL = 12;
 
 // Lưu 1 lượt hỏi-đáp vào lịch sử của bệnh nhân đã đăng nhập (tạo cuộc trò chuyện mới nếu
 // chưa có). Lỗi lưu không được làm hỏng câu trả lời đã có — chỉ mất phần lịch sử.
-async function persistTurn(userId, conversationId, userText, replyText) {
+async function persistTurn(userId, conversationId, userText, replyText, channel = 'main') {
   try {
     let convId = conversationId;
     if (!convId) {
       const title = userText.replace(/\s+/g, ' ').trim().slice(0, 60) || 'Cuộc trò chuyện';
-      const c = await pool.query('INSERT INTO chat_conversations (user_id, title) VALUES ($1,$2) RETURNING id', [userId, title]);
+      const c = await pool.query('INSERT INTO chat_conversations (user_id, title, channel) VALUES ($1,$2,$3) RETURNING id', [userId, title, channel]);
       convId = c.rows[0].id;
     } else {
       await pool.query('UPDATE chat_conversations SET updated_at = now() WHERE id = $1', [convId]);
@@ -373,7 +378,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     // hoặc không tồn tại thì coi như cuộc trò chuyện mới.
     let savedTurns = null;
     if (convId) {
-      const owned = await pool.query('SELECT id FROM chat_conversations WHERE id = $1 AND user_id = $2', [convId, req.user.id]);
+      const owned = await pool.query("SELECT id FROM chat_conversations WHERE id = $1 AND user_id = $2 AND channel = 'main'", [convId, req.user.id]);
       if (owned.rows.length === 0) {
         convId = null;
       } else {
@@ -413,9 +418,20 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       ? `LƯU Ý QUAN TRỌNG: tài liệu khớp nhất với câu hỏi hiện tại là "${topHit.title}". Nếu câu hỏi liên quan tới triệu chứng hoặc nên khám chuyên khoa nào, PHẢI trả lời theo đúng tài liệu này — TUYỆT ĐỐI KHÔNG tự nêu ra 1 chuyên khoa khác không xuất hiện trong "Tài liệu tham khảo" ở trên.`
       : '';
 
+    const isPatient = req.user?.role === 'patient';
+    const patientTools = isPatient ? toolsForRole('patient').filter((t) => PATIENT_TOOL_NAMES.includes(t.declaration.name)) : [];
     const loginNote = req.user
-      ? 'Khách hiện ĐANG ĐĂNG NHẬP nên có thể đặt lịch trực tiếp qua chat bằng công cụ book_appointment.'
+      ? `Khách hiện ĐANG ĐĂNG NHẬP (tên: ${req.user.name || 'bệnh nhân'}) nên có thể đặt lịch trực tiếp qua chat bằng công cụ book_appointment.`
       : 'Khách CHƯA đăng nhập nên KHÔNG thể đặt lịch qua chat — nếu khách muốn đặt lịch, báo khách đăng nhập/đăng ký tại /tai-khoan.html trước rồi quay lại chat, hoặc tự đặt tại /dat-lich.html.';
+    const patientNote = isPatient
+      ? [
+          'KHÁCH LÀ BỆNH NHÂN ĐÃ ĐĂNG NHẬP — ngoài hỏi đáp và đặt lịch, bạn còn tra cứu được dữ liệu CỦA CHÍNH họ bằng công cụ: my_appointments (lịch hẹn), my_records (hồ sơ khám, đơn thuốc, chẩn đoán), my_invoices (hoá đơn, đã thanh toán chưa), my_followups (lịch tái khám).',
+          '- Khi khách hỏi về lịch hẹn/đơn thuốc/hoá đơn/tái khám của họ ("lịch của tôi", "đơn thuốc gần nhất", "tôi đã trả tiền chưa"...) PHẢI gọi công cụ tương ứng rồi mới trả lời; mọi số liệu, tên, ngày giờ, tiền, thuốc phải lấy từ kết quả công cụ, TUYỆT ĐỐI KHÔNG bịa hay đoán. Công cụ trả rỗng thì nói thẳng là chưa có dữ liệu.',
+          '- Tiền viết dạng 1.500.000đ, ngày viết dạng dd/mm/yyyy. Xưng "mình", gọi khách là "bạn", không đoán giới tính qua tên.',
+          '- Khi giải thích đơn thuốc: chỉ nhắc lại đúng thuốc và liều bác sĩ đã ghi, KHÔNG chẩn đoán, KHÔNG tự đổi liều hay kê thêm thuốc; nhắc hỏi lại bác sĩ nếu còn thắc mắc hoặc có dấu hiệu bất thường.',
+          '- Bạn chỉ tra cứu được, không sửa dữ liệu: muốn thanh toán hoá đơn thì chỉ khách vào trang Hồ sơ khám (/ho-so.html) để quét mã QR.',
+        ].join('\n')
+      : '';
 
     const systemPrompt = [
       'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
@@ -429,6 +445,8 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       groundingNote,
       '',
       analysisBlock,
+      '',
+      patientNote,
       '',
       'CÁCH HIỂU CÂU HỎI CỦA KHÁCH (làm trước khi trả lời):',
       '- Luôn đọc cả lịch sử hội thoại để hiểu tin nhắn mới. Tin ngắn như "0333888999", "25/9", "9 giờ", "nam", "có", "ok" thường là CÂU TRẢ LỜI cho câu hỏi bạn vừa đặt — phải hiểu theo đúng ngữ cảnh đó và ghi nhận vào thông tin đặt lịch đang thu thập, KHÔNG coi là câu hỏi mới ngoài phạm vi.',
@@ -444,9 +462,10 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '- Nếu tin nhắn khó hiểu/không rõ nghĩa, nói thẳng là bạn chưa hiểu và hỏi lại khách muốn hỏi về việc gì (giờ làm việc, chuyên khoa, đặt lịch...) kèm 1-2 gợi ý; TUYỆT ĐỐI KHÔNG trả lời "không có thông tin" hay đẩy khách sang hotline khi tin nhắn thực ra là câu trả lời cho câu hỏi của bạn.',
       '- Nếu công cụ book_appointment trả về lỗi, báo đúng lý do lỗi đó bằng lời dễ hiểu và hỏi lại đúng thông tin cần sửa.',
       '',
-      'Bạn có 2 công cụ:',
+      `Bạn có ${2 + patientTools.length} công cụ:`,
       '- check_available_slots: tra cứu khung giờ khám còn trống THẬT trong hệ thống — luôn dùng công cụ này khi khách hỏi về lịch trống, đừng tự đoán.',
       '- book_appointment: đặt lịch khám THẬT vào hệ thống, chỉ dùng được khi khách đang đăng nhập.',
+      ...patientTools.map((t) => `- ${t.declaration.name}: ${t.declaration.description}`),
       '',
       'Quy trình đặt lịch qua chat (làm đúng thứ tự, không bỏ bước):',
       '1. Khi khách muốn AI đặt lịch giúp (không chỉ hỏi thông tin), thu thập đủ: chuyên khoa, ngày, giờ, tên bác sĩ muốn khám (nếu có), họ tên người đi khám, số điện thoại liên hệ, tuổi, giới tính, lý do khám (nếu khách kể). Hỏi từng phần còn thiếu, đừng hỏi dồn hết 1 lúc nếu khách chưa cung cấp đủ.',
@@ -479,7 +498,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       model: CHAT_MODEL,
       config: {
         systemInstruction: systemPrompt,
-        tools: [{ functionDeclarations: [checkSlotsDeclaration, bookAppointmentDeclaration] }],
+        tools: [{ functionDeclarations: [checkSlotsDeclaration, bookAppointmentDeclaration, ...patientTools.map((t) => t.declaration)] }],
         // Nhiệt độ thấp để AI bám sát tài liệu tham khảo thay vì tự suy luận
         // lệch (đã có trường hợp thật: tài liệu ghi rõ "Da liễu" nhưng AI vẫn
         // trả lời "Tai – Mũi – Họng" — lỗi ở bước sinh câu trả lời, không phải
@@ -500,6 +519,13 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
           output = await checkAvailableSlots(call.args || {});
         } else if (call.name === 'book_appointment') {
           output = await bookAppointmentTool(call.args || {}, req.user);
+        } else if (isPatient && PATIENT_TOOL_NAMES.includes(call.name)) {
+          // runTool tự giới hạn theo req.user.id — bệnh nhân chỉ tra cứu được dữ liệu của mình.
+          output = await runTool(call.name, call.args, req.user);
+          // Giữ đúng dấu vết như khi bệnh nhân tự mở trang hồ sơ/hoá đơn.
+          if (output.error) { /* tra cứu lỗi thì chưa xem được gì, không ghi nhật ký */ }
+          else if (call.name === 'my_records') await logAudit(req.user, 'record.self_view', 'medical_record', null, { count: (output.records || []).length, via: 'ai_chat' });
+          else if (call.name === 'my_invoices') await logAudit(req.user, 'invoice.self_view', 'invoice', null, { count: (output.invoices || []).length, via: 'ai_chat' });
         } else {
           output = { error: 'Công cụ không được hỗ trợ.' };
         }
@@ -527,11 +553,12 @@ router.use(authenticate);
 
 router.get('/conversations', async (req, res) => {
   try {
+    const channel = req.query.channel === 'assistant' ? 'assistant' : 'main';
     const result = await pool.query(
       `SELECT c.id, c.title, c.updated_at AS "updatedAt",
               (SELECT content FROM chat_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS "lastMessage"
-       FROM chat_conversations c WHERE c.user_id = $1 ORDER BY c.updated_at DESC LIMIT 50`,
-      [req.user.id]
+       FROM chat_conversations c WHERE c.user_id = $1 AND c.channel = $2 ORDER BY c.updated_at DESC LIMIT 50`,
+      [req.user.id, channel]
     );
     res.json({ conversations: result.rows });
   } catch (e) {
@@ -718,9 +745,25 @@ router.post('/assistant', async (req, res) => {
     return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
   }
   try {
-    const { message, history } = req.body || {};
+    const { message, history, conversationId } = req.body || {};
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'Thiếu nội dung câu hỏi.' });
+    }
+    const userText = message.trim();
+    let convId = Number.isInteger(Number(conversationId)) && Number(conversationId) > 0 ? Number(conversationId) : null;
+    // Ngữ cảnh lấy từ lịch sử đã lưu (đáng tin hơn dữ liệu client gửi lên, và chat tiếp được sau khi tải lại trang).
+    let savedTurns = null;
+    if (convId) {
+      const owned = await pool.query("SELECT id FROM chat_conversations WHERE id = $1 AND user_id = $2 AND channel = 'assistant'", [convId, req.user.id]);
+      if (owned.rows.length === 0) {
+        convId = null;
+      } else {
+        const rows = await pool.query(
+          'SELECT role, content FROM (SELECT id, role, content FROM chat_messages WHERE conversation_id = $1 ORDER BY id DESC LIMIT $2) t ORDER BY id',
+          [convId, HISTORY_TURNS_FOR_MODEL]
+        );
+        savedTurns = rows.rows;
+      }
     }
     const tools = toolsForRole(req.user.role);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -741,12 +784,10 @@ router.post('/assistant', async (req, res) => {
       '- Khi được nhờ nhận xét số liệu (admin): nêu 2-3 điểm đáng chú ý chỉ dựa trên số đã tra cứu, nói rõ đó là nhận xét tham khảo.',
     ].join('\n');
 
-    const turns = Array.isArray(history)
-      ? history
-          .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
-          .slice(-10)
-          .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }))
-      : [];
+    const turns = (savedTurns || (Array.isArray(history) ? history : []))
+      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+      .slice(-HISTORY_TURNS_FOR_MODEL)
+      .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }));
     while (turns.length && turns[0].role !== 'user') turns.shift();
 
     const chat = client.chats.create({
@@ -759,7 +800,7 @@ router.post('/assistant', async (req, res) => {
       history: turns,
     });
 
-    let result = await withRetry(() => chat.sendMessage({ message: message.trim() }));
+    let result = await withRetry(() => chat.sendMessage({ message: userText }));
     let calls = result.functionCalls;
     let rounds = 0;
     while (calls && calls.length > 0 && rounds < 4) {
@@ -774,7 +815,9 @@ router.post('/assistant', async (req, res) => {
     }
 
     const text = (result.text || '').trim();
-    res.json({ reply: text || 'Mình chưa có câu trả lời phù hợp. Bạn thử hỏi cụ thể hơn, hoặc gọi hotline 0974 755 333 nhé.' });
+    const reply = text || 'Mình chưa có câu trả lời phù hợp. Bạn thử hỏi cụ thể hơn, hoặc gọi hotline 0974 755 333 nhé.';
+    convId = await persistTurn(req.user.id, convId, userText, reply, 'assistant');
+    res.json({ reply, conversationId: convId });
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);

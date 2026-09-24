@@ -247,10 +247,10 @@
   </div>
 
   <!-- Trợ lý AI theo vai trò -->
-  <div class="section">
+  <div class="section" id="aiSection">
     <h2>Trợ lý AI của bạn</h2>
     <div class="card">
-      <div class="ai-head"><div class="dot">✨</div><div><b id="aiName">Trợ lý AI</b><span id="aiHint"></span></div></div>
+      <div class="ai-head"><div class="dot">✨</div><div style="flex:1;"><b id="aiName">Trợ lý AI</b><span id="aiHint"></span></div><button type="button" class="chip" id="aiNew" title="Bắt đầu cuộc trò chuyện mới (cuộc cũ vẫn được lưu)">+ Cuộc mới</button></div>
       <div class="chat" id="chat"></div>
       <div class="chips" id="chips"></div>
       <form class="ask" id="askForm">
@@ -608,7 +608,7 @@
   }
 
   /* ---------- Trợ lý AI ---------- */
-  const chatHistory = [];
+  let convId = null; // hội thoại đang mở — lưu ở CSDL để chat tiếp được sau khi tải lại trang
   function addMsg(text, who) {
     const el = document.createElement('div');
     el.className = 'msg ' + who;
@@ -624,9 +624,9 @@
     const wait = addMsg('Đang tra cứu…', 'bot');
     $('askBtn').disabled = true;
     try {
-      const { reply } = await api('/api/ai/assistant', { method: 'POST', body: JSON.stringify({ message: q, history: chatHistory }) });
+      const { reply, conversationId } = await api('/api/ai/assistant', { method: 'POST', body: JSON.stringify({ message: q, conversationId: convId }) });
       wait.textContent = reply;
-      chatHistory.push({ role: 'user', content: q }, { role: 'assistant', content: reply });
+      if (conversationId) convId = conversationId;
     } catch (e) {
       wait.textContent = e.message;
     } finally {
@@ -634,12 +634,30 @@
       $('chat').scrollTop = $('chat').scrollHeight;
     }
   }
-  function setupAssistant(role) {
-    $('aiHint').textContent = AI_HINT[role] || '';
+  function greet(role) {
     addMsg('Xin chào ' + me.name + '! ' + (AI_HINT[role] || '') + ' Bạn có thể bấm câu gợi ý bên dưới hoặc tự đặt câu hỏi.', 'bot');
+  }
+  function setupAssistant(role) {
+    // Bệnh nhân không còn khung chat riêng ở đây: mọi câu hỏi về lịch hẹn, đơn thuốc, hoá đơn, tái khám
+    // đã gộp vào khung chat chính ở trang chủ (nút "Chat" nổi ở góc phải mở khung đó).
+    if (role === 'patient') { $('aiSection').hidden = true; return; }
+    $('aiHint').textContent = AI_HINT[role] || '';
+    greet(role);
     $('chips').innerHTML = (CHIPS[role] || []).map((c) => `<button type="button" class="chip">${esc(c)}</button>`).join('');
     $('chips').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
     $('askForm').addEventListener('submit', (e) => { e.preventDefault(); const v = $('askInput').value; $('askInput').value = ''; ask(v); });
+    $('aiNew').addEventListener('click', () => { convId = null; $('chat').replaceChildren(); greet(role); });
+    // Mở lại cuộc trò chuyện gần nhất (đã lưu) để xem lại / hỏi tiếp.
+    api('/api/ai/conversations?channel=assistant')
+      .then(({ conversations }) => (conversations[0] ? api('/api/ai/conversations/' + conversations[0].id).then((d) => ({ id: conversations[0].id, d })) : null))
+      .then((r) => {
+        if (!r || !r.d.messages.length) return;
+        convId = r.id;
+        $('chat').replaceChildren();
+        greet(role);
+        r.d.messages.forEach((m) => addMsg(m.content, m.role === 'user' ? 'me' : 'bot'));
+      })
+      .catch(() => {});
   }
 
   /* ---------- Nạp dữ liệu theo vai trò ---------- */
@@ -759,5 +777,6 @@
     );
 })();
 </script>
+<script src="/float-contact.js" data-zalo="0974755333"></script>
 </body>
 </html>

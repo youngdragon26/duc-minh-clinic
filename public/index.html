@@ -779,6 +779,19 @@
       askAI(q);
     });
   });
+
+  // Bệnh nhân đã đăng nhập: khung chat này cũng tra cứu được dữ liệu của chính họ
+  // (thay cho khung "Trợ lý AI của bạn" cũ trong không gian bệnh nhân) -> thêm câu gợi ý tương ứng.
+  document.addEventListener('dm:user', (e) => {
+    if (!e.detail || e.detail.role !== 'patient') return;
+    const box = document.querySelector('.chat-quick');
+    ['Lịch hẹn sắp tới của tôi?', 'Đơn thuốc gần nhất của tôi?', 'Tôi đã thanh toán hoá đơn chưa?', 'Bác sĩ có hẹn tôi tái khám không?'].forEach(q => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = q;
+      b.addEventListener('click', () => { addMsg(q, 'me'); askAI(q); });
+      box.appendChild(b);
+    });
+  });
 })();
 </script>
 
@@ -879,5 +892,6 @@
   })();
 </script>
 
+<script src="/float-contact.js" data-zalo="0974755333"></script>
 </body>
 </html>
