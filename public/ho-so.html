@@ -112,15 +112,25 @@
       if (invoice.status !== 'chua_thanh_toan') return base;
 
       const bank = await getBankAccount();
-      if (!bank.configured) return base;
-
-      if (invoice.onlinePaymentClaimedAt) {
-        return base + `<div class="field"><b>Thanh toán QR online</b>Bạn đã báo chuyển khoản lúc ${new Date(invoice.onlinePaymentClaimedAt).toLocaleString('vi-VN')} — nhân viên sẽ đối chiếu sao kê và xác nhận sớm.</div>`;
+      // Chưa có tài khoản nhận tiền thì không sinh được mã QR — báo rõ để bệnh nhân
+      // biết cách thanh toán thay vì phần thanh toán biến mất không lý do.
+      if (!bank.configured) {
+        return base + `<div class="field"><b>Thanh toán</b>Phòng khám chưa mở thanh toán chuyển khoản QR online. Bạn vui lòng thanh toán tại quầy thu ngân hoặc gọi hotline 0974 755 333.</div>`;
       }
 
       const addInfo = encodeURIComponent((invoice.code + ' ' + (invoice.patientName || '')).trim());
       const accountName = encodeURIComponent(bank.accountName || '');
       const qrUrl = `https://img.vietqr.io/image/${bank.bankBin}-${bank.accountNumber}-compact2.png?amount=${invoice.totalAmount}&addInfo=${addInfo}&accountName=${accountName}`;
+      // Đã báo chuyển khoản: vẫn giữ mã QR (lỡ bấm trước khi chuyển thì quét lại được),
+      // thay nút bấm bằng khung tự kiểm tra trạng thái — xem watchPayment() bên dưới.
+      const action = invoice.onlinePaymentClaimedAt
+        ? `<div class="pay-watch" data-invoice-id="${invoice.id}" style="margin-top:8px; padding:9px 12px; border-radius:3px; border:1px solid var(--line); font-size:.85rem;">
+             Bạn đã báo chuyển khoản lúc ${new Date(invoice.onlinePaymentClaimedAt).toLocaleString('vi-VN')}. Đang chờ xác nhận…
+           </div>`
+        : `<button type="button" class="claim-online-paid" data-invoice-id="${invoice.id}"
+             style="margin-top:8px; padding:7px 12px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.82rem; color:var(--ink); font-family:inherit;">
+             Tôi đã chuyển khoản
+           </button>`;
       return base + `
         <div class="field">
           <b>Thanh toán QR online</b>
@@ -128,16 +138,75 @@
             <img src="${qrUrl}" alt="Mã QR chuyển khoản" width="160" height="160" style="border-radius:3px; border:1px solid var(--line);">
             <div style="flex:1; min-width:180px;">
               <div>Quét mã bằng app ngân hàng/Ví điện tử để chuyển khoản đúng số tiền ${money(invoice.totalAmount)}. Nội dung chuyển khoản đã điền sẵn mã hoá đơn.</div>
-              <button type="button" class="claim-online-paid" data-invoice-id="${invoice.id}"
-                style="margin-top:8px; padding:7px 12px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.82rem; color:var(--ink); font-family:inherit;">
-                Tôi đã chuyển khoản
-              </button>
+              ${action}
             </div>
           </div>
         </div>`;
     } catch (e) {
       return '';
     }
+  }
+
+  // Sau khi bệnh nhân báo đã chuyển khoản: cứ 30 giây hỏi lại trạng thái hoá đơn.
+  // Tiền về tài khoản có thể chậm, và hoá đơn chỉ chuyển "Đã thanh toán" khi nhân viên
+  // đối chiếu sao kê xác nhận (chưa có webhook ngân hàng) — nên chờ tối đa 10 phút rồi
+  // dừng, chỉ cách gọi nhân viên kiểm tra; bấm "Kiểm tra lại" để tự kiểm tra tiếp.
+  const CHECK_EVERY_S = 30;
+  const MAX_CHECKS = 20;
+  const HOTLINE = '0974 755 333';
+
+  function watchPayment(box) {
+    const id = box.dataset.invoiceId;
+    let checks = 0;
+    let left = CHECK_EVERY_S;
+    let timer = null;
+    const recheckBtn = `<button type="button" class="pay-recheck" style="margin-top:6px; padding:5px 10px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;">Kiểm tra lại ngay</button>`;
+    const notYet = () => checks === 0 ? '' :
+      `<div style="margin-top:6px; color:var(--accent-deep);">Chưa nhận được xác nhận thanh toán. Ngân hàng có thể chuyển chậm vài phút — nếu bạn đã chuyển mà vẫn chưa thấy, hãy gọi <a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a> để nhân viên kiểm tra lại thông tin chuyển khoản.</div>`;
+
+    function render() {
+      box.innerHTML = `⏳ Đang chờ xác nhận chuyển khoản — tự kiểm tra lại sau <b>${left}s</b>.${notYet()}${checks > 0 ? recheckBtn : ''}`;
+    }
+    function stop(html) {
+      clearInterval(timer);
+      box.innerHTML = html;
+    }
+    let busy = false;
+    async function check() {
+      if (busy) return;
+      busy = true;
+      left = CHECK_EVERY_S;
+      checks++;
+      try {
+        const s = await api('/api/billing/invoices/' + id + '/payment-status');
+        if (s.status === 'da_thanh_toan') {
+          stop(`✅ <b>Chuyển khoản thành công.</b> Hoá đơn đã được xác nhận thanh toán lúc ${new Date(s.paidAt).toLocaleString('vi-VN')}.`);
+          box.closest('.card').querySelectorAll('.pill.chua_thanh_toan').forEach((p) => {
+            p.className = 'pill da_thanh_toan';
+            p.textContent = STATUS_LABELS.da_thanh_toan;
+          });
+          return;
+        }
+      } catch (e) { /* lỗi mạng tạm thời — lượt sau thử lại */ }
+      finally { busy = false; }
+      if (checks >= MAX_CHECKS) {
+        stop(`Đã chờ ${Math.round(MAX_CHECKS * CHECK_EVERY_S / 60)} phút nhưng chưa có xác nhận thanh toán. Vui lòng gọi <a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a> để nhân viên kiểm tra lại thông tin chuyển khoản.${recheckBtn}`);
+        return;
+      }
+      render();
+    }
+    function start() {
+      clearInterval(timer);
+      left = CHECK_EVERY_S;
+      render();
+      timer = setInterval(() => { left--; if (left <= 0) check(); else render(); }, 1000);
+    }
+    box.addEventListener('click', (e) => {
+      if (!e.target.closest('.pay-recheck')) return;
+      if (checks >= MAX_CHECKS) checks = 0;
+      check().then(() => { if (checks > 0 && checks < MAX_CHECKS && !box.textContent.includes('thành công')) start(); });
+    });
+    start();
   }
 
   (async function init() {
@@ -175,6 +244,7 @@
       </div>
     `));
     list.innerHTML = cards.join('');
+    list.querySelectorAll('.pay-watch').forEach(watchPayment);
 
     list.addEventListener('click', async (e) => {
       const viewBtn = e.target.closest('.view-invoice');

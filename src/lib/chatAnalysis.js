@@ -57,10 +57,13 @@ function analyzeMessage(message, todayISO) {
   // ---- Ngày ----
   if (todayISO) {
     const year = Number(todayISO.slice(0, 4));
+    // "mai"/"mốt" đứng riêng (vd trả lời cụt "mai", hoặc "9h sáng mai") cũng phải bắt được —
+    // nhưng không bắt chữ "Mai" trong họ tên ("Nguyễn Thị Mai"), nên chỉ nhận khi đi sau
+    // ngày/sáng/trưa/chiều/tối/hôm hoặc khi cả tin nhắn chỉ có đúng 1 từ đó.
     const relative = [
-      [/hôm nay/, 0, 'hôm nay'],
-      [/ngày mai|hôm sau/, 1, 'ngày mai'],
-      [/ngày kia|ngày mốt/, 2, 'ngày kia'],
+      [/hôm nay|(?:sáng|trưa|chiều|tối) nay/, 0, 'hôm nay'],
+      [/(?:ngày|sáng|trưa|chiều|tối|hôm) mai|hôm sau|^\s*mai\s*[.!?]*\s*$/, 1, 'ngày mai'],
+      [/ngày kia|(?:ngày|sáng|trưa|chiều|tối|hôm) mốt|^\s*mốt\s*[.!?]*\s*$/, 2, 'ngày kia'],
     ];
     for (const [re, offset, label] of relative) {
       if (re.test(lower)) notes.push(`Ngày khách nói "${label}" = ${describeDate(addDaysISO(todayISO, offset))}.`);
@@ -108,4 +111,16 @@ function analyzeMessage(message, todayISO) {
   return notes;
 }
 
-module.exports = { analyzeMessage, isBlankMessage };
+// Bảng ngày + thứ của 2 tuần tới, đưa thẳng vào system prompt: model (nhất là model nhỏ chạy
+// trên máy) hay tính sai "thứ 6 tuần này"/"mai" ra ngày và thứ — tra bảng thì không sai được.
+function upcomingDaysNote(todayISO, days = 14) {
+  const lines = [];
+  for (let i = 0; i < days; i++) {
+    const iso = addDaysISO(todayISO, i);
+    const label = i === 0 ? ' — HÔM NAY' : i === 1 ? ' — ngày mai' : i === 2 ? ' — ngày kia' : '';
+    lines.push(`- ${describeDate(iso)}${label}`);
+  }
+  return ['Lịch các ngày tới (dùng bảng này để quy đổi "mai", "thứ 6 tuần này"... ra ngày cụ thể, KHÔNG tự tính):', ...lines].join('\n');
+}
+
+module.exports = { analyzeMessage, isBlankMessage, upcomingDaysNote };

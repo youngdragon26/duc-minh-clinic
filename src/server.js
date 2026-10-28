@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 
 const { init } = require('./db');
+const llm = require('./lib/llm');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const appointmentRoutes = require('./routes/appointments');
@@ -42,6 +43,8 @@ init()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Đa Khoa Đức Minh backend đang chạy tại http://localhost:${PORT}`);
+      console.log(`Mô hình AI: ${llm.PROVIDER_LABEL}`);
+      llm.warmUp();
     });
   })
   .catch((e) => {

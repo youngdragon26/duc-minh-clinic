@@ -276,6 +276,7 @@
 </div>
 
 <script src="/account-menu.js" data-mount="#accountMount" data-current="workspace"></script>
+<script src="/chat-format.js"></script>
 <script>
 (function () {
   const token = localStorage.getItem('dm_token');
@@ -612,7 +613,7 @@
   function addMsg(text, who) {
     const el = document.createElement('div');
     el.className = 'msg ' + who;
-    el.textContent = text;
+    if (who === 'bot') setChatText(el, text); else el.textContent = text;
     $('chat').appendChild(el);
     $('chat').scrollTop = $('chat').scrollHeight;
     return el;
@@ -625,7 +626,7 @@
     $('askBtn').disabled = true;
     try {
       const { reply, conversationId } = await api('/api/ai/assistant', { method: 'POST', body: JSON.stringify({ message: q, conversationId: convId }) });
-      wait.textContent = reply;
+      setChatText(wait, reply);
       if (conversationId) convId = conversationId;
     } catch (e) {
       wait.textContent = e.message;

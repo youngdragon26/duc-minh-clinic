@@ -2,12 +2,12 @@
 
 Một web Node.js/Express thật, đã triển khai công khai tại **https://duc-minh-clinic.onrender.com**, gồm:
 
-- **Trang chủ** (`/`) — landing page giới thiệu phòng khám, có khung chat AI.
+- **Trang chủ** (`/`) — landing page giới thiệu phòng khám, có khung chat AI (câu trả lời hiển thị chữ đậm/gạch đầu dòng qua `public/chat-format.js`, dùng chung với trợ lý trong Không gian làm việc).
 - **Tài khoản** (`/tai-khoan.html`) — đăng ký/đăng nhập bằng Email hoặc SĐT + mật khẩu, 4 vai trò: Bệnh nhân, Bác sĩ, Nhân viên, Quản trị viên. Có sẵn xác thực OTP qua email (2FA) nhưng đang tắt mặc định — xem Bước 5.5.
 - **Đặt lịch khám** (`/dat-lich.html`) — bệnh nhân chọn chuyên khoa/bác sĩ/giờ, xem lịch của mình.
 - **Hàng đợi khám** (`/hang-doi.html`) — nhân viên/bác sĩ/admin xem và cập nhật trạng thái lịch hẹn.
 - **Khám bệnh** (`/kham-benh.html`) — bác sĩ ghi chẩn đoán, kê đơn thuốc, có cảnh báo tương tác thuốc kèm gợi ý thuốc thay thế cùng nhóm, và tóm tắt AI bệnh sử.
-- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn, tự thanh toán hoá đơn chưa trả bằng mã QR chuyển khoản (VietQR).
+- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn, tự thanh toán hoá đơn chưa trả bằng mã QR chuyển khoản (VietQR). Mã QR chỉ hiện khi admin đã nhập tài khoản nhận tiền ở trang Danh mục thuốc; chưa nhập thì trang báo bệnh nhân thanh toán tại quầy. Sau khi bấm "Tôi đã chuyển khoản", trang tự kiểm tra lại 30 giây/lần (tối đa 10 phút) và báo "Chuyển khoản thành công" ngay khi nhân viên xác nhận; chưa có thì hướng dẫn gọi hotline để nhân viên kiểm tra.
 - **Danh mục thuốc** (`/danh-muc-thuoc.html`) — admin quản lý thuốc (kèm nhóm thuốc/hoạt chất để hệ thống gợi ý thay thế), giá thuốc, quy tắc tương tác, giá khám theo chuyên khoa, và thông tin tài khoản nhận thanh toán QR.
 - **Hoá đơn** (`/hoa-don.html`) — nhân viên/admin lập hoá đơn và xác nhận thu tiền; được nhắc khi bệnh nhân đã báo chuyển khoản qua QR để ưu tiên đối chiếu.
 - **Lịch trực bác sĩ** (`/lich-truc.html`) — admin phân công ca trực/lịch làm việc theo tuần cho từng bác sĩ; trang đặt lịch chỉ mở đúng khung giờ đã phân công (bác sĩ chưa cấu hình thì mặc định làm việc cả ngày như cũ).
@@ -88,6 +88,7 @@ Muốn bật lại OTP (vd để demo/báo cáo đúng như đặc tả UC001), 
    - `SMTP_USER` = địa chỉ Gmail dùng để gửi
    - `SMTP_PASS` = mật khẩu ứng dụng vừa tạo ở bước 1
    - `REQUIRE_OTP` = `true`
+   - (tuỳ chọn) `SMTP_FROM` = tên + địa chỉ hiện ở ô "Người gửi" của email OTP; bỏ trống thì dùng luôn `SMTP_USER`
 3. Render tự deploy lại — từ lúc này đăng ký/đăng nhập bắt buộc qua OTP thật gửi email, đúng lớp xác thực 2 bước (2FA) theo yêu cầu bảo mật của đồ án.
 
 Không cần sửa code gì để bật/tắt — chỉ cần đổi 4 biến môi trường ở trên.
@@ -107,9 +108,37 @@ Dùng **Google Gemini** — có gói miễn phí thật sự, không cần thẻ
 3. Vào Render → service `duc-minh-clinic` → **Environment** → thêm biến `GEMINI_API_KEY` = key vừa tạo → Save.
 4. Render tự deploy lại. Vào trang chủ thử hỏi khung chat, hoặc đăng nhập bác sĩ vào `/kham-benh.html` bấm "Tóm tắt AI bệnh sử".
 
-**Lưu ý:** gói miễn phí của Gemini có giới hạn số lượt hỏi/phút — đủ dùng cho 1 phòng khám nhỏ, nếu sau này đông người dùng cùng lúc có thể cần nâng cấp. Không dán key này vào chat hay chia sẻ công khai — chỉ nhập trực tiếp trong Render.
+**Lưu ý:** gói miễn phí của Gemini giới hạn khoảng **20 lượt gọi/ngày cho mỗi model** — hết hạn ngạch thì chatbot báo "hết hạn ngạch hôm nay" và phải chờ sang ngày hôm sau. Không dán key này vào chat hay chia sẻ công khai — chỉ nhập trực tiếp trong Render.
+
+Tuỳ chọn đổi model (không bắt buộc, mặc định `gemini-3.6-flash`):
+- `GEMINI_CHAT_MODEL` — model cho chatbot trang chủ, trợ lý trong Không gian làm việc và bước mở rộng câu hỏi RAG.
+- `GEMINI_SUMMARY_MODEL` — model cho nút "Tóm tắt AI bệnh sử" của bác sĩ.
 
 Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiếp từ CSDL thật của phòng khám — không tự bịa thông tin y khoa. Tóm tắt bệnh sử chỉ dùng đúng dữ liệu hồ sơ khám đã lưu, không suy đoán thêm.
+
+## Bước 6.5 — (Tuỳ chọn) Chạy AI ngay trên máy bằng Ollama
+
+Khi chạy server **trên máy cá nhân**, có thể dùng mô hình AI cục bộ qua [Ollama](https://ollama.com) thay cho Gemini — không bị giới hạn 20 lượt/ngày. Bản deploy trên Render **không** dùng được cách này (Render không có Ollama), cứ để mặc định Gemini.
+
+1. Cài Ollama, rồi tải model: `ollama pull qwen3:4b-instruct`
+   (**không** dùng `qwen3:4b` — bản đó luôn "suy nghĩ" dài, mỗi câu trả lời chậm 20–60 giây).
+2. Thêm vào file `.env`:
+   ```
+   AI_PROVIDER=ollama
+   OLLAMA_MODEL=qwen3:4b-instruct
+   OLLAMA_HOST=http://127.0.0.1:11434
+   ```
+3. `npm run dev` lại server.
+
+Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `OLLAMA_NUM_CTX` | `8192` | Độ dài ngữ cảnh tối đa (token). Không nên để thấp hơn 8192 vì prompt chatbot dài |
+| `OLLAMA_KEEP_ALIVE` | `30m` | Giữ model trong bộ nhớ bao lâu sau câu hỏi cuối |
+| `AI_QUERY_EXPANSION` | bật với Gemini, tắt với Ollama | Bước mở rộng câu hỏi Multi-Query + HyDE (tốn thêm 1 lượt gọi AI mỗi câu) |
+
+**Lưu ý:** dù dùng Ollama, phần tìm kiếm tài liệu y khoa (RAG) vẫn nhúng vector bằng Gemini — muốn chatbot trích dẫn được Cẩm nang MSD thì vẫn cần `GEMINI_API_KEY`.
 
 ---
 
@@ -141,6 +170,7 @@ Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiế
 | POST / GET | `/api/billing/invoices` | Lập: nhân viên/admin | Lập hoá đơn cho lịch hẹn đã khám xong |
 | PATCH | `/api/billing/invoices/:id/status` | Nhân viên/admin | Xác nhận đã thu tiền |
 | PATCH | `/api/billing/invoices/:id/claim-online-payment` | Bệnh nhân (chủ hoá đơn) | Báo đã chuyển khoản qua QR — chỉ đánh dấu để nhân viên ưu tiên đối chiếu, KHÔNG tự động xác nhận đã thu tiền |
+| GET | `/api/billing/invoices/:id/payment-status` | Chủ hoá đơn, nhân viên/bác sĩ/admin | Chỉ trả trạng thái thanh toán (không ghi nhật ký) — trang Hồ sơ gọi 30 giây/lần sau khi bệnh nhân báo chuyển khoản: có xác nhận thì báo "Chuyển khoản thành công", chưa có thì hướng dẫn gọi hotline nhờ nhân viên kiểm tra; tự dừng sau 10 phút |
 | POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `GEMINI_API_KEY`) |
 | POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 

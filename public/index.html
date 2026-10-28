@@ -577,6 +577,7 @@
   <div class="f-bottom">© 2026 Phòng khám Đa khoa Đức Minh. Mọi thông tin trên trang chỉ mang tính minh họa giao diện.</div>
 </footer>
 
+<script src="/chat-format.js"></script>
 <script>
 (function(){
   const body = document.getElementById('heroChatBody');
@@ -588,7 +589,7 @@
   function addMsg(text, who){
     const el = document.createElement('div');
     el.className = 'msg ' + who;
-    el.textContent = text;
+    if (who === 'bot') setChatText(el, text); else el.textContent = text;
     body.appendChild(el);
     body.scrollTop = body.scrollHeight;
     return el;
@@ -832,7 +833,7 @@
         err.fromServer = !!data.error;
         throw err;
       }
-      thinkingEl.textContent = data.reply;
+      setChatText(thinkingEl, data.reply);
       thinkingEl.style.fontStyle = 'normal';
       addActions(thinkingEl, data.reply);
       if (loggedIn) {

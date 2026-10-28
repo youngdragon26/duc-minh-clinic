@@ -7,8 +7,10 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 const { getAvailableSlots } = require('../lib/availability');
 const { createAppointment, BookingError, isSundayISO, sundayDeadlineISO } = require('../lib/appointmentService');
 const { toolsForRole, runTool } = require('../lib/assistantTools');
-const { analyzeMessage, isBlankMessage } = require('../lib/chatAnalysis');
+const { analyzeMessage, isBlankMessage, upcomingDaysNote } = require('../lib/chatAnalysis');
 const { logAudit } = require('../lib/audit');
+const llm = require('../lib/llm');
+const { withRetry, aiErrorResponse } = llm;
 
 // Công cụ tra cứu dữ liệu CỦA CHÍNH bệnh nhân — dùng ngay trong khung chat chính khi bệnh nhân
 // đã đăng nhập (thay cho khung "Trợ lý AI của bạn" cũ trong không gian bệnh nhân).
@@ -41,60 +43,6 @@ async function persistTurn(userId, conversationId, userText, replyText, channel 
 }
 
 const router = express.Router();
-
-// SDK @google/generative-ai (cũ) hardcode role "function" cho function response,
-// không tương thích với model 3.x (chỉ nhận SYSTEM/USER/MODEL/...) — đây là lý do
-// trước đây phải ép dùng model 2.5 cho phần chat (có tool). Google cũng đã khai tử
-// hẳn @google/generative-ai. Đã chuyển sang SDK @google/genai (mới, còn bảo trì),
-// SDK này tự gộp function response vào role "user" nên dùng được model 3.x cho cả
-// phần có tool calling.
-const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
-const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.6-flash';
-
-let genAI;
-function getClient() {
-  if (!process.env.GEMINI_API_KEY) return null;
-  if (!genAI) {
-    const { GoogleGenAI } = require('@google/genai');
-    genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  }
-  return genAI;
-}
-
-// Gemini bản miễn phí đôi khi báo 503 "quá tải" hoặc 429 "quá nhiều yêu cầu" —
-// đây là lỗi tạm thời phía Google, nên thử lại vài lần trước khi báo lỗi cho người dùng.
-// Riêng lỗi hết hạn ngạch NGÀY (RESOURCE_EXHAUSTED/PerDay) thì thử lại vô ích
-// (phải đợi qua ngày mới hết), nên báo lỗi ngay thay vì làm người dùng chờ.
-async function withRetry(fn, retries = 2, delayMs = 900) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      const msg = String((e && e.message) || '');
-      const isDailyQuota = e && e.status === 429 && (msg.includes('PerDay') || msg.includes('RESOURCE_EXHAUSTED'));
-      const retryable = !isDailyQuota && e && (e.status === 503 || e.status === 429);
-      if (!retryable || attempt >= retries) throw e;
-      await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
-    }
-  }
-}
-
-function aiErrorResponse(e) {
-  const msg = String((e && e.message) || '');
-  // Gói Gemini miễn phí giới hạn 20 request/ngày/model — hết hạn ngạch NGÀY,
-  // không phải quá tải tạm thời, nên phải báo khác với lỗi 503 thông thường
-  // (không nên khuyên "thử lại sau ít phút" vì thực tế phải đợi qua ngày mới).
-  if (e && e.status === 429 && (msg.includes('PerDay') || msg.includes('RESOURCE_EXHAUSTED'))) {
-    return {
-      status: 503,
-      error: 'Trợ lý AI đã đạt giới hạn miễn phí hôm nay, vui lòng thử lại vào ngày mai hoặc gọi hotline 0974 755 333 để được hỗ trợ.',
-    };
-  }
-  if (e && (e.status === 503 || e.status === 429)) {
-    return { status: 503, error: 'Dịch vụ AI đang quá tải, vui lòng thử lại sau ít phút.' };
-  }
-  return { status: 502, error: 'Không kết nối được tới dịch vụ AI, thử lại sau.' };
-}
 
 // Ngữ cảnh "RAG" lấy trực tiếp từ CSDL thật của phòng khám (giá khám, bác sĩ đang
 // có theo từng chuyên khoa) — không bịa thêm kiến thức y khoa bên ngoài.
@@ -239,6 +187,8 @@ async function bookAppointmentTool(args, user) {
 // Nhúng 1 câu truy vấn thành vector, tìm các đoạn tri thức gần nhất bằng cosine
 // similarity (toán tử <=> của pgvector), kèm tên tài liệu nguồn để model trích dẫn.
 async function retrieveKnowledge(query, k = 4, taskType = 'RETRIEVAL_QUERY') {
+  // Nhúng câu hỏi cần Gemini — chạy Ollama mà không có GEMINI_API_KEY thì trả lời không kèm tài liệu.
+  if (!process.env.GEMINI_API_KEY) return [];
   try {
     const queryVector = await embedText(query, taskType);
     const literal = toVectorLiteral(queryVector);
@@ -272,41 +222,40 @@ async function retrieveKnowledge(query, k = 4, taskType = 'RETRIEVAL_QUERY') {
 // nếu không sẽ mất tác dụng thu hẹp khoảng cách ngữ nghĩa mà HyDE mang lại.
 // Gộp chung 2 kỹ thuật vào ĐÚNG 1 lượt gọi generateContent (không tách riêng) để đỡ
 // tốn thêm quota — vẫn tốn thêm đúng 1 lượt gọi AI mỗi câu hỏi so với bản gốc.
+// Lượt gọi này chạy TRƯỚC câu trả lời chính (tuần tự, không song song được), nên với mô hình
+// chạy trên máy (Ollama, chậm hơn Gemini nhiều) nó gần như nhân đôi thời gian chờ — vì vậy
+// mặc định TẮT khi AI_PROVIDER=ollama; đặt AI_QUERY_EXPANSION=true/false để ép bật/tắt.
+const QUERY_EXPANSION_ENABLED = process.env.AI_QUERY_EXPANSION
+  ? process.env.AI_QUERY_EXPANSION === 'true'
+  : llm.PROVIDER !== 'ollama';
+
 async function expandQuery(message) {
-  const client = getClient();
-  if (!client) return { queries: [], hypotheticalAnswer: null };
+  if (!QUERY_EXPANSION_ENABLED || !llm.isConfigured()) return { queries: [], hypotheticalAnswer: null };
   // Tin nhắn không có nội dung để mở rộng (vd chỉ gửi số điện thoại giữa lúc đang đặt
   // lịch) thì bỏ qua — gói miễn phí chỉ có 20 lượt gọi/ngày/model, không nên tốn thêm 1
   // lượt cho câu chỉ có số hoặc 1 từ.
   if ((message.match(/\p{L}+/gu) || []).length < 2) return { queries: [], hypotheticalAnswer: null };
   try {
-    const result = await withRetry(() =>
-      client.models.generateContent({
-        model: CHAT_MODEL,
-        contents: `Câu hỏi gốc của bệnh nhân: "${message}"`,
-        config: {
-          systemInstruction: [
-            'Bạn hỗ trợ cải thiện tìm kiếm cho 1 chatbot phòng khám. Câu hỏi gốc của bệnh nhân thường',
-            'ngắn, thiếu ngữ cảnh hoặc có thể hiểu theo nhiều cách khác nhau. Với câu hỏi gốc được cung cấp:',
-            '1. Sinh ra 3 GIẢ THUYẾT/DIỄN GIẢI KHÁC NHAU về điều bệnh nhân thực sự muốn hỏi — mỗi biến',
-            '   thể khai thác 1 khả năng/góc nhìn khác nhau (không phải chỉ đổi từ ngữ mà vẫn giữ nguyên',
-            '   đúng 1 ý gốc), để không bỏ sót tài liệu liên quan tới cách hiểu mà bệnh nhân không nói rõ.',
-            '2. Viết 1 đoạn "câu trả lời giả định" ngắn (2-3 câu) — hình dung nếu có 1 tài liệu y tế trả lời',
-            '   đúng câu hỏi này thì nó sẽ viết như thế nào, không cần đúng sự thật, chỉ cần đúng văn phong.',
-          ].join('\n'),
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'object',
-            properties: {
-              queries: { type: 'array', items: { type: 'string' } },
-              hypotheticalAnswer: { type: 'string' },
-            },
-            required: ['queries', 'hypotheticalAnswer'],
-          },
+    const parsed = await llm.generateJSON({
+      prompt: `Câu hỏi gốc của bệnh nhân: "${message}"`,
+      system: [
+        'Bạn hỗ trợ cải thiện tìm kiếm cho 1 chatbot phòng khám. Câu hỏi gốc của bệnh nhân thường',
+        'ngắn, thiếu ngữ cảnh hoặc có thể hiểu theo nhiều cách khác nhau. Với câu hỏi gốc được cung cấp:',
+        '1. Sinh ra 3 GIẢ THUYẾT/DIỄN GIẢI KHÁC NHAU về điều bệnh nhân thực sự muốn hỏi — mỗi biến',
+        '   thể khai thác 1 khả năng/góc nhìn khác nhau (không phải chỉ đổi từ ngữ mà vẫn giữ nguyên',
+        '   đúng 1 ý gốc), để không bỏ sót tài liệu liên quan tới cách hiểu mà bệnh nhân không nói rõ.',
+        '2. Viết 1 đoạn "câu trả lời giả định" ngắn (2-3 câu) — hình dung nếu có 1 tài liệu y tế trả lời',
+        '   đúng câu hỏi này thì nó sẽ viết như thế nào, không cần đúng sự thật, chỉ cần đúng văn phong.',
+      ].join('\n'),
+      schema: {
+        type: 'object',
+        properties: {
+          queries: { type: 'array', items: { type: 'string' } },
+          hypotheticalAnswer: { type: 'string' },
         },
-      })
-    );
-    const parsed = JSON.parse(result.text || '{}');
+        required: ['queries', 'hypotheticalAnswer'],
+      },
+    });
     return {
       queries: Array.isArray(parsed.queries) ? parsed.queries.filter((q) => typeof q === 'string').slice(0, 3) : [],
       hypotheticalAnswer: typeof parsed.hypotheticalAnswer === 'string' ? parsed.hypotheticalAnswer : null,
@@ -349,9 +298,8 @@ async function retrieveKnowledgeExpanded(message, k = 4) {
 // khách ĐANG đăng nhập (gửi kèm Bearer token) thì nhận diện được req.user, để
 // bật tính năng đặt lịch trực tiếp qua chat (xem book_appointment bên dưới).
 router.post('/chat', optionalAuthenticate, async (req, res) => {
-  const client = getClient();
-  if (!client) {
-    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
+  if (!llm.isConfigured()) {
+    return res.status(503).json({ error: llm.NOT_CONFIGURED_ERROR });
   }
   try {
     const { message, history, conversationId } = req.body || {};
@@ -390,10 +338,12 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       }
     }
 
+    const prepStart = Date.now();
     const [context, retrieved] = await Promise.all([
       buildClinicContext(),
       retrieveKnowledgeExpanded(userText),
     ]);
+    if (process.env.AI_DEBUG === 'true') console.log(`[chat] lấy ngữ cảnh CSDL + tìm tài liệu RAG: ${((Date.now() - prepStart) / 1000).toFixed(1)}s`);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
     const checkedNotes = analyzeMessage(userText, todayVN);
     const analysisBlock = checkedNotes.length
@@ -436,6 +386,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     const systemPrompt = [
       'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
       `Hôm nay là ngày ${todayVN} (giờ Việt Nam).`,
+      upcomingDaysNote(todayVN),
       loginNote,
       '',
       context,
@@ -488,57 +439,37 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '- Nếu khách chỉ hỏi lịch trống (chưa nhờ đặt giúp), báo lịch trống rồi hỏi khách có muốn AI đặt giúp luôn không, hoặc nhắc khách có thể tự đặt tại /dat-lich.html.',
     ].join('\n');
 
-    // Gemini dùng vai "model" thay vì "assistant", và lịch sử phải bắt đầu bằng "user".
     const historySource = savedTurns || (Array.isArray(history) ? history : []);
     const turns = historySource
       .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
-      .slice(-HISTORY_TURNS_FOR_MODEL)
-      .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }));
-    while (turns.length && turns[0].role !== 'user') turns.shift();
+      .slice(-HISTORY_TURNS_FOR_MODEL);
 
-    const chat = client.chats.create({
-      model: CHAT_MODEL,
-      config: {
-        systemInstruction: systemPrompt,
-        tools: [{ functionDeclarations: [checkSlotsDeclaration, bookAppointmentDeclaration, ...patientTools.map((t) => t.declaration)] }],
-        // Nhiệt độ thấp để AI bám sát tài liệu tham khảo thay vì tự suy luận
-        // lệch (đã có trường hợp thật: tài liệu ghi rõ "Da liễu" nhưng AI vẫn
-        // trả lời "Tai – Mũi – Họng" — lỗi ở bước sinh câu trả lời, không phải
-        // do tìm sai tài liệu).
-        temperature: 0.3,
-      },
+    const text = await llm.chatWithTools({
+      system: systemPrompt,
       history: turns,
-    });
-
-    let result = await withRetry(() => chat.sendMessage({ message: userText }));
-    let calls = result.functionCalls;
-    let rounds = 0;
-    while (calls && calls.length > 0 && rounds < 3) {
-      const responseParts = [];
-      for (const call of calls) {
-        let output;
-        if (call.name === 'check_available_slots') {
-          output = await checkAvailableSlots(call.args || {});
-        } else if (call.name === 'book_appointment') {
-          output = await bookAppointmentTool(call.args || {}, req.user);
-        } else if (isPatient && PATIENT_TOOL_NAMES.includes(call.name)) {
+      message: userText,
+      declarations: [checkSlotsDeclaration, bookAppointmentDeclaration, ...patientTools.map((t) => t.declaration)],
+      // Nhiệt độ thấp để AI bám sát tài liệu tham khảo thay vì tự suy luận
+      // lệch (đã có trường hợp thật: tài liệu ghi rõ "Da liễu" nhưng AI vẫn
+      // trả lời "Tai – Mũi – Họng" — lỗi ở bước sinh câu trả lời, không phải
+      // do tìm sai tài liệu).
+      temperature: 0.3,
+      maxRounds: 3,
+      handleCall: async (name, args) => {
+        if (name === 'check_available_slots') return checkAvailableSlots(args);
+        if (name === 'book_appointment') return bookAppointmentTool(args, req.user);
+        if (isPatient && PATIENT_TOOL_NAMES.includes(name)) {
           // runTool tự giới hạn theo req.user.id — bệnh nhân chỉ tra cứu được dữ liệu của mình.
-          output = await runTool(call.name, call.args, req.user);
+          const output = await runTool(name, args, req.user);
           // Giữ đúng dấu vết như khi bệnh nhân tự mở trang hồ sơ/hoá đơn.
           if (output.error) { /* tra cứu lỗi thì chưa xem được gì, không ghi nhật ký */ }
-          else if (call.name === 'my_records') await logAudit(req.user, 'record.self_view', 'medical_record', null, { count: (output.records || []).length, via: 'ai_chat' });
-          else if (call.name === 'my_invoices') await logAudit(req.user, 'invoice.self_view', 'invoice', null, { count: (output.invoices || []).length, via: 'ai_chat' });
-        } else {
-          output = { error: 'Công cụ không được hỗ trợ.' };
+          else if (name === 'my_records') await logAudit(req.user, 'record.self_view', 'medical_record', null, { count: (output.records || []).length, via: 'ai_chat' });
+          else if (name === 'my_invoices') await logAudit(req.user, 'invoice.self_view', 'invoice', null, { count: (output.invoices || []).length, via: 'ai_chat' });
+          return output;
         }
-        responseParts.push({ functionResponse: { name: call.name, response: output } });
-      }
-      result = await withRetry(() => chat.sendMessage({ message: responseParts }));
-      calls = result.functionCalls;
-      rounds++;
-    }
-
-    const text = (result.text || '').trim();
+        return { error: 'Công cụ không được hỗ trợ.' };
+      },
+    });
     const reply = text || 'Mình chưa hiểu rõ ý bạn. Bạn nói lại cụ thể hơn giúp mình nhé (ví dụ: hỏi giờ làm việc, chuyên khoa phù hợp hoặc đặt lịch khám).';
     if (req.user) convId = await persistTurn(req.user.id, convId, userText, reply);
     res.json({ reply, conversationId: convId });
@@ -616,8 +547,8 @@ router.get('/kb', requireAdmin, async (req, res) => {
 });
 
 router.post('/kb', requireAdmin, async (req, res) => {
-  const client = getClient();
-  if (!client) return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
+  // Nhúng tài liệu luôn dùng Gemini (kể cả khi AI_PROVIDER=ollama) — xem lib/llm.js.
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'Chưa cấu hình GEMINI_API_KEY nên chưa nhúng được tài liệu vào cơ sở tri thức.' });
   try {
     const { title, content } = req.body || {};
     if (!title || !content || !content.trim()) {
@@ -678,9 +609,8 @@ router.delete('/kb/:id', requireAdmin, async (req, res) => {
 
 // Bác sĩ/nhân viên/admin xem tóm tắt AI về lịch sử khám của 1 bệnh nhân.
 router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async (req, res) => {
-  const client = getClient();
-  if (!client) {
-    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
+  if (!llm.isConfigured()) {
+    return res.status(503).json({ error: llm.NOT_CONFIGURED_ERROR });
   }
   try {
     const patientId = Number(req.body?.patientId);
@@ -716,12 +646,8 @@ router.post('/summarize-patient', requireRole('doctor', 'staff', 'admin'), async
       'và các thuốc đã dùng đáng chú ý (đặc biệt nếu có thể liên quan tới lần khám tới). ' +
       'Chỉ dùng dữ liệu được cung cấp, không suy đoán hay bổ sung thông tin y khoa khác.';
 
-    const result = await withRetry(() => client.models.generateContent({
-      model: SUMMARY_MODEL,
-      contents: 'Lịch sử khám bệnh:\n\n' + historyText,
-      config: { systemInstruction: systemPrompt },
-    }));
-    res.json({ summary: (result.text || '').trim() });
+    const summary = await llm.generateText({ system: systemPrompt, prompt: 'Lịch sử khám bệnh:\n\n' + historyText });
+    res.json({ summary });
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);
@@ -742,9 +668,8 @@ const ASSISTANT_ROLE_INFO = {
 };
 
 router.post('/assistant', async (req, res) => {
-  const client = getClient();
-  if (!client) {
-    return res.status(503).json({ error: 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).' });
+  if (!llm.isConfigured()) {
+    return res.status(503).json({ error: llm.NOT_CONFIGURED_ERROR });
   }
   try {
     const { message, history, conversationId } = req.body || {};
@@ -788,35 +713,17 @@ router.post('/assistant', async (req, res) => {
 
     const turns = (savedTurns || (Array.isArray(history) ? history : []))
       .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
-      .slice(-HISTORY_TURNS_FOR_MODEL)
-      .map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }));
-    while (turns.length && turns[0].role !== 'user') turns.shift();
+      .slice(-HISTORY_TURNS_FOR_MODEL);
 
-    const chat = client.chats.create({
-      model: CHAT_MODEL,
-      config: {
-        systemInstruction: systemPrompt,
-        tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
-        temperature: 0.2,
-      },
+    const text = await llm.chatWithTools({
+      system: systemPrompt,
       history: turns,
+      message: userText,
+      declarations: tools.map((t) => t.declaration),
+      temperature: 0.2,
+      maxRounds: 4,
+      handleCall: (name, args) => runTool(name, args, req.user),
     });
-
-    let result = await withRetry(() => chat.sendMessage({ message: userText }));
-    let calls = result.functionCalls;
-    let rounds = 0;
-    while (calls && calls.length > 0 && rounds < 4) {
-      const responseParts = [];
-      for (const call of calls) {
-        const output = await runTool(call.name, call.args, req.user);
-        responseParts.push({ functionResponse: { name: call.name, response: output } });
-      }
-      result = await withRetry(() => chat.sendMessage({ message: responseParts }));
-      calls = result.functionCalls;
-      rounds++;
-    }
-
-    const text = (result.text || '').trim();
     const reply = text || 'Mình chưa có câu trả lời phù hợp. Bạn thử hỏi cụ thể hơn, hoặc gọi hotline 0974 755 333 nhé.';
     convId = await persistTurn(req.user.id, convId, userText, reply, 'assistant');
     res.json({ reply, conversationId: convId });

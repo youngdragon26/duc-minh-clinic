@@ -348,6 +348,31 @@ router.get('/invoices/by-appointment/:appointmentId', async (req, res) => {
 
 // Chi tiết 1 hoá đơn (dùng cho trang in) — đặt SAU '/invoices/mine' và
 // '/invoices/by-appointment/...' để 2 đường dẫn cố định đó khớp trước ':id'.
+// Chỉ trạng thái thanh toán — trang Hồ sơ gọi lặp lại 30 giây/lần sau khi bệnh nhân báo
+// đã chuyển khoản, nên KHÔNG ghi nhật ký "tự xem hoá đơn" (tránh mỗi lượt kiểm tra thành 1 dòng log).
+router.get('/invoices/:id/payment-status', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
+    const result = await pool.query(
+      'SELECT patient_id, status, payment_method, paid_at, online_payment_claimed_at FROM invoices WHERE id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy hoá đơn.' });
+    const inv = result.rows[0];
+    if (!STAFF_ROLES.includes(req.user.role) && inv.patient_id !== req.user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền xem hoá đơn này.' });
+    }
+    res.json({
+      status: inv.status,
+      paymentMethod: inv.payment_method,
+      paidAt: inv.paid_at,
+      onlinePaymentClaimedAt: inv.online_payment_claimed_at,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
 router.get('/invoices/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
