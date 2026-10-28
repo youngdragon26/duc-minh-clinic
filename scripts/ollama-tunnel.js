@@ -17,7 +17,14 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:4b-instruct';
 const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '30m';
 const REMOTE_SERVER_URL = (process.env.REMOTE_SERVER_URL || 'https://duc-minh-clinic.onrender.com').replace(/\/+$/, '');
 const PROXY_PORT = Number(process.env.OLLAMA_PROXY_PORT) || 11435;
-const CLOUDFLARED = process.env.CLOUDFLARED_PATH || 'cloudflared';
+// Tìm cả ở thư mục cài mặc định của winget: terminal trong VS Code mở từ trước khi cài vẫn giữ PATH cũ.
+const CLOUDFLARED =
+  process.env.CLOUDFLARED_PATH ||
+  [
+    'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe',
+    'C:\\Program Files\\cloudflared\\cloudflared.exe',
+  ].find((p) => require('fs').existsSync(p)) ||
+  'cloudflared';
 const HEARTBEAT_MS = 2 * 60 * 1000;
 const OLLAMA_API_KEY = (process.env.OLLAMA_API_KEY || '').trim();
 
@@ -86,7 +93,7 @@ proxy.listen(PROXY_PORT, '127.0.0.1', () => {
   let tunnelUrl = null;
   tunnel.on('error', (e) => {
     console.error(`Không chạy được "${CLOUDFLARED}" (${e.code}). Cài bằng: winget install --id Cloudflare.cloudflared`);
-    console.error('rồi mở terminal mới, hoặc đặt CLOUDFLARED_PATH trỏ tới cloudflared.exe.');
+    console.error('rồi mở lại VS Code/terminal, hoặc đặt CLOUDFLARED_PATH trỏ tới cloudflared.exe.');
     process.exit(1);
   });
   tunnel.on('exit', (code) => {
