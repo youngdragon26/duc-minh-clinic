@@ -180,6 +180,9 @@ Mỗi lần dùng: mở Ollama, rồi `npm run tunnel` (để cửa sổ đó ch
 đường hầm lên Render (`POST /api/ai/ollama-endpoint`, bắt buộc đúng khoá), giữ model nạp sẵn và giữ bản Render
 miễn phí không "ngủ". Mỗi lượt web gọi Ollama được in ra cửa sổ đó.
 
+Địa chỉ đường hầm chỉ lưu trong bộ nhớ server, nên ngay sau khi Render deploy lại/khởi động lại, các câu hỏi
+tạm dùng Gemini cho tới lần báo kế tiếp của script (tối đa 2 phút).
+
 Tắt script hoặc tắt laptop: sau tối đa 5 phút Render tự quay về Gemini (trong lúc đó các câu hỏi cũng tự
 chuyển sang Gemini vì gọi đường hầm lỗi). Nếu Ollama lỗi **sau khi** đã chạy công cụ (vd đặt lịch) thì không
 chuyển sang Gemini — tránh đặt lịch trùng — mà báo lỗi để khách thử lại.
