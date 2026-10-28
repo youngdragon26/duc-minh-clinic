@@ -7,6 +7,7 @@
     "dev": "node src/server.js",
     "start": "node src/server.js",
     "tunnel": "node scripts/ollama-tunnel.js",
+    "eval-chat": "node scripts/eval-chatbot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

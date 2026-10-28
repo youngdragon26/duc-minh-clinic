@@ -155,6 +155,19 @@ Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 | `OLLAMA_NUM_CTX` | `8192` | Độ dài ngữ cảnh tối đa (token). Không nên để thấp hơn 8192 vì prompt chatbot dài |
 | `OLLAMA_KEEP_ALIVE` | `30m` | Giữ model trong bộ nhớ bao lâu sau câu hỏi cuối |
 | `AI_QUERY_EXPANSION` | bật với Gemini, tắt với Ollama | Bước mở rộng câu hỏi Multi-Query + HyDE (tốn thêm 1 lượt gọi AI mỗi câu) |
+| `AI_COMPACT_PROMPT` | tắt với Gemini, bật với Ollama | Prompt rút gọn cho model nhỏ + trả lời câu hỏi lịch trống thẳng từ dữ liệu, không qua model |
+
+**Chatbot với model nhỏ:** model ~1,7B không theo nổi prompt đầy đủ (~40 quy tắc), nên phần chắc chắn được tính
+bằng code trong `src/lib/chatAnalysis.js` rồi đưa vào prompt như dữ kiện: chuyên khoa theo triệu chứng
+("đau họng" → Tai – Mũi – Họng, "con tôi 5 tuổi…" → Nhi khoa), dấu hiệu cấp cứu (luôn kèm lời khuyên gọi 115),
+câu hỏi lịch trống kèm ngày ("tuần này", "thứ 7", "mai"…) — với prompt rút gọn, câu hỏi lịch trống được trả lời
+thẳng từ CSDL. Đo chất lượng bằng `npm run eval-chat` (15 câu mẫu, server phải đang chạy;
+`EVAL_URL=https://duc-minh-clinic.onrender.com npm run eval-chat` để đo bản deploy):
+
+| Cấu hình (`qwen3:1.7b`) | Kết quả | Thời gian TB |
+|---|---|---|
+| Prompt đầy đủ (trước) | 6/15 | 2,9 s |
+| Prompt rút gọn + dữ kiện tính sẵn (hiện tại) | 15/15 | 1,3 s |
 
 **Lưu ý:** dù dùng Ollama, phần tìm kiếm tài liệu y khoa (RAG) vẫn nhúng vector bằng Gemini — muốn chatbot trích dẫn được Cẩm nang MSD thì vẫn cần `GEMINI_API_KEY`.
 Gọi Ollama lỗi (chưa mở Ollama, laptop tắt…) mà có `GEMINI_API_KEY` thì server tự chuyển sang Gemini cho câu đó.

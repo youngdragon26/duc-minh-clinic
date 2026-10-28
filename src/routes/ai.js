@@ -7,7 +7,15 @@ const { embedText, toVectorLiteral } = require('../lib/embeddings');
 const { getAvailableSlots } = require('../lib/availability');
 const { createAppointment, BookingError, isSundayISO, sundayDeadlineISO } = require('../lib/appointmentService');
 const { toolsForRole, runTool } = require('../lib/assistantTools');
-const { analyzeMessage, isBlankMessage, upcomingDaysNote } = require('../lib/chatAnalysis');
+const {
+  analyzeMessage,
+  isBlankMessage,
+  upcomingDaysNote,
+  describeDate,
+  detectSpecialty,
+  detectEmergency,
+  detectSlotQuery,
+} = require('../lib/chatAnalysis');
 const { logAudit } = require('../lib/audit');
 const llm = require('../lib/llm');
 const { intParam } = require('../middleware/params');
@@ -64,14 +72,15 @@ async function buildClinicContext() {
     if (!bySpecialty[d.specialty]) bySpecialty[d.specialty] = [];
     bySpecialty[d.specialty].push(d.name);
   }
-  const specialtyLines = SPECIALTIES.map((s) => {
+  const describeSpecialty = (s) => {
     const price = priceMap[s] != null ? priceMap[s].toLocaleString('vi-VN') + 'đ' : 'chưa niêm yết';
     const docNames = [...(bySpecialty[s] || []), ...generalDoctors];
     const docs = docNames.length ? docNames.join(', ') : 'chưa có bác sĩ phụ trách';
-    return `- ${s}: giá khám ${price}; bác sĩ: ${docs}`;
-  }).join('\n');
+    return `giá khám ${price}; bác sĩ: ${docs}`;
+  };
+  const specialtyLines = SPECIALTIES.map((s) => `- ${s}: ${describeSpecialty(s)}`).join('\n');
 
-  return [
+  const text = [
     'Thông tin phòng khám (chỉ dùng đúng dữ kiện dưới đây, không bịa thêm):',
     '- Tên: Phòng khám Đa khoa Đức Minh.',
     '- Địa chỉ: Phường Túc Duyên, TP. Thái Nguyên.',
@@ -82,6 +91,7 @@ async function buildClinicContext() {
     'Chuyên khoa, giá khám và bác sĩ hiện có:',
     specialtyLines,
   ].join('\n');
+  return { text, describeSpecialty };
 }
 
 // Tool Gemini có thể tự gọi để tra cứu khung giờ còn trống THẬT trong CSDL —
@@ -117,6 +127,52 @@ async function checkAvailableSlots({ specialty, date }) {
     ? `Ngày này là CHỦ NHẬT: không khám thường xuyên, chỉ khám theo hẹn trước với 1 bác sĩ cụ thể, phải đặt chậm nhất ngày ${sundayDeadlineISO(date)} (Thứ 3), và cần bác sĩ đồng ý. Các khung giờ dưới đây chỉ là giờ chưa có ai đặt, KHÔNG có nghĩa là chắc chắn được khám.`
     : undefined;
   return { specialty, date, available: doctors.some((d) => d.freeSlots.length > 0), doctors, ...(sundayNote ? { sundayNote } : {}) };
+}
+
+// Gộp các khung 30 phút liền nhau: ['07:00', '07:30', '08:00', '10:00'] → '07:00–08:00, 10:00'.
+// Danh sách 28 mốc giờ làm model nhỏ chép lại dài dòng; dạng khoảng giờ vừa gọn vừa đủ ý.
+function slotRanges(slots) {
+  const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+  const ranges = [];
+  for (const t of slots) {
+    const last = ranges[ranges.length - 1];
+    if (last && toMin(t) - toMin(last[1]) === 30) last[1] = t;
+    else ranges.push([t, t]);
+  }
+  return ranges.map(([a, b]) => (a === b ? a : `${a}–${b}`)).join(', ');
+}
+
+// Tra sẵn lịch trống cho các ngày khách hỏi (detectSlotQuery) — model nhỏ hay chỉ hứa "mình sẽ
+// kiểm tra rồi báo lại" mà không gọi check_available_slots, nên code tra trước rồi đưa kết quả vào prompt.
+async function slotFacts(specialty, dates, todayVN) {
+  // getAvailableSlots không bỏ các giờ đã trôi qua của hôm nay — lọc ở đây để không mời khách đặt giờ đã qua.
+  const nowVN = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
+  const results = await Promise.all(dates.map((date) => checkAvailableSlots({ specialty, date })));
+  return results.map((r, i) => {
+    const [y, m, d] = dates[i].split('-');
+    const label = `${describeDate(dates[i]).match(/\((.+)\)/)[1]} ${d}/${m}/${y}`;
+    if (r.error || !r.doctors) return `- ${label}: ${r.error || r.message}`;
+    const docs = r.doctors.map((d) => {
+      const free = dates[i] === todayVN ? d.freeSlots.filter((t) => t > nowVN) : d.freeSlots;
+      return `${d.doctorName}: ${free.length ? slotRanges(free) : 'hết chỗ'}`;
+    });
+    return `- ${label}: ${docs.join('; ')}${r.sundayNote ? ' (Chủ nhật: chỉ khám theo hẹn trước, cần bác sĩ đồng ý)' : ''}`;
+  });
+}
+
+// Chuyên khoa khách đang nói tới: ưu tiên tin nhắn mới, không có thì lần ngược lịch sử (tin của
+// khách trước, rồi tới câu trả lời của trợ lý — vd trợ lý vừa gợi ý "Tai – Mũi – Họng").
+function specialtyFromConversation(message, turns) {
+  const fromMessage = detectSpecialty(message);
+  if (fromMessage) return fromMessage.specialty;
+  for (const role of ['user', 'assistant']) {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role !== role) continue;
+      const found = detectSpecialty(turns[i].content);
+      if (found) return found.specialty;
+    }
+  }
+  return null;
 }
 
 // Tool Gemini gọi để ĐẶT LỊCH THẬT cho khách — chỉ nên gọi sau khi đã thu thập
@@ -232,6 +288,14 @@ const QUERY_EXPANSION_ENABLED = process.env.AI_QUERY_EXPANSION
   ? process.env.AI_QUERY_EXPANSION === 'true'
   : llm.PROVIDER !== 'ollama';
 
+// System prompt đầy đủ (~40 quy tắc, viết cho Gemini) quá dài với model nhỏ chạy trên máy: đo thật
+// với qwen3:1.7b chỉ đạt 6/15 câu của scripts/eval-chatbot.js (lặp nguyên câu xin xác nhận, gợi ý
+// sai khoa…). Bản rút gọn giữ đúng các quy tắc an toàn/đặt lịch, phần còn lại do chatAnalysis tính
+// sẵn. Mặc định BẬT khi AI_PROVIDER=ollama; đặt AI_COMPACT_PROMPT=true/false để ép bật/tắt.
+const COMPACT_PROMPT = process.env.AI_COMPACT_PROMPT
+  ? process.env.AI_COMPACT_PROMPT === 'true'
+  : llm.PROVIDER === 'ollama';
+
 async function expandQuery(message) {
   if (!QUERY_EXPANSION_ENABLED || !llm.isConfigured()) return { queries: [], hypotheticalAnswer: null };
   // Tin nhắn không có nội dung để mở rộng (vd chỉ gửi số điện thoại giữa lúc đang đặt
@@ -341,16 +405,65 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       }
     }
 
+    const historySource = savedTurns || (Array.isArray(history) ? history : []);
+    const turns = historySource
+      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+      .slice(-HISTORY_TURNS_FOR_MODEL);
+
     const prepStart = Date.now();
-    const [context, retrieved] = await Promise.all([
+    const [clinic, retrieved] = await Promise.all([
       buildClinicContext(),
       retrieveKnowledgeExpanded(userText),
     ]);
     if (process.env.AI_DEBUG === 'true') console.log(`[chat] lấy ngữ cảnh CSDL + tìm tài liệu RAG: ${((Date.now() - prepStart) / 1000).toFixed(1)}s`);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
-    const checkedNotes = analyzeMessage(userText, todayVN);
-    const analysisBlock = checkedNotes.length
-      ? ['KẾT QUẢ KIỂM TRA TỰ ĐỘNG tin nhắn MỚI NHẤT của khách (do hệ thống tính, ĐÚNG TUYỆT ĐỐI — tin theo đây, không tự đếm/tính lại):', ...checkedNotes.map((n) => `- ${n}`)].join('\n')
+
+    // Dữ kiện tính TẤT ĐỊNH cho tin nhắn này (chatAnalysis.js) — model chỉ việc diễn đạt lại.
+    const facts = analyzeMessage(userText, todayVN).map((n) => `- ${n}`);
+    const emergency = detectEmergency(userText);
+    if (emergency.length) {
+      facts.unshift(`- CẤP CỨU: khách nói "${emergency.join(', ')}" → câu ĐẦU TIÊN phải khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.`);
+    }
+    const slotQuery = detectSlotQuery(userText, todayVN);
+    const suggested = detectSpecialty(userText);
+    if (slotQuery) {
+      const specialty = specialtyFromConversation(userText, turns);
+      const slotLines = specialty ? await slotFacts(specialty, slotQuery.dates, todayVN) : null;
+      // Model nhỏ bỏ qua cả lịch trống đã tra sẵn trong prompt (vẫn hứa "mình sẽ kiểm tra"), mà câu trả
+      // lời ở đây xác định hoàn toàn từ dữ liệu — nên với bản rút gọn, code trả lời luôn, không gọi model.
+      // Tin có kèm số điện thoại/tuổi là đang đặt lịch dở — để model xử lý tiếp, không cắt ngang.
+      const bookingDetails = facts.some((f) => /Số điện thoại|Tuổi/.test(f));
+      if (COMPACT_PROMPT && !emergency.length && !bookingDetails) {
+        const reply = slotLines
+          ? [
+              `Lịch còn trống khoa ${specialty}:`,
+              ...slotLines,
+              req.user
+                ? 'Bạn muốn chọn giờ nào? Mình có thể đặt lịch giúp bạn luôn.'
+                : 'Bạn muốn chọn giờ nào? Bạn đăng nhập tại /tai-khoan.html để mình đặt giúp, hoặc tự đặt tại /dat-lich.html.',
+            ].join('\n')
+          : `Bạn muốn xem lịch trống của chuyên khoa nào? Phòng khám có: ${SPECIALTIES.join(', ')}.`;
+        if (req.user) convId = await persistTurn(req.user.id, convId, userText, reply);
+        return res.json({ reply, conversationId: convId });
+      }
+      facts.push(
+        ...(slotLines
+          ? [
+              `- LỊCH TRỐNG THẬT khoa ${specialty} (hệ thống vừa tra — KHÔNG cần gọi check_available_slots cho các ngày này):`,
+              ...slotLines.map((l) => '  ' + l),
+              '  → Báo lại đúng các khoảng giờ trên (gọn, theo từng bác sĩ), rồi hỏi khách muốn chọn giờ nào hoặc có muốn đặt lịch không.',
+            ]
+          : [`- Khách hỏi lịch trống nhưng CHƯA RÕ chuyên khoa → hỏi lại khách muốn khám chuyên khoa nào (${SPECIALTIES.join(', ')}).`])
+      );
+    }
+    if (!req.user && /đặt (?:lịch|hẹn)|book/i.test(userText)) {
+      facts.push('- Khách muốn đặt lịch nhưng CHƯA ĐĂNG NHẬP → hướng dẫn khách đăng nhập/đăng ký tại /tai-khoan.html rồi quay lại chat, hoặc tự đặt tại /dat-lich.html.');
+    }
+    if (!slotQuery && suggested) {
+      facts.push(`- CHUYÊN KHOA PHÙ HỢP: ${suggested.specialty} (vì khách nói "${suggested.keywords.join(', ')}") — ${clinic.describeSpecialty(suggested.specialty)}. Gợi ý ĐÚNG chuyên khoa này và chỉ nêu bác sĩ của chuyên khoa này.`);
+    }
+    const analysisBlock = facts.length
+      ? ['KẾT QUẢ KIỂM TRA TỰ ĐỘNG tin nhắn MỚI NHẤT của khách (do hệ thống tính, ĐÚNG TUYỆT ĐỐI — tin theo đây, không tự đếm/tính lại):', ...facts].join('\n')
       : '';
 
     const knowledgeBlock = retrieved.length
@@ -386,13 +499,51 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         ].join('\n')
       : '';
 
-    const systemPrompt = [
+    const toolLines = [
+      '- check_available_slots: tra khung giờ còn trống THẬT của 1 chuyên khoa vào 1 ngày.',
+      '- book_appointment: đặt lịch THẬT, chỉ dùng khi khách đang đăng nhập và đã xác nhận.',
+      ...patientTools.map((t) => `- ${t.declaration.name}: ${t.declaration.description}`),
+    ];
+
+    // Bản rút gọn cho model nhỏ (xem COMPACT_PROMPT): ít quy tắc, đánh số, và để "KẾT QUẢ KIỂM TRA
+    // TỰ ĐỘNG" ở CUỐI prompt — model nhỏ bám phần nằm gần câu hỏi hơn phần ở đầu.
+    const compactPrompt = [
+      'Bạn là trợ lý ảo của Phòng khám Đa khoa Đức Minh. Trả lời bằng tiếng Việt, ngắn gọn 2-4 câu, thân thiện. Xưng "mình", gọi khách là "bạn".',
+      `Hôm nay là ${describeDate(todayVN)}.`,
+      upcomingDaysNote(todayVN, 8),
+      loginNote,
+      '',
+      clinic.text,
+      '',
+      knowledgeBlock,
+      '',
+      patientNote,
+      '',
+      'Công cụ:',
+      ...toolLines,
+      '',
+      'QUY TẮC:',
+      '1. Chỉ dùng dữ kiện có trong prompt này (thông tin phòng khám, kết quả kiểm tra tự động, kết quả công cụ, tài liệu). Không bịa giá, bác sĩ, giờ trống, thuốc.',
+      '2. Không chẩn đoán bệnh thay bác sĩ. Tên thuốc/liều dùng chỉ nêu khi có trong "Tài liệu tham khảo", ghi (Nguồn: ...) và nhắc chỉ để tham khảo. Với trẻ em không nêu liều, khuyên cho bé đi khám.',
+      '3. Không bao giờ nói "mình sẽ kiểm tra rồi báo lại": cần dữ liệu thì gọi công cụ ngay, thiếu thông tin thì hỏi lại đúng 1 câu.',
+      '4. Tin ngắn như "0912345678", "mai", "9 giờ", "nam", "ok" là câu trả lời cho câu bạn vừa hỏi — hiểu theo ngữ cảnh hội thoại.',
+      // Không trích nguyên văn câu xin xác nhận: model nhỏ chép lại câu đó vào cả những câu trả lời
+      // không liên quan. Giao diện nhận bản tóm tắt theo dấu hiệu chung (index.html, isSummary).
+      '5. Đặt lịch qua chat (chỉ khi khách đang đăng nhập): hỏi dần cho đủ chuyên khoa, ngày, giờ, họ tên, số điện thoại, tuổi, giới tính (bác sĩ và lý do khám nếu có). CHỈ KHI ĐÃ ĐỦ các thông tin đó mới tóm tắt gạch đầu dòng (họ tên, ngày khám, giờ khám, ...) và mời khách trả lời xác nhận. Khách chỉ hỏi thông tin hay hỏi lịch trống thì trả lời câu hỏi đó, KHÔNG tóm tắt, KHÔNG xin xác nhận.',
+      '6. CHỈ gọi book_appointment sau khi khách xác nhận ("xác nhận", "đúng rồi", "ok đặt giúp mình"). Khách huỷ thì không đặt; khách muốn sửa thì hỏi sửa mục nào rồi tóm tắt lại. Báo đúng kết quả công cụ (mã lịch, trạng thái chờ xác nhận, hoặc lý do lỗi). Không bao giờ nói đã đặt nếu chưa gọi công cụ.',
+      '7. Chủ nhật không khám thường: chỉ khám theo hẹn trước với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 tuần đó, cần bác sĩ đồng ý.',
+      '8. Câu hỏi ngoài phạm vi phòng khám hoặc không chắc thông tin y khoa: khuyên gọi hotline 0974 755 333.',
+      '',
+      analysisBlock,
+    ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
+
+    const systemPrompt = COMPACT_PROMPT ? compactPrompt : [
       'Bạn là trợ lý ảo trên website của Phòng khám Đa khoa Đức Minh. Trả lời NGẮN GỌN (tối đa 2-4 câu, có thể liệt kê khung giờ dạng gạch đầu dòng khi cần), thân thiện, bằng tiếng Việt.',
       `Hôm nay là ngày ${todayVN} (giờ Việt Nam).`,
       upcomingDaysNote(todayVN),
       loginNote,
       '',
-      context,
+      clinic.text,
       '',
       knowledgeBlock,
       '',
@@ -442,11 +593,6 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       '- Nếu khách chỉ hỏi lịch trống (chưa nhờ đặt giúp), báo lịch trống rồi hỏi khách có muốn AI đặt giúp luôn không, hoặc nhắc khách có thể tự đặt tại /dat-lich.html.',
     ].join('\n');
 
-    const historySource = savedTurns || (Array.isArray(history) ? history : []);
-    const turns = historySource
-      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
-      .slice(-HISTORY_TURNS_FOR_MODEL);
-
     const text = await llm.chatWithTools({
       system: systemPrompt,
       history: turns,
@@ -473,7 +619,11 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         return { error: 'Công cụ không được hỗ trợ.' };
       },
     });
-    const reply = text || 'Mình chưa hiểu rõ ý bạn. Bạn nói lại cụ thể hơn giúp mình nhé (ví dụ: hỏi giờ làm việc, chuyên khoa phù hợp hoặc đặt lịch khám).';
+    let reply = text || 'Mình chưa hiểu rõ ý bạn. Bạn nói lại cụ thể hơn giúp mình nhé (ví dụ: hỏi giờ làm việc, chuyên khoa phù hợp hoặc đặt lịch khám).';
+    // An toàn không phó mặc cho model: đo thật, model nhỏ lúc khuyên 115, lúc lại chỉ đưa hotline phòng khám.
+    if (emergency.length && !/115/.test(reply)) {
+      reply = `⚠️ ${emergency.join(', ')} có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.\n\n${reply}`;
+    }
     if (req.user) convId = await persistTurn(req.user.id, convId, userText, reply);
     res.json({ reply, conversationId: convId });
   } catch (e) {

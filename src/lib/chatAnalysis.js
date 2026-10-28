@@ -111,6 +111,101 @@ function analyzeMessage(message, todayISO) {
   return notes;
 }
 
+// Khớp nguyên từ tiếng Việt (\b của JS không hiểu chữ có dấu: "bé" trong "bé gái" không khớp).
+const words = (...alts) => new RegExp(`(?<!\\p{L})(?:${alts.join('|')})(?!\\p{L})`, 'gu');
+
+// [chuyên khoa, từ khoá]. Nhi khoa và Sản phụ khoa xét trước: quyết định bởi NGƯỜI khám (trẻ em,
+// người mang thai) chứ không bởi triệu chứng. Các khoa còn lại chấm theo số từ khoá khớp; bằng
+// điểm thì khoa đứng trước thắng — Nội tổng quát để cuối vì triệu chứng của nó chung chung nhất
+// ("đau họng và sốt" → Tai – Mũi – Họng, không phải Nội). Model nhỏ hay gợi ý sai khoa (đã gặp:
+// "đau họng" → "Nhi khoa"), nên phần này tính sẵn rồi đưa vào prompt như dữ kiện.
+const PERSON_RULES = [
+  ['Nhi khoa', words('con (?:tôi|mình|em|nhà tôi|nhà mình)', 'bé', 'cháu', 'trẻ', 'em bé', 'sơ sinh', 'khoa nhi', 'nhi khoa', '\\d{1,2} tháng tuổi')],
+  ['Sản phụ khoa', words('mang thai', 'có thai', 'có bầu', 'bầu', 'thai', 'khám thai', 'kinh nguyệt', 'trễ kinh', 'chậm kinh', 'rong kinh', 'đau bụng kinh', 'khí hư', 'phụ khoa', 'sản khoa', 'sản phụ khoa', 'âm đạo')],
+];
+const SYMPTOM_RULES = [
+  ['Răng – Hàm – Mặt', words('răng', 'nướu', 'nha khoa', 'hôi miệng', '(?:sưng|viêm|chảy máu|tụt) lợi', 'quai hàm', 'hàm (?:trên|dưới)', 'niềng')],
+  ['Tai – Mũi – Họng', words('họng', 'amidan', 'amiđan', 'tai(?! nạn| biến)', 'mũi', 'xoang', 'khàn tiếng', 'mất tiếng', 'chảy máu cam', 'tai mũi họng')],
+  ['Da liễu', words('ngứa', 'mụn', 'mẩn', 'nổi mẩn', 'phát ban', 'mề đay', 'nấm', 'vảy nến', 'chàm', 'rụng tóc', 'lang ben', 'zona', 'da liễu', '(?:trên|ngoài|ở) da', 'da (?:mặt|tay|chân|đầu|bị)')],
+  ['Nội tổng quát', words('sốt', 'ho', 'đau bụng', 'tiêu chảy', 'đau đầu', 'chóng mặt', 'huyết áp', 'tiểu đường', 'đường huyết', 'mỡ máu', 'mệt mỏi', 'dạ dày', 'khó tiêu', 'buồn nôn', 'nôn', 'táo bón', 'cảm cúm', 'cúm', 'bị cảm', 'cảm lạnh', 'khám sức khỏe', 'khám sức khoẻ', 'khám tổng quát', 'nội khoa', 'nội tổng quát', 'tim', 'gan', 'sỏi thận', 'đau thận')],
+];
+
+// Trả về { specialty, keywords } hoặc null nếu tin nhắn không nhắc triệu chứng/chuyên khoa nào.
+function detectSpecialty(message) {
+  const lower = String(message || '').toLowerCase();
+  const matches = (re) => [...new Set([...lower.matchAll(re)].map((m) => m[0]))];
+  for (const [specialty, re] of PERSON_RULES) {
+    const keywords = matches(re);
+    if (keywords.length) return { specialty, keywords };
+  }
+  let best = null;
+  for (const [specialty, re] of SYMPTOM_RULES) {
+    const keywords = matches(re);
+    if (keywords.length && (!best || keywords.length > best.keywords.length)) best = { specialty, keywords };
+  }
+  return best;
+}
+
+const EMERGENCY_RE = words('khó thở', 'đau ngực', 'tức ngực', 'bất tỉnh', 'ngất', 'co giật', 'chảy máu nhiều', 'nôn ra máu', 'đột quỵ', 'méo miệng', 'liệt', 'ngừng thở', 'tím tái', 'lơ mơ');
+
+// Dấu hiệu có thể cấp cứu — trả về các từ khớp (mảng rỗng nếu không có).
+function detectEmergency(message) {
+  return [...new Set([...String(message || '').toLowerCase().matchAll(EMERGENCY_RE)].map((m) => m[0]))];
+}
+
+const WEEKDAY_WORDS = { '2': 1, hai: 1, '3': 2, ba: 2, '4': 3, 'tư': 3, '5': 4, 'năm': 4, '6': 5, 'sáu': 5, '7': 6, 'bảy': 6 };
+const SLOT_INTENT_RE = /trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm)|(?:check|kiểm tra|xem) lịch|còn lịch/;
+// "Lịch của tôi", "tôi đã đặt"… là hỏi lịch hẹn của chính khách (công cụ my_appointments), không phải lịch trống.
+const OWN_APPOINTMENT_RE = /lịch(?: hẹn| khám)? của (?:tôi|mình|em)|(?:tôi|mình|em) đã đặt/;
+
+// Khách hỏi lịch trống? Trả về { dates: ['YYYY-MM-DD', ...] } (tối đa 6 ngày, bỏ Chủ nhật trừ khi
+// hỏi đúng Chủ nhật) hoặc null. Không nói ngày thì lấy 3 ngày khám gần nhất kể từ hôm nay.
+// Model nhỏ hay chỉ hứa "mình sẽ kiểm tra rồi báo lại" mà không gọi công cụ — code tra sẵn thay nó.
+function detectSlotQuery(message, todayISO) {
+  const lower = String(message || '').toLowerCase();
+  if (!SLOT_INTENT_RE.test(lower) || OWN_APPOINTMENT_RE.test(lower)) return null;
+
+  const todayDow = new Date(todayISO + 'T00:00:00Z').getUTCDay();
+  const nextWeek = /tuần (?:sau|tới)/.test(lower);
+  const openDaysFrom = (startISO, endISO) => {
+    const out = [];
+    for (let iso = startISO; iso <= endISO; iso = addDaysISO(iso, 1)) {
+      if (new Date(iso + 'T00:00:00Z').getUTCDay() !== 0) out.push(iso);
+    }
+    return out;
+  };
+  // Thứ Hai của tuần chứa hôm nay (tuần tính từ Thứ Hai tới Chủ nhật).
+  const mondayISO = addDaysISO(todayISO, -((todayDow + 6) % 7));
+
+  let dates = [];
+  const wd = lower.match(/thứ\s*(2|3|4|5|6|7|hai|ba|tư|năm|sáu|bảy)(?!\p{L})|chủ nhật/u);
+  if (wd) {
+    const target = wd[0] === 'chủ nhật' ? 7 : WEEKDAY_WORDS[wd[1]];
+    let iso = addDaysISO(mondayISO, target - 1 + (nextWeek ? 7 : 0));
+    if (iso < todayISO) iso = addDaysISO(iso, 7);
+    dates = [iso];
+  } else if (/tuần này/.test(lower)) {
+    dates = openDaysFrom(todayISO, addDaysISO(mondayISO, 5));
+  } else if (nextWeek) {
+    dates = openDaysFrom(addDaysISO(mondayISO, 7), addDaysISO(mondayISO, 12));
+  } else {
+    const dm = lower.match(/(?<![\d/])(\d{1,2})\s*[/.-]\s*(\d{1,2})(?![\d/])/);
+    if (dm) {
+      const iso = `${todayISO.slice(0, 4)}-${pad(Number(dm[2]))}-${pad(Number(dm[1]))}`;
+      if (!Number.isNaN(new Date(iso + 'T00:00:00Z').getTime()) && iso >= todayISO) dates = [iso];
+    } else if (/ngày kia|(?:ngày|hôm) mốt/.test(lower)) {
+      dates = [addDaysISO(todayISO, 2)];
+    } else if (/(?:ngày|sáng|trưa|chiều|tối|hôm) mai|(?<!\p{L})mai(?!\p{L})/u.test(lower)) {
+      dates = [addDaysISO(todayISO, 1)];
+    } else if (/hôm nay|(?:sáng|trưa|chiều|tối) nay/.test(lower)) {
+      dates = [todayISO];
+    } else {
+      dates = openDaysFrom(todayISO, addDaysISO(todayISO, 6)).slice(0, 3);
+    }
+  }
+  return { dates: dates.slice(0, 6) };
+}
+
 // Bảng ngày + thứ của 2 tuần tới, đưa thẳng vào system prompt: model (nhất là model nhỏ chạy
 // trên máy) hay tính sai "thứ 6 tuần này"/"mai" ra ngày và thứ — tra bảng thì không sai được.
 function upcomingDaysNote(todayISO, days = 14) {
@@ -123,4 +218,12 @@ function upcomingDaysNote(todayISO, days = 14) {
   return ['Lịch các ngày tới (dùng bảng này để quy đổi "mai", "thứ 6 tuần này"... ra ngày cụ thể, KHÔNG tự tính):', ...lines].join('\n');
 }
 
-module.exports = { analyzeMessage, isBlankMessage, upcomingDaysNote };
+module.exports = {
+  analyzeMessage,
+  isBlankMessage,
+  upcomingDaysNote,
+  describeDate,
+  detectSpecialty,
+  detectEmergency,
+  detectSlotQuery,
+};

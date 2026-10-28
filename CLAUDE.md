@@ -120,6 +120,14 @@ use `setChatText()` from `chat-format.js`.
   number with an adjacent age (e.g. "0353102966 25 tuổi" mis-parsed as one 12-digit number) — prefer fixing
   bugs like that in `chatAnalysis.js`'s deterministic parsing over re-prompting the model. Also: messages with
   no letters/digits, or that are pure numbers, skip the query-expansion Gemini call entirely to save quota.
+- The same file also decides, deterministically, the suggested specialty from symptom keywords (`detectSpecialty`
+  — child/pregnancy rules win over symptoms, `Nội tổng quát` loses ties), emergencies (`detectEmergency`) and
+  "free slots?" questions with their dates (`detectSlotQuery`). `/api/ai/chat` turns these into facts in the prompt;
+  with `COMPACT_PROMPT` (default on for Ollama — the full ~40-rule prompt overwhelms `qwen3:1.7b`) a slot question
+  is answered straight from `getAvailableSlots` without calling the model, and the 115 emergency advice is
+  prepended in code if the model's reply lacks it (in both modes). Measure prompt/model changes with
+  `npm run eval-chat` (`scripts/eval-chatbot.js`, 15 regex-graded cases against a running server): the full
+  prompt on `qwen3:1.7b` scored 6/15, the current compact setup 15/15.
 - All LLM calls go through `src/lib/llm.js` (`chatWithTools`, `generateJSON`, `generateText`), which picks the
   provider from `AI_PROVIDER`: `gemini` (default, what production on Render uses) or `ollama` (a local model,
   default `qwen3:4b-instruct` — not `qwen3:4b`, which is the always-thinking Thinking-2507 variant and takes 20-60s per reply;
