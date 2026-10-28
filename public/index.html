@@ -911,6 +911,8 @@
   // Xem bác sĩ phụ trách 1 chuyên khoa — công khai, không cần đăng nhập, để
   // khách vãng lai cũng xem được trước khi quyết định đặt lịch.
   (function(){
+  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
     function esc(s){
       return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
     }
@@ -928,7 +930,7 @@
     function docCardHtml(d){
       return `
         <div class="doc-card">
-          <b>BS. ${esc(d.name)}</b>
+          <b>${esc(drName(d.name))}</b>
           <div class="doc-meta">
             ${d.specialty ? esc(d.specialty) : 'Bác sĩ tổng quát (mọi chuyên khoa)'}
             ${d.phone ? ' · <a href="tel:' + esc(d.phone) + '">' + esc(d.phone) + '</a>' : ''}

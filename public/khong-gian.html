@@ -327,6 +327,8 @@
 
   let me = null;
 
+  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -384,7 +386,7 @@
   }
   const apptRow = (a, who) => ({
     main: `${a.time} · ${who === 'doctor' ? 'BN ' + a.patientName : a.patientName}`,
-    meta: `${a.specialty}${a.doctorName ? ' · BS. ' + a.doctorName : ''}`,
+    meta: `${a.specialty}${a.doctorName ? ' · ' + drName(a.doctorName) : ''}`,
     pill: STATUS[a.status] || a.status,
   });
 
@@ -411,7 +413,7 @@
         ${items.length ? `<ul class="list">${items.map((f) => `
           <li>
             <div><b>${esc(fmtDate(f.date))} · ${esc(f.patientName)}</b>
-              <div class="meta">${role === 'patient' ? 'BS. ' + esc(f.doctorName) : (f.patientPhone ? 'SĐT ' + esc(f.patientPhone) + ' · ' : '') + 'Chẩn đoán: ' + esc(f.diagnosis)}${f.note ? ' · ' + esc(f.note) : ''}</div></div>
+              <div class="meta">${role === 'patient' ? esc(drName(f.doctorName)) : (f.patientPhone ? 'SĐT ' + esc(f.patientPhone) + ' · ' : '') + 'Chẩn đoán: ' + esc(f.diagnosis)}${f.note ? ' · ' + esc(f.note) : ''}</div></div>
             ${canAct ? `<div class="fu-actions">
               <button class="mini" data-fu="${f.id}" data-st="da_den">Đã đến</button>
               <button class="mini" data-fu="${f.id}" data-st="da_huy">Huỷ</button></div>` : ''}
@@ -756,13 +758,13 @@
         .sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
       const activeFu = followups.filter((f) => f.bucket !== 'xong');
       setStats([
-        [upcoming.length, 'Lịch hẹn sắp tới', { title: 'Lịch hẹn sắp tới', rows: upcoming.map((a) => ({ main: fmtDate(a.date) + ' · ' + a.time, meta: a.specialty + (a.doctorName ? ' · BS. ' + a.doctorName : ''), pill: STATUS[a.status] || a.status })), empty: 'Bạn chưa có lịch hẹn nào sắp tới.', href: '/dat-lich.html', hrefLabel: 'Đặt lịch khám →' }],
-        [(recs.records || []).length, 'Lần khám đã có hồ sơ', { title: 'Hồ sơ khám bệnh của bạn', rows: (recs.records || []).map((r) => ({ main: fmtDate(r.date) + ' · ' + r.specialty, meta: 'BS. ' + r.doctorName + ' · Chẩn đoán: ' + r.diagnosis, pill: r.code, href: '/in.html?type=dt&id=' + r.id })), empty: 'Bạn chưa có hồ sơ khám nào.', href: '/ho-so.html', hrefLabel: 'Mở hồ sơ khám bệnh →' }],
-        [activeFu.length, 'Lịch tái khám đang chờ', { title: 'Lịch tái khám của bạn', rows: activeFu.map((f) => ({ main: fmtDate(f.date), meta: 'BS. ' + f.doctorName + (f.note ? ' · ' + f.note : ''), pill: f.bucket === 'qua_han' ? 'Quá hạn' : f.bucket === 'hom_nay' ? 'Hôm nay' : 'Sắp tới', cls: f.bucket === 'qua_han' ? 'bad' : f.bucket === 'hom_nay' ? 'warn' : '' })), empty: 'Bác sĩ chưa hẹn bạn tái khám.', href: '/dat-lich.html', hrefLabel: 'Đặt lịch khám →' }],
+        [upcoming.length, 'Lịch hẹn sắp tới', { title: 'Lịch hẹn sắp tới', rows: upcoming.map((a) => ({ main: fmtDate(a.date) + ' · ' + a.time, meta: a.specialty + (a.doctorName ? ' · ' + drName(a.doctorName) : ''), pill: STATUS[a.status] || a.status })), empty: 'Bạn chưa có lịch hẹn nào sắp tới.', href: '/dat-lich.html', hrefLabel: 'Đặt lịch khám →' }],
+        [(recs.records || []).length, 'Lần khám đã có hồ sơ', { title: 'Hồ sơ khám bệnh của bạn', rows: (recs.records || []).map((r) => ({ main: fmtDate(r.date) + ' · ' + r.specialty, meta: drName(r.doctorName) + ' · Chẩn đoán: ' + r.diagnosis, pill: r.code, href: '/in.html?type=dt&id=' + r.id })), empty: 'Bạn chưa có hồ sơ khám nào.', href: '/ho-so.html', hrefLabel: 'Mở hồ sơ khám bệnh →' }],
+        [activeFu.length, 'Lịch tái khám đang chờ', { title: 'Lịch tái khám của bạn', rows: activeFu.map((f) => ({ main: fmtDate(f.date), meta: drName(f.doctorName) + (f.note ? ' · ' + f.note : ''), pill: f.bucket === 'qua_han' ? 'Quá hạn' : f.bucket === 'hom_nay' ? 'Hôm nay' : 'Sắp tới', cls: f.bucket === 'qua_han' ? 'bad' : f.bucket === 'hom_nay' ? 'warn' : '' })), empty: 'Bác sĩ chưa hẹn bạn tái khám.', href: '/dat-lich.html', hrefLabel: 'Đặt lịch khám →' }],
       ]);
       setList('Lịch hẹn sắp tới', upcoming.map((a) => ({
         main: `${a.date.slice(0, 10)} · ${a.time}`,
-        meta: `${a.specialty}${a.doctorName ? ' · BS. ' + a.doctorName : ''}`,
+        meta: `${a.specialty}${a.doctorName ? ' · ' + drName(a.doctorName) : ''}`,
         pill: STATUS[a.status] || a.status,
       })), 'Bạn chưa có lịch hẹn nào sắp tới.');
       renderFollowups(followups, 'patient');

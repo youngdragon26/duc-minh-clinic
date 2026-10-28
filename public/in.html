@@ -63,6 +63,8 @@
   const id = Number(params.get('id'));
   const token = localStorage.getItem('dm_token');
 
+  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -108,7 +110,7 @@
         <tbody>${rows}</tbody>
       </table>
       ${r.notes ? `<div class="block"><b>Lời dặn</b>${esc(r.notes)}</div>` : ''}
-      <div class="sign"><div></div><div><small>Ngày ${fmtDate(r.date)}<br>Bác sĩ khám bệnh</small><div class="who">BS. ${esc(r.doctorName)}</div></div></div>
+      <div class="sign"><div></div><div><small>Ngày ${fmtDate(r.date)}<br>Bác sĩ khám bệnh</small><div class="who">${esc(drName(r.doctorName))}</div></div></div>
       <div class="foot">Đơn thuốc chỉ có giá trị khi có chữ ký bác sĩ. Dùng thuốc đúng liều bác sĩ chỉ định; khám lại nếu triệu chứng nặng hơn.</div>`;
   }
 

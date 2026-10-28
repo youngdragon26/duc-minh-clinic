@@ -75,6 +75,8 @@
 <script src="/invoice-sheet.js"></script>
 <script>
   const API = '';
+  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -165,7 +167,7 @@
 
   // Đã nhận tiền: báo thành công, đổi nhãn hoá đơn — từ đây không kiểm tra gì thêm nữa.
   function showPaid(box, paidAt) {
-    box.innerHTML = `✅ <b>Chuyển khoản thành công.</b> Phòng khám đã nhận được tiền và xác nhận thanh toán lúc ${new Date(paidAt).toLocaleString('vi-VN')}.`;
+    box.innerHTML = `✅ <strong>Chuyển khoản thành công.</strong> Phòng khám đã nhận được tiền và xác nhận thanh toán lúc ${new Date(paidAt).toLocaleString('vi-VN')}.`;
     box.closest('.card').querySelectorAll('.pill.chua_thanh_toan').forEach((p) => {
       p.className = 'pill da_thanh_toan';
       p.textContent = STATUS_LABELS.da_thanh_toan;
@@ -181,15 +183,15 @@
     let busy = false;
     let done = false;
     const recheckBtn = `<button type="button" class="pay-recheck" style="margin-top:6px; padding:5px 10px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;">Kiểm tra lại ngay</button>`;
-    const callStaff = `<b>Đã kiểm tra ${QUICK_CHECKS} lần nhưng phòng khám chưa nhận được tiền.</b> Vui lòng gọi nhân viên hỗ trợ qua số ${hotlineLink} để kiểm tra lại thông tin chuyển khoản (nhớ đọc mã hoá đơn).`;
+    const callStaff = `<strong>Đã kiểm tra ${QUICK_CHECKS} lần nhưng phòng khám chưa nhận được tiền.</strong> Vui lòng gọi nhân viên hỗ trợ qua số ${hotlineLink} để kiểm tra lại thông tin chuyển khoản (nhớ đọc mã hoá đơn).`;
 
     function render() {
       if (checks < QUICK_CHECKS) {
         const notYet = checks === 0 ? '' :
           `<div style="margin-top:6px; color:var(--accent-deep);">Lần kiểm tra ${checks}/${QUICK_CHECKS}: chưa nhận được tiền — ngân hàng có thể chuyển chậm, bạn vui lòng tiếp tục giữ máy.</div>`;
-        box.innerHTML = `⏳ <b>Vui lòng giữ máy, chờ xác nhận.</b> Phòng khám đang kiểm tra khoản chuyển của bạn — không cần tải lại hay đóng trang, hệ thống tự kiểm tra lại sau <b>${left}s</b>.${notYet}`;
+        box.innerHTML = `⏳ <strong>Vui lòng giữ máy, chờ xác nhận.</strong> Phòng khám đang kiểm tra khoản chuyển của bạn — không cần tải lại hay đóng trang, hệ thống tự kiểm tra lại sau <strong>${left}s</strong>.${notYet}`;
       } else {
-        box.innerHTML = `${callStaff}<div style="margin-top:6px;">Hệ thống vẫn tự kiểm tra lại sau <b>${left}s</b> — khi nhân viên xác nhận đã nhận tiền, trang sẽ báo thành công.</div>${recheckBtn}`;
+        box.innerHTML = `${callStaff}<div style="margin-top:6px;">Hệ thống vẫn tự kiểm tra lại sau <strong>${left}s</strong> — khi nhân viên xác nhận đã nhận tiền, trang sẽ báo thành công.</div>${recheckBtn}`;
       }
     }
     function stop() {
@@ -248,7 +250,7 @@
       <div class="card">
         <div class="record-head">
           <b>${r.specialty}</b>
-          <span>${new Date(r.date).toLocaleDateString('vi-VN')} · BS. ${esc(r.doctorName)}</span>
+          <span>${new Date(r.date).toLocaleDateString('vi-VN')} · ${esc(drName(r.doctorName))}</span>
         </div>
         ${r.symptoms ? `<div class="field"><b>Triệu chứng</b>${esc(r.symptoms)}</div>` : ''}
         <div class="field"><b>Chẩn đoán</b>${esc(r.diagnosis)}</div>

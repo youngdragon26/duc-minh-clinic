@@ -303,6 +303,8 @@
   });
   const MAX_WEEKS_AHEAD = 4; // tuần này + 3 tuần tới (~1 tháng) cho tự đặt online
 
+  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -370,7 +372,7 @@
   viewDoctorBioBtn.addEventListener('click', () => {
     const doc = doctorsList.find(d => String(d.id) === fDoctor.value);
     if (!doc) return;
-    openModal(`BS. ${doc.name}`, `
+    openModal(drName(doc.name), `
       <div class="field"><b>Chuyên khoa</b>${esc(doc.specialty || 'Đa khoa (tổng quát)')}</div>
       <div class="field"><b>Lý lịch / giới thiệu</b>${doc.bio ? esc(doc.bio).replace(/\n/g, '<br>') : 'Bác sĩ chưa cập nhật lý lịch.'}</div>
     `);
