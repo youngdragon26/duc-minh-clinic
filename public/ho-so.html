@@ -147,12 +147,15 @@
     }
   }
 
-  // Sau khi bệnh nhân báo đã chuyển khoản: cứ 30 giây hỏi lại trạng thái hoá đơn.
-  // Tiền về tài khoản có thể chậm, và hoá đơn chỉ chuyển "Đã thanh toán" khi nhân viên
-  // đối chiếu sao kê xác nhận (chưa có webhook ngân hàng) — kiểm tra tối đa 3 lần, lần 3
-  // vẫn chưa có thì dừng và yêu cầu gọi nhân viên hỗ trợ; bấm "Kiểm tra lại" để thử tiếp.
-  const CHECK_EVERY_S = 30;
-  const MAX_CHECKS = 3;
+  // Sau khi bệnh nhân báo đã chuyển khoản: hỏi lại trạng thái hoá đơn — 3 lần đầu cách
+  // nhau 5 giây (nhân viên xác nhận nhanh thì báo thành công ngay), sau đó 30 giây/lần.
+  // Hoá đơn chỉ chuyển "Đã thanh toán" khi nhân viên đối chiếu sao kê xác nhận (chưa có
+  // webhook ngân hàng). Lần 3 vẫn chưa có thì yêu cầu gọi nhân viên hỗ trợ nhưng vẫn tự
+  // kiểm tra tiếp để báo thành công khi được xác nhận; khoảng 10 phút thì dừng hẳn.
+  const QUICK_CHECKS = 3;
+  const QUICK_S = 5;
+  const SLOW_S = 30;
+  const MAX_CHECKS = QUICK_CHECKS + 20;
   const HOTLINE = '0974 755 333';
 
   const hotlineLink = `<a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a>`;
@@ -169,16 +172,22 @@
   function watchPayment(box) {
     const id = box.dataset.invoiceId;
     let checks = 0;
-    let left = CHECK_EVERY_S;
+    const nextDelay = () => (checks < QUICK_CHECKS ? QUICK_S : SLOW_S);
+    let left = nextDelay();
     let timer = null;
     let busy = false;
     let done = false;
     const recheckBtn = `<button type="button" class="pay-recheck" style="margin-top:6px; padding:5px 10px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;">Kiểm tra lại ngay</button>`;
-    const notYet = () => checks === 0 ? '' :
-      `<div style="margin-top:6px; color:var(--accent-deep);">Lần kiểm tra ${checks}/${MAX_CHECKS}: chưa nhận được tiền — ngân hàng có thể chuyển chậm, bạn vui lòng tiếp tục giữ máy.</div>`;
+    const callStaff = `<b>Đã kiểm tra ${QUICK_CHECKS} lần nhưng phòng khám chưa nhận được tiền.</b> Vui lòng gọi nhân viên hỗ trợ qua số ${hotlineLink} để kiểm tra lại thông tin chuyển khoản (nhớ đọc mã hoá đơn).`;
 
     function render() {
-      box.innerHTML = `⏳ <b>Vui lòng giữ máy, chờ xác nhận.</b> Phòng khám đang kiểm tra khoản chuyển của bạn — không cần tải lại hay đóng trang, hệ thống tự kiểm tra lại sau <b>${left}s</b>.${notYet()}${checks > 0 ? recheckBtn : ''}`;
+      if (checks < QUICK_CHECKS) {
+        const notYet = checks === 0 ? '' :
+          `<div style="margin-top:6px; color:var(--accent-deep);">Lần kiểm tra ${checks}/${QUICK_CHECKS}: chưa nhận được tiền — ngân hàng có thể chuyển chậm, bạn vui lòng tiếp tục giữ máy.</div>`;
+        box.innerHTML = `⏳ <b>Vui lòng giữ máy, chờ xác nhận.</b> Phòng khám đang kiểm tra khoản chuyển của bạn — không cần tải lại hay đóng trang, hệ thống tự kiểm tra lại sau <b>${left}s</b>.${notYet}`;
+      } else {
+        box.innerHTML = `${callStaff}<div style="margin-top:6px;">Hệ thống vẫn tự kiểm tra lại sau <b>${left}s</b> — khi nhân viên xác nhận đã nhận tiền, trang sẽ báo thành công.</div>${recheckBtn}`;
+      }
     }
     function stop() {
       clearInterval(timer);
@@ -187,8 +196,8 @@
     async function check() {
       if (busy || done) return;
       busy = true;
-      left = CHECK_EVERY_S;
       checks++;
+      left = nextDelay();
       try {
         const s = await api('/api/billing/invoices/' + id + '/payment-status');
         if (s.status === 'da_thanh_toan') { stop(); showPaid(box, s.paidAt); return; }
@@ -196,7 +205,7 @@
       finally { busy = false; }
       if (checks >= MAX_CHECKS) {
         stop();
-        box.innerHTML = `<b>Đã kiểm tra ${MAX_CHECKS} lần nhưng phòng khám chưa nhận được tiền.</b> Vui lòng gọi nhân viên hỗ trợ qua số ${hotlineLink} để kiểm tra lại thông tin chuyển khoản (nhớ đọc mã hoá đơn).<br>${recheckBtn}`;
+        box.innerHTML = `${callStaff}<div style="margin-top:6px;">Đã dừng tự kiểm tra — bấm nút dưới đây sau khi nhân viên báo đã xác nhận.</div>${recheckBtn}`;
         return;
       }
       render();
@@ -204,7 +213,7 @@
     function start() {
       clearInterval(timer);
       done = false;
-      left = CHECK_EVERY_S;
+      left = nextDelay();
       render();
       timer = setInterval(() => { left--; if (left <= 0) check(); else render(); }, 1000);
     }
