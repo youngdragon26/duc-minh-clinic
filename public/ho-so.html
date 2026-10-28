@@ -149,62 +149,69 @@
 
   // Sau khi bệnh nhân báo đã chuyển khoản: cứ 30 giây hỏi lại trạng thái hoá đơn.
   // Tiền về tài khoản có thể chậm, và hoá đơn chỉ chuyển "Đã thanh toán" khi nhân viên
-  // đối chiếu sao kê xác nhận (chưa có webhook ngân hàng) — nên chờ tối đa 10 phút rồi
-  // dừng, chỉ cách gọi nhân viên kiểm tra; bấm "Kiểm tra lại" để tự kiểm tra tiếp.
+  // đối chiếu sao kê xác nhận (chưa có webhook ngân hàng) — kiểm tra tối đa 3 lần, lần 3
+  // vẫn chưa có thì dừng và yêu cầu gọi nhân viên hỗ trợ; bấm "Kiểm tra lại" để thử tiếp.
   const CHECK_EVERY_S = 30;
-  const MAX_CHECKS = 20;
+  const MAX_CHECKS = 3;
   const HOTLINE = '0974 755 333';
+
+  const hotlineLink = `<a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a>`;
+
+  // Đã nhận tiền: báo thành công, đổi nhãn hoá đơn — từ đây không kiểm tra gì thêm nữa.
+  function showPaid(box, paidAt) {
+    box.innerHTML = `✅ <b>Chuyển khoản thành công.</b> Phòng khám đã nhận được tiền và xác nhận thanh toán lúc ${new Date(paidAt).toLocaleString('vi-VN')}.`;
+    box.closest('.card').querySelectorAll('.pill.chua_thanh_toan').forEach((p) => {
+      p.className = 'pill da_thanh_toan';
+      p.textContent = STATUS_LABELS.da_thanh_toan;
+    });
+  }
 
   function watchPayment(box) {
     const id = box.dataset.invoiceId;
     let checks = 0;
     let left = CHECK_EVERY_S;
     let timer = null;
+    let busy = false;
+    let done = false;
     const recheckBtn = `<button type="button" class="pay-recheck" style="margin-top:6px; padding:5px 10px; border-radius:3px; border:1px solid var(--line); background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink); font-family:inherit;">Kiểm tra lại ngay</button>`;
     const notYet = () => checks === 0 ? '' :
-      `<div style="margin-top:6px; color:var(--accent-deep);">Chưa nhận được xác nhận thanh toán. Ngân hàng có thể chuyển chậm vài phút — nếu bạn đã chuyển mà vẫn chưa thấy, hãy gọi <a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a> để nhân viên kiểm tra lại thông tin chuyển khoản.</div>`;
+      `<div style="margin-top:6px; color:var(--accent-deep);">Lần kiểm tra ${checks}/${MAX_CHECKS}: chưa nhận được tiền — ngân hàng có thể chuyển chậm, bạn vui lòng tiếp tục giữ máy.</div>`;
 
     function render() {
-      box.innerHTML = `⏳ Đang chờ xác nhận chuyển khoản — tự kiểm tra lại sau <b>${left}s</b>.${notYet()}${checks > 0 ? recheckBtn : ''}`;
+      box.innerHTML = `⏳ <b>Vui lòng giữ máy, chờ xác nhận.</b> Phòng khám đang kiểm tra khoản chuyển của bạn — không cần tải lại hay đóng trang, hệ thống tự kiểm tra lại sau <b>${left}s</b>.${notYet()}${checks > 0 ? recheckBtn : ''}`;
     }
-    function stop(html) {
+    function stop() {
       clearInterval(timer);
-      box.innerHTML = html;
+      done = true;
     }
-    let busy = false;
     async function check() {
-      if (busy) return;
+      if (busy || done) return;
       busy = true;
       left = CHECK_EVERY_S;
       checks++;
       try {
         const s = await api('/api/billing/invoices/' + id + '/payment-status');
-        if (s.status === 'da_thanh_toan') {
-          stop(`✅ <b>Chuyển khoản thành công.</b> Hoá đơn đã được xác nhận thanh toán lúc ${new Date(s.paidAt).toLocaleString('vi-VN')}.`);
-          box.closest('.card').querySelectorAll('.pill.chua_thanh_toan').forEach((p) => {
-            p.className = 'pill da_thanh_toan';
-            p.textContent = STATUS_LABELS.da_thanh_toan;
-          });
-          return;
-        }
+        if (s.status === 'da_thanh_toan') { stop(); showPaid(box, s.paidAt); return; }
       } catch (e) { /* lỗi mạng tạm thời — lượt sau thử lại */ }
       finally { busy = false; }
       if (checks >= MAX_CHECKS) {
-        stop(`Đã chờ ${Math.round(MAX_CHECKS * CHECK_EVERY_S / 60)} phút nhưng chưa có xác nhận thanh toán. Vui lòng gọi <a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a> để nhân viên kiểm tra lại thông tin chuyển khoản.${recheckBtn}`);
+        stop();
+        box.innerHTML = `<b>Đã kiểm tra ${MAX_CHECKS} lần nhưng phòng khám chưa nhận được tiền.</b> Vui lòng gọi nhân viên hỗ trợ qua số ${hotlineLink} để kiểm tra lại thông tin chuyển khoản (nhớ đọc mã hoá đơn).<br>${recheckBtn}`;
         return;
       }
       render();
     }
     function start() {
       clearInterval(timer);
+      done = false;
       left = CHECK_EVERY_S;
       render();
       timer = setInterval(() => { left--; if (left <= 0) check(); else render(); }, 1000);
     }
-    box.addEventListener('click', (e) => {
+    box.addEventListener('click', async (e) => {
       if (!e.target.closest('.pay-recheck')) return;
-      if (checks >= MAX_CHECKS) checks = 0;
-      check().then(() => { if (checks > 0 && checks < MAX_CHECKS && !box.textContent.includes('thành công')) start(); });
+      if (done) { checks = 0; start(); }
+      await check();
     });
     start();
   }
@@ -251,12 +258,26 @@
       if (viewBtn) { window.InvoiceSheet.open(invoiceById[viewBtn.dataset.invoiceId]); return; }
       const btn = e.target.closest('.claim-online-paid');
       if (!btn) return;
+      const id = btn.dataset.invoiceId;
       btn.disabled = true;
       btn.textContent = 'Đang xử lý...';
+      const box = document.createElement('div');
+      box.className = 'pay-watch';
+      box.dataset.invoiceId = id;
+      box.style.cssText = 'margin-top:8px; padding:9px 12px; border-radius:3px; border:1px solid var(--line); font-size:.85rem;';
       try {
-        await api('/api/billing/invoices/' + btn.dataset.invoiceId + '/claim-online-payment', { method: 'PATCH' });
-        location.reload();
+        await api('/api/billing/invoices/' + id + '/claim-online-payment', { method: 'PATCH' });
+        btn.replaceWith(box);
+        watchPayment(box);
       } catch (err) {
+        // Nhân viên có thể đã xác nhận thu tiền ngay trước khi bệnh nhân bấm (API báo
+        // "đã được xử lý") — khi đó báo thành công luôn thay vì hiện lỗi.
+        const s = await api('/api/billing/invoices/' + id + '/payment-status').catch(() => null);
+        if (s && s.status === 'da_thanh_toan') {
+          btn.replaceWith(box);
+          showPaid(box, s.paidAt);
+          return;
+        }
         alert(err.message);
         btn.disabled = false;
         btn.textContent = 'Tôi đã chuyển khoản';

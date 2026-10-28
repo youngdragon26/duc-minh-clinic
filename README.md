@@ -7,7 +7,7 @@ Một web Node.js/Express thật, đã triển khai công khai tại **https://d
 - **Đặt lịch khám** (`/dat-lich.html`) — bệnh nhân chọn chuyên khoa/bác sĩ/giờ, xem lịch của mình.
 - **Hàng đợi khám** (`/hang-doi.html`) — nhân viên/bác sĩ/admin xem và cập nhật trạng thái lịch hẹn.
 - **Khám bệnh** (`/kham-benh.html`) — bác sĩ ghi chẩn đoán, kê đơn thuốc, có cảnh báo tương tác thuốc kèm gợi ý thuốc thay thế cùng nhóm, và tóm tắt AI bệnh sử.
-- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn, tự thanh toán hoá đơn chưa trả bằng mã QR chuyển khoản (VietQR). Mã QR chỉ hiện khi admin đã nhập tài khoản nhận tiền ở trang Danh mục thuốc; chưa nhập thì trang báo bệnh nhân thanh toán tại quầy. Sau khi bấm "Tôi đã chuyển khoản", trang tự kiểm tra lại 30 giây/lần (tối đa 10 phút) và báo "Chuyển khoản thành công" ngay khi nhân viên xác nhận; chưa có thì hướng dẫn gọi hotline để nhân viên kiểm tra.
+- **Hồ sơ khám bệnh** (`/ho-so.html`) — bệnh nhân xem lại lịch sử khám + đơn thuốc + hoá đơn, tự thanh toán hoá đơn chưa trả bằng mã QR chuyển khoản (VietQR). Mã QR chỉ hiện khi admin đã nhập tài khoản nhận tiền ở trang Danh mục thuốc; chưa nhập thì trang báo bệnh nhân thanh toán tại quầy. Sau khi bấm "Tôi đã chuyển khoản", trang hiện "Vui lòng giữ máy, chờ xác nhận" và tự kiểm tra lại 30 giây/lần, tối đa 3 lần (không tải lại trang); khi nhân viên xác nhận đã nhận tiền thì báo "Chuyển khoản thành công" và dừng hẳn việc kiểm tra (kể cả khi hoá đơn đã được thu trước lúc bấm); đến lần 3 vẫn chưa có tiền thì dừng và yêu cầu gọi nhân viên hỗ trợ qua hotline (có nút "Kiểm tra lại ngay" để thử thêm 3 lần).
 - **Danh mục thuốc** (`/danh-muc-thuoc.html`) — admin quản lý thuốc (kèm nhóm thuốc/hoạt chất để hệ thống gợi ý thay thế), giá thuốc, quy tắc tương tác, giá khám theo chuyên khoa, và thông tin tài khoản nhận thanh toán QR.
 - **Hoá đơn** (`/hoa-don.html`) — nhân viên/admin lập hoá đơn và xác nhận thu tiền; được nhắc khi bệnh nhân đã báo chuyển khoản qua QR để ưu tiên đối chiếu.
 - **Lịch trực bác sĩ** (`/lich-truc.html`) — admin phân công ca trực/lịch làm việc theo tuần cho từng bác sĩ; trang đặt lịch chỉ mở đúng khung giờ đã phân công (bác sĩ chưa cấu hình thì mặc định làm việc cả ngày như cũ).
@@ -170,7 +170,7 @@ Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 | POST / GET | `/api/billing/invoices` | Lập: nhân viên/admin | Lập hoá đơn cho lịch hẹn đã khám xong |
 | PATCH | `/api/billing/invoices/:id/status` | Nhân viên/admin | Xác nhận đã thu tiền |
 | PATCH | `/api/billing/invoices/:id/claim-online-payment` | Bệnh nhân (chủ hoá đơn) | Báo đã chuyển khoản qua QR — chỉ đánh dấu để nhân viên ưu tiên đối chiếu, KHÔNG tự động xác nhận đã thu tiền |
-| GET | `/api/billing/invoices/:id/payment-status` | Chủ hoá đơn, nhân viên/bác sĩ/admin | Chỉ trả trạng thái thanh toán (không ghi nhật ký) — trang Hồ sơ gọi 30 giây/lần sau khi bệnh nhân báo chuyển khoản: có xác nhận thì báo "Chuyển khoản thành công", chưa có thì hướng dẫn gọi hotline nhờ nhân viên kiểm tra; tự dừng sau 10 phút |
+| GET | `/api/billing/invoices/:id/payment-status` | Chủ hoá đơn, nhân viên/bác sĩ/admin | Chỉ trả trạng thái thanh toán (không ghi nhật ký) — trang Hồ sơ gọi 30 giây/lần sau khi bệnh nhân báo chuyển khoản: có xác nhận thì báo "Chuyển khoản thành công", đến lần 3 vẫn chưa có thì dừng và yêu cầu gọi nhân viên hỗ trợ |
 | POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `GEMINI_API_KEY`) |
 | POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 
