@@ -144,6 +144,8 @@ const ACCENT_PHRASES = {
   'khoa rang': 'khoa răng', 'kham rang': 'khám răng', 'rang ham mat': 'răng hàm mặt', 'da lieu': 'da liễu',
   'tai mui hong': 'tai mũi họng', 'noi tong quat': 'nội tổng quát', 'san phu khoa': 'sản phụ khoa', 'khoa san': 'khoa sản',
   'kham san': 'khám sản', 'khoa noi': 'khoa nội', 'kham noi': 'khám nội', 'ca nguoi': 'cả người', 'toan than': 'toàn thân',
+  // "rang" lẻ: trong ngữ cảnh phòng khám gần như luôn là "răng" ("gia kham rang bao nhieu"); "ro rang" vẫn là "rõ ràng".
+  rang: 'răng', 'ro rang': 'rõ ràng', 'con khong': 'còn không', 'phu khoa': 'phụ khoa', 'kham da': 'khám da',
   ngay: 'ngày', 'hom nay': 'hôm nay', 'ngay mai': 'ngày mai', 'hom qua': 'hôm qua', 'tuan nay': 'tuần này',
   'tuan sau': 'tuần sau', 'tuan toi': 'tuần tới', 'thu hai': 'thứ hai', 'thu ba': 'thứ ba', 'thu tu': 'thứ tư',
   'thu nam': 'thứ năm', 'thu sau': 'thứ sáu', 'thu bay': 'thứ bảy', 'chu nhat': 'chủ nhật', sang: 'sáng', chieu: 'chiều',
@@ -223,18 +225,22 @@ function normalizeMessage(message) {
 // ("đau họng và sốt" → Tai – Mũi – Họng, không phải Nội). Model nhỏ hay gợi ý sai khoa (đã gặp:
 // "đau họng" → "Nhi khoa"), nên phần này tính sẵn rồi đưa vào prompt như dữ kiện.
 const PERSON_RULES = [
-  ['Nhi khoa', words('con (?:tôi|mình|em|nhà tôi|nhà mình)', 'bé', 'cháu', 'trẻ', 'em bé', 'sơ sinh', 'nhi', '\\d{1,2} tháng tuổi')],
+  ['Nhi khoa', words('con (?:tôi|mình|em|nhà tôi|nhà mình)', 'con (?:trai|gái)', 'thằng cu', 'cu (?:nhà|con)', 'đứa (?:nhỏ|bé|con)', 'con nhỏ',
+    'bé', 'cháu', 'trẻ', 'em bé', 'sơ sinh', 'nhi', '\\d{1,2} tháng tuổi')],
   ['Sản phụ khoa', words('mang thai', 'có thai', 'có bầu', 'bầu', 'thai', 'khám thai', 'kinh nguyệt', 'trễ kinh', 'chậm kinh', 'rong kinh', 'đau bụng kinh', 'hành kinh', 'chu kỳ kinh', 'nghén', 'khí hư', 'vùng kín', 'phụ khoa', 'sản khoa', 'sản phụ khoa', 'khoa sản', 'khám sản', 'âm đạo')],
 ];
 const SYMPTOM_RULES = [
   ['Răng – Hàm – Mặt', words('răng', 'nướu', 'nha khoa', 'hôi miệng', '(?:sưng|viêm|chảy máu|tụt) lợi', 'quai hàm', 'hàm (?:trên|dưới)', 'niềng',
-    'nhiệt miệng', 'lở miệng', 'loét miệng', 'lưỡi')],
+    'nhiệt miệng', 'lở miệng', 'loét miệng', 'lưỡi', 'khớp hàm', 'hàm (?:kêu|đau)')],
   ['Tai – Mũi – Họng', words('họng', 'amidan', 'amiđan', 'tai(?! nạn| biến)', 'mũi', 'xoang', 'khàn tiếng', 'mất tiếng', 'chảy máu cam', 'tai mũi họng', 'khó nuốt', 'nuốt (?:đau|vướng)',
-    'điếc', 'nghe kém', 'ngáy')],
+    'điếc', 'nghe kém', 'ngáy', 'hắt hơi')],
   ['Da liễu', words('ngứa', 'mụn', 'mẩn', 'nổi mẩn', 'phát ban', 'mề đay', 'nấm', 'vảy nến', 'chàm', 'rụng tóc', 'lang ben', 'zona', 'dị ứng', 'da liễu', '(?:trên|ngoài|ở) da', 'da (?:mặt|tay|chân|đầu|bị|khô)',
-    'nám', 'sạm da', 'rạn da', 'hôi nách', 'mụn cóc')],
+    'nám', 'sạm da', 'rạn da', 'hôi nách', 'mụn cóc', 'tóc (?:gãy|rụng)', 'khám da', 'khoa da')],
   ['Nội tổng quát', words('sốt', 'ho', 'đau bụng', 'tiêu chảy', 'đau đầu', 'nhức đầu', 'chóng mặt', 'huyết áp', 'tiểu đường', 'đường huyết', 'mỡ máu', 'mệt mỏi', 'dạ dày', 'khó tiêu', 'ợ chua', 'trào ngược', 'thượng vị', 'buồn nôn', 'nôn', 'táo bón', 'cảm cúm', 'cúm', 'bị cảm', 'cảm lạnh', 'khám sức khỏe', 'khám sức khoẻ', 'khám tổng quát', 'nội khoa', 'nội tổng quát', 'khoa nội', 'khám nội', 'tim', 'gan', 'sỏi thận', 'đau thận',
-    'hay quên', 'trí nhớ', 'sụt cân', 'thiếu máu', 'covid', 'cúm a', 'phù (?:chân|mặt|người)', 'đánh trống ngực', 'hồi hộp', 'vàng da', 'phân đen', 'rét run',
+    'hay quên', 'trí nhớ', 'sụt cân', 'thiếu máu', 'covid', 'cúm a',
+    // Cách nói đảo trật tự / dân dã (đo thật vòng 6: "bụng đau", "đau quặn vùng rốn", "đầy bụng" không nhận ra).
+    'bụng (?:đau|chướng)', 'đầu (?:đau|nhức)', 'đau quặn', '(?:quanh|vùng) rốn', 'đầy bụng', 'chướng bụng', 'ợ hơi',
+    'đi ngoài', 'phân lỏng', 'ớn lạnh', 'lúc nóng lúc lạnh', 'khát nước', 'phù (?:chân|mặt|người)', 'đánh trống ngực', 'hồi hộp', 'vàng da', 'phân đen', 'rét run',
     // Phòng khám không có khoa Nam học — Nội tổng quát khám ban đầu.
     'tinh hoàn', 'xuất tinh', 'cương dương',
     // Phòng khám không có khoa Cơ xương khớp, Tiết niệu, Hậu môn – trực tràng — các triệu chứng này
@@ -274,12 +280,13 @@ const mentionsEye = (message) => has(EYE_RE, message);
 // chứng (đo thật: "dịch sang tiếng Anh: tôi bị đau đầu" → model dịch luôn); CHỦ ĐỀ ngoài phạm vi (thời tiết,
 // giá vàng…) chỉ từ chối khi câu không nói gì về sức khỏe ("dị ứng thời tiết" là câu hỏi da liễu).
 const OFF_TOPIC_TASK_RE = words(
-  '(?:làm|viết|sáng tác) (?:\\p{L}+ )?(?:bài )?thơ', 'bài thơ', 'kể (?:\\p{L}+ ){0,4}(?:chuyện|truyện)', 'viết (?:bài )?(?:văn|truyện|email|code)',
-  'code (?:python|java|js)', 'lập trình', 'giải (?:bài )?toán', 'dịch (?:sang|giúp|câu)', 'công thức nấu'
+  '(?:làm|viết|sáng tác) (?:\\p{L}+ )?(?:bài )?thơ', 'bài thơ', 'kể (?:\\p{L}+ ){0,4}(?:chuyện|truyện)',
+  'viết (?:giùm|giúp|hộ|cho)?(?: \\p{L}+)? ?(?:bài|văn|truyện|email|thư|đơn|code)', 'code (?:python|java|js)', 'lập trình',
+  'giải (?:\\p{L}+ )?(?:bài )?(?:toán|phương trình)', 'phương trình', 'dịch (?:sang|giúp|câu)', 'công thức nấu', 'tóm tắt'
 );
 const OFF_TOPIC_SUBJECT_RE = words(
   '(?<!ứng )thời tiết', 'trời (?:có )?(?:mưa|nắng)', 'giá (?:vàng|xăng|dầu|đô|usd|bitcoin|cổ phiếu|chứng khoán)',
-  'bóng đá', 'xổ số', 'lô đề', 'nấu (?:món|ăn)'
+  'bóng đá', 'world cup', 'xổ số', 'lô đề', 'nấu (?:món|ăn)', 'tin tức', 'âm lịch'
 );
 const ARITHMETIC_RE = /\d+\s*(?:[+*×]|nhân|chia|cộng|trừ)\s*\d+/i;
 const detectOffTopicTask = (message) => has(OFF_TOPIC_TASK_RE, message) || ARITHMETIC_RE.test(String(message || ''));
@@ -291,7 +298,9 @@ const CRISIS_RE = words('tự tử', 'tự sát', 'muốn chết', 'không muố
 const detectCrisis = (message) => has(CRISIS_RE, message);
 
 // Hỏi liều thuốc cụ thể — đo thật: model tự đưa liều paracetamol sai ("không quá 4 viên/ngày").
-const DOSE_RE = words('mấy viên', 'bao nhiêu viên', 'liều(?: dùng| lượng)?', 'uống mấy lần', 'uống bao nhiêu', 'mấy gói', 'bao nhiêu ml');
+// Kèm hỏi chọn thuốc ("thuốc giảm đau nào tốt nhất", "mua thuốc gì để hết ngứa") — vòng 6 bị hiểu là than đau.
+const DOSE_RE = words('mấy viên', 'bao nhiêu viên', 'liều(?: dùng| lượng)?', 'uống mấy lần', 'uống bao nhiêu', 'mấy gói', 'bao nhiêu ml',
+  'thuốc (?:\\p{L}+ ){0,3}(?:nào|gì) (?:tốt|hiệu quả|nhanh)', '(?:mua|dùng|uống) thuốc gì', 'thuốc (?:\\p{L}+ ){0,2}loại nào');
 const detectDoseQuestion = (message) => has(DOSE_RE, message);
 
 // Hỏi dữ liệu của chính khách (đơn thuốc, hoá đơn, hồ sơ, lịch hẹn) — chỉ tra được khi đã đăng nhập.
@@ -314,7 +323,7 @@ const detectEnglish = (message) => {
 };
 
 // Hỏi giá: trả về { list: true } (bảng giá / so sánh các khoa) hoặc { discount: 'bhyt'|'sinh_vien'|null } hoặc null.
-const PRICE_RE = /giá|bao nhiêu tiền|hết bao nhiêu|trả bao nhiêu|chi phí|tốn bao nhiêu|đắt|rẻ/;
+const PRICE_RE = /giá|bao nhiêu tiền|hết bao nhiêu|trả bao nhiêu|còn bao nhiêu|chi phí|tốn bao nhiêu|đắt|rẻ|phí khám/;
 function detectPriceQuestion(message) {
   const lower = String(message || '').toLowerCase();
   if (!PRICE_RE.test(lower) || /giá (?:vàng|xăng|dầu|đô|usd)/.test(lower) || /giá thuốc/.test(lower)) return null;
@@ -330,7 +339,8 @@ function detectPriceQuestion(message) {
 function detectFacilityInfo(message) {
   const lower = String(message || '').toLowerCase();
   if (/chỉ đường|đường đi|bản đồ|google map|đến phòng khám (?:thế nào|bằng cách nào)/.test(lower)) return 'address';
-  if (/zalo|fanpage|facebook|email|e-mail|website|liên hệ/.test(lower)) return 'contact';
+  // "viết giùm email xin nghỉ ốm" là nhờ viết hộ (ngoài phạm vi), không phải hỏi email phòng khám.
+  if (/zalo|fanpage|facebook|(?<!viết (?:\p{L}+ )?)email|e-mail|website|liên hệ/u.test(lower)) return 'contact';
   if (/góp ý|khiếu nại|phản ánh|phàn nàn/.test(lower)) return 'feedback';
   if (/gửi xe|đỗ xe|đậu xe|bãi (?:xe|đỗ)|ô tô|thang máy|khuyết tật|xe lăn|atm|trả góp|tuyển dụng|việc làm|hợp tác|căng tin|nhà vệ sinh/.test(lower)) return 'unknown';
   return null;
@@ -342,7 +352,8 @@ const IDENTITY_RE = words(
   '(?:bạn|em|mày) là (?:ai|gì|người hay máy)', 'ai (?:tạo|làm|lập trình|phát triển|viết|xây dựng) ra (?:bạn|em|mày)',
   '(?:bạn|em|mày) do ai', '(?:bạn|em|mày) có phải (?:là )?(?:người|bác sĩ|robot|máy|ai|chatgpt)', '(?:bạn|em) tên (?:là )?gì',
   '(?:bạn|em) (?:có )?thông minh', '(?:bạn|em) (?:dùng|là) (?:chatgpt|gemini|gpt)',
-  '(?:bạn|em) (?:có thể )?(?:giúp|hỗ trợ|làm) (?:được )?(?:gì|những gì)'
+  '(?:bạn|em) (?:có thể )?(?:giúp|hỗ trợ|làm) (?:được )?(?:gì|những gì)', '(?:ai|người nào) đang (?:trả lời|nói chuyện|chat)',
+  '(?:bot|chatbot) (?:này )?là (?:gì|ai)'
 );
 const detectIdentityQuestion = (message) => has(IDENTITY_RE, message);
 
@@ -353,6 +364,10 @@ const OTHER_FACILITY_RE = words(
   'so sánh (?:\\p{L}+ ){0,3}(?:bệnh viện|phòng khám)', 'nên (?:đi )?(?:bệnh viện|viện) nào'
 );
 const detectOtherFacilityQuestion = (message) => has(OTHER_FACILITY_RE, message);
+
+// Hỏi giờ/ngày làm việc chung ("thứ bảy có khám không", "trưa có nghỉ không") — vòng 6 model trả lời mơ hồ.
+const HOURS_RE = /(?:thứ (?:2|3|4|5|6|7|hai|ba|tư|năm|sáu|bảy)|chủ nhật|buổi trưa|trưa|buổi tối|tối|mấy giờ)[^.?!]{0,15}(?:có )?(?:khám|làm việc|làm|mở cửa|nghỉ|đóng cửa)(?: không)?\s*[?!.]*$|giờ (?:làm việc|mở cửa|đóng cửa)/;
+const detectHoursQuestion = (message) => HOURS_RE.test(String(message || '').toLowerCase());
 
 // Hỏi lịch làm việc ngày lễ/Tết — phòng khám chưa cung cấp, đo thật model bịa "vẫn hoạt động bình thường".
 const HOLIDAY_RE = words('tết', 'ngày lễ', 'nghỉ lễ', 'lễ (?:30/4|2/9|quốc khánh)', 'giỗ tổ');
@@ -382,6 +397,9 @@ function detectSpecialty(message) {
 // Đo thật vòng 4: "yếu nửa người" (dấu hiệu đột quỵ) bị model đoán là "mất điện giải".
 const EMERGENCY_RE = words('khó thở', 'đau ngực', 'tức ngực', 'bất tỉnh', 'ngất', 'co giật', 'chảy máu nhiều', 'nôn ra máu', 'ho ra máu',
   'đi ngoài ra máu', 'đau bụng (?:quằn quại|dữ dội)', 'đau đầu dữ dội', 'đột quỵ', 'méo miệng', 'yếu nửa người', 'liệt', 'ngừng thở',
+  // Vòng 6: "nghẹt thở", "ngực đau thắt", "nói ngọng, tay yếu" (đột quỵ), "ngã đập đầu", "ngã không đứng dậy được".
+  'nghẹt thở', 'ngực (?:đau|tức)', 'đau thắt ngực', 'nói ngọng', 'nói khó', '(?:tay|chân) yếu', 'yếu (?:tay|chân)', 'tê nửa người',
+  '(?:đập|va|chấn thương) đầu', 'ngã (?:\\p{L}+ ){0,2}không (?:đứng|dậy)',
   'tím tái', 'lơ mơ', 'vỡ ối', '(?:mang thai|có thai|bầu)(?:[ ,.]+[\\p{L}\\d]+){0,4}[ ,.]+(?:ra máu|ra nước|đau bụng từng cơn|đau bụng dữ dội)');
 
 // Dấu hiệu có thể cấp cứu — trả về các từ khớp (mảng rỗng nếu không có).
@@ -392,7 +410,8 @@ function detectEmergency(message) {
 const WEEKDAY_WORDS = { '2': 1, hai: 1, '3': 2, ba: 2, '4': 3, 'tư': 3, '5': 4, 'năm': 4, '6': 5, 'sáu': 5, '7': 6, 'bảy': 6 };
 // "có chỗ" KHÔNG tính (đo thật: "có chỗ gửi xe không" bị trả lời bằng danh sách lịch trống).
 // "đánh trống ngực" là triệu chứng tim mạch, không phải hỏi lịch trống (đo thật vòng 4).
-const SLOT_INTENT_RE = /(?<!đánh )trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|có (?:lịch|giờ khám|ai khám)|còn khám (?:được )?không|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm|thứ|chủ nhật)|(?:check|kiểm tra|xem) lịch/;
+// Vòng 6: "mai khám nhi được không", "lịch khám nhi mai còn không".
+const SLOT_INTENT_RE = /(?<!đánh )trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|có (?:lịch|giờ khám|ai khám)|còn khám (?:được )?không|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm|thứ|chủ nhật)|(?:check|kiểm tra|xem) lịch|lịch[^.?!]{0,30}(?:còn|có)[^.?!]{0,10}không|(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,20}khám[^.?!]{0,15}được không/;
 // "Lịch của tôi", "tôi đã đặt", "tôi có lịch hẹn nào"… là hỏi lịch hẹn của chính khách (my_appointments), không phải lịch trống.
 const OWN_APPOINTMENT_RE = /lịch(?: hẹn| khám)? của (?:tôi|mình|em)|(?:tôi|mình|em) (?:đã đặt|có lịch)/;
 
@@ -472,6 +491,7 @@ module.exports = {
   detectIdentityQuestion,
   detectOtherFacilityQuestion,
   detectHolidayQuestion,
+  detectHoursQuestion,
   detectCrisis,
   detectDoseQuestion,
   detectOwnDataQuestion,

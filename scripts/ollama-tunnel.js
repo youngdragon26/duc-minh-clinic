@@ -15,6 +15,9 @@ const llm = require('../src/lib/llm');
 const OLLAMA_LOCAL = (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:4b-instruct';
 const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '30m';
+// Phải trùng num_ctx server dùng (lib/llm.js) — khác nhau thì Ollama nạp lại model mỗi lần đổi qua lại: đo thật,
+// lệnh giữ model không có num_ctx làm model về 4096 và lượt chat sau phải chờ nạp lại 7–9 giây.
+const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX) || 8192;
 const REMOTE_SERVER_URL = (process.env.REMOTE_SERVER_URL || 'https://duc-minh-clinic.onrender.com').replace(/\/+$/, '');
 const PROXY_PORT = Number(process.env.OLLAMA_PROXY_PORT) || 11435;
 // Tìm cả ở thư mục cài mặc định của winget: terminal trong VS Code mở từ trước khi cài vẫn giữ PATH cũ.
@@ -60,7 +63,7 @@ async function warmModel() {
     await fetch(OLLAMA_LOCAL + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: OLLAMA_MODEL, messages: [], keep_alive: OLLAMA_KEEP_ALIVE }),
+      body: JSON.stringify({ model: OLLAMA_MODEL, messages: [], keep_alive: OLLAMA_KEEP_ALIVE, options: { num_ctx: OLLAMA_NUM_CTX } }),
       signal: AbortSignal.timeout(120000),
     });
   } catch (e) {

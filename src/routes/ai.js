@@ -23,6 +23,7 @@ const {
   detectIdentityQuestion,
   detectOtherFacilityQuestion,
   detectHolidayQuestion,
+  detectHoursQuestion,
   detectCrisis,
   detectDoseQuestion,
   detectOwnDataQuestion,
@@ -571,7 +572,10 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
     // Câu gần như trùng 1 câu mẫu admin đã soạn → trả nguyên câu mẫu. Tin quá ngắn ("ok") phụ thuộc ngữ cảnh nên bỏ qua.
     const topExample = examples[0];
-    if (shortcutOk && !slotQuery && topExample && topExample.direct && msg.split(/\s+/).length >= 3) {
+    // Chỉ khi câu mẫu cùng chuyên khoa với câu hỏi — đo thật vòng 6: "đau đầu quá" khớp chữ với câu mẫu "đau quá"
+    // nên bị hỏi lại "đau ở đâu" dù khách đã nói rõ.
+    const sameSpecialty = (detectSpecialty(topExample ? topExample.question : '') || {}).specialty === (suggested || {}).specialty;
+    if (shortcutOk && !slotQuery && topExample && topExample.direct && sameSpecialty && msg.split(/\s+/).length >= 3) {
       return reply(topExample.answer);
     }
     // Khách chưa đăng nhập hỏi hoá đơn/đơn thuốc/lịch hẹn CỦA HỌ — model từng bịa "bạn chưa thanh toán".
@@ -616,6 +620,11 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
     // Hỏi giá — số liệu từ CSDL, giảm giá tính sẵn. Câu hỏi "giá đã gồm xét nghiệm/thuốc chưa", "trả góp" để quy trình chính.
     const price = detectPriceQuestion(msg);
+    // "vậy còn bao nhiêu" sau "sinh viên có giảm không" — lấy loại giảm giá khách vừa nhắc (đo thật vòng 6).
+    if (price && !price.list && !price.policy && !price.discount) {
+      const said = turns.filter((t) => t.role === 'user').slice(-4).map((t) => t.content.toLowerCase()).join(' ');
+      price.discount = /bhyt|bảo hiểm/.test(said) ? 'bhyt' : /sinh viên/.test(said) ? 'sinh_vien' : null;
+    }
     if (shortcutOk && !slotQuery && price && !/gồm|xét nghiệm|trả góp|giá thuốc/i.test(msg)) {
       return reply(priceReply(clinic, price, suggested ? suggested.specialty : specialtyFromConversation(msg, turns)));
     }
@@ -633,6 +642,10 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     // Hỏi trợ lý là ai — model bịa "được tạo ra bởi đội ngũ kỹ thuật" kể cả khi có câu mẫu.
     if (plainQuestion && detectIdentityQuestion(msg)) {
       return reply('Mình là trợ lý ảo (AI) của Phòng khám Đa khoa Đức Minh, giúp bạn tìm chuyên khoa phù hợp, xem giờ làm việc, lịch trống và đặt lịch khám. Mình không phải bác sĩ nên không thay được việc thăm khám trực tiếp.');
+    }
+    // Giờ/ngày làm việc chung — khung khám liên tục 07:00–20:30 (FIXED_SLOTS), không nghỉ trưa trong lịch đặt.
+    if (plainQuestion && detectHoursQuestion(msg) && !detectHolidayQuestion(msg)) {
+      return reply('Phòng khám làm việc 7:00–21:00 từ Thứ 2 đến Thứ 7, nhận khám liên tục cả buổi trưa (khung giờ khám muộn nhất 20:30). Chủ nhật không khám thường xuyên — chỉ khám theo hẹn trước với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 tuần đó và cần bác sĩ đồng ý.');
     }
     // Lịch ngày lễ/Tết — phòng khám chưa công bố, model bịa "vẫn hoạt động bình thường".
     if (plainQuestion && detectHolidayQuestion(msg)) {
