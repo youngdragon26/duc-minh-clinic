@@ -15,32 +15,41 @@ const FIXED_SLOTS = Array.from({ length: 28 }, (_, i) => {
 // excludeAppointmentId: khi đang SỬA 1 lịch hẹn, bỏ qua chính lịch hẹn đó khỏi
 // danh sách "đã đặt" — nếu không, khung giờ hiện tại của lịch hẹn sẽ bị coi là
 // hết chỗ ngay trên chính lưới dùng để sửa nó.
+//
+// Lịch "không chọn bác sĩ cụ thể" (doctor_id NULL) vẫn chiếm 1 bác sĩ của chuyên
+// khoa ở khung giờ đó (bác sĩ nhận ca lúc khám) — nên 1 khung giờ chỉ còn chỗ khi
+// số bác sĩ rảnh > số lịch chưa gắn bác sĩ. Thiếu bước này thì đặt được vô hạn lịch
+// không chọn bác sĩ vào cùng 1 giờ, và lịch đặt đích danh bác sĩ có thể "cướp" mất
+// bác sĩ duy nhất mà lịch chưa gắn bác sĩ đang trông vào.
 async function getAvailableSlots({ specialty, date, doctorId = null, excludeAppointmentId = null }) {
-  const params = [specialty];
   // Bác sĩ specialty = NULL là "bác sĩ tổng quát", phụ trách được mọi chuyên khoa.
-  let doctorSql = "SELECT id, name FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL)";
-  if (doctorId) {
-    params.push(doctorId);
-    doctorSql += ` AND id = $${params.length}`;
-  }
-  doctorSql += ' ORDER BY name';
-  const doctorsRes = await pool.query(doctorSql, params);
+  // Luôn lấy cả nhóm bác sĩ của chuyên khoa (kể cả khi hỏi 1 bác sĩ) để tính sức chứa.
+  const doctorsRes = await pool.query(
+    "SELECT id, name FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL) ORDER BY name",
+    [specialty]
+  );
 
   if (doctorsRes.rows.length === 0) {
     return { doctors: [], slots: FIXED_SLOTS.map((time) => ({ time, available: false })) };
   }
 
   const doctorIds = doctorsRes.rows.map((d) => d.id);
-  const bookedParams = [date, doctorIds];
+  const bookedParams = [date, doctorIds, specialty];
   let bookedSql = `SELECT doctor_id, appointment_time FROM appointments
-     WHERE appointment_date = $1 AND status <> 'da_huy' AND doctor_id = ANY($2::int[])`;
+     WHERE appointment_date = $1 AND status <> 'da_huy'
+       AND (doctor_id = ANY($2::int[]) OR (doctor_id IS NULL AND specialty = $3))`;
   if (excludeAppointmentId) {
     bookedParams.push(excludeAppointmentId);
     bookedSql += ` AND id <> $${bookedParams.length}`;
   }
   const bookedRes = await pool.query(bookedSql, bookedParams);
   const bookedByDoctor = {};
+  const unassignedAt = {};
   for (const row of bookedRes.rows) {
+    if (row.doctor_id === null) {
+      unassignedAt[row.appointment_time] = (unassignedAt[row.appointment_time] || 0) + 1;
+      continue;
+    }
     if (!bookedByDoctor[row.doctor_id]) bookedByDoctor[row.doctor_id] = new Set();
     bookedByDoctor[row.doctor_id].add(row.appointment_time);
   }
@@ -62,7 +71,7 @@ async function getAvailableSlots({ specialty, date, doctorId = null, excludeAppo
   // UTC 00:00 để không lệch thứ theo múi giờ máy chủ.
   const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
 
-  const doctors = doctorsRes.rows.map((d) => {
+  const team = doctorsRes.rows.map((d) => {
     const booked = bookedByDoctor[d.id] || new Set();
     const allShifts = shiftsByDoctor[d.id] || [];
     const allowedSlots = allShifts.length === 0
@@ -71,6 +80,11 @@ async function getAvailableSlots({ specialty, date, doctorId = null, excludeAppo
           && time >= String(s.start_time).slice(0, 5) && time < String(s.end_time).slice(0, 5)));
     return { doctorId: d.id, doctorName: d.name, freeSlots: allowedSlots.filter((s) => !booked.has(s)) };
   });
+  // Còn chỗ khi số bác sĩ rảnh lúc đó nhiều hơn số lịch chưa gắn bác sĩ đang chờ nhận ca.
+  const hasRoom = (time) => team.filter((d) => d.freeSlots.includes(time)).length > (unassignedAt[time] || 0);
+  const doctors = team
+    .filter((d) => !doctorId || d.doctorId === Number(doctorId))
+    .map((d) => ({ ...d, freeSlots: d.freeSlots.filter(hasRoom) }));
 
   const slots = FIXED_SLOTS.map((time) => ({
     time,
@@ -92,4 +106,11 @@ async function isDoctorWorkingAt(doctorId, date, time) {
     && time >= String(s.start_time).slice(0, 5) && time < String(s.end_time).slice(0, 5));
 }
 
-module.exports = { getAvailableSlots, FIXED_SLOTS, isDoctorWorkingAt };
+// Khung giờ còn nhận thêm 1 lịch không (đúng theo quy tắc sức chứa ở getAvailableSlots) —
+// dùng ở BƯỚC ĐẶT/SỬA LỊCH THẬT, vì lịch không chọn bác sĩ không có ràng buộc trùng ở CSDL.
+async function isSlotOpen({ specialty, date, time, doctorId = null, excludeAppointmentId = null }) {
+  const { slots } = await getAvailableSlots({ specialty, date, doctorId, excludeAppointmentId });
+  return slots.some((s) => s.time === time && s.available);
+}
+
+module.exports = { getAvailableSlots, FIXED_SLOTS, isDoctorWorkingAt, isSlotOpen };

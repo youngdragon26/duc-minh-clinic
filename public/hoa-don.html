@@ -106,6 +106,9 @@
 <script src="/invoice-sheet.js"></script>
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   const token = localStorage.getItem('dm_token');
   const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
   const PAYMENT_METHOD_LABELS = { tien_mat: 'Tiền mặt', chuyen_khoan: 'Chuyển khoản' };
@@ -133,7 +136,7 @@
       <tr>
         <td>${a.date.slice(0, 10)}</td>
         <td>${a.time}</td>
-        <td>${a.patientName}</td>
+        <td>${esc(a.patientName)}</td>
         <td>${a.specialty}</td>
         <td>${DISCOUNT_LABELS[a.discountCategory] || '—'}</td>
         <td><button class="ghost create-invoice" data-id="${a.id}">Lập hoá đơn</button></td>
@@ -161,7 +164,7 @@
     body.innerHTML = invoices.map(inv => `
       <tr class="inv-row" data-id="${inv.id}" tabindex="0" title="Bấm để xem chi tiết hoá đơn">
         <td>${inv.date.slice(0, 10)}</td>
-        <td>${inv.patientName}</td>
+        <td>${esc(inv.patientName)}</td>
         <td>${inv.specialty}</td>
         <td class="money">${money(inv.totalAmount)}</td>
         <td><span class="pill ${inv.status}">${STATUS_LABELS[inv.status]}</span>${inv.onlinePaymentClaimedAt ? `<div style="color:var(--accent-deep); font-size:.76rem; margin-top:3px;">🔔 BN báo đã CK lúc ${new Date(inv.onlinePaymentClaimedAt).toLocaleString('vi-VN')}</div>` : ''}</td>

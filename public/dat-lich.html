@@ -350,11 +350,20 @@
     viewDoctorBioBtn.hidden = !fDoctor.value || !doc;
   }
 
+  // Lúc mở trang và mỗi lần đổi chuyên khoa đều tải lại danh sách bác sĩ — 2 lượt tải có
+  // thể chạy chồng nhau. Bỏ kết quả của lượt cũ, và giữ bác sĩ người dùng đã chọn nếu vẫn
+  // còn trong danh sách mới; nếu không, lượt tải về sau sẽ vẽ lại ô chọn và âm thầm đổi
+  // lịch thành "không chọn bác sĩ cụ thể".
+  let doctorsLoadSeq = 0;
   async function loadDoctors() {
+    const seq = ++doctorsLoadSeq;
     const { doctors } = await api('/api/appointments/doctors?specialty=' + encodeURIComponent(fSpecialty.value));
+    if (seq !== doctorsLoadSeq) return;
+    const keep = fDoctor.value;
     doctorsList = doctors;
     fDoctor.innerHTML = '<option value="">Không chọn bác sĩ cụ thể</option>' +
       doctors.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    if (keep && doctors.some(d => String(d.id) === keep)) fDoctor.value = keep;
     syncDoctorBioButton();
   }
 

@@ -2,8 +2,11 @@ const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { logAudit } = require('../lib/audit');
+const { intParam } = require('../middleware/params');
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 router.use(authenticate);
 
 const TIME_RE = /^\d{2}:\d{2}$/;

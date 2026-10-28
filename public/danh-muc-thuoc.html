@@ -209,6 +209,9 @@
 
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   const token = localStorage.getItem('dm_token');
   const SEVERITY_LABELS = { nhe: 'Nhẹ', trung_binh: 'Trung bình', nghiem_trong: 'Nghiêm trọng' };
 
@@ -236,10 +239,10 @@
     document.getElementById('medEmpty').hidden = list.length > 0;
     body.innerHTML = list.map(m => `
       <tr>
-        <td>${m.name}</td>
-        <td>${m.unit}</td>
+        <td>${esc(m.name)}</td>
+        <td>${esc(m.unit)}</td>
         <td><input type="number" class="med-price" data-id="${m.id}" min="0" step="1000" value="${m.price}" style="width:110px;"></td>
-        <td><input type="text" class="med-group" data-id="${m.id}" value="${m.groupName || ''}" placeholder="—" style="min-width:180px;"></td>
+        <td><input type="text" class="med-group" data-id="${m.id}" value="${esc(m.groupName || '')}" placeholder="—" style="min-width:180px;"></td>
         <td><button class="ghost del-med" data-id="${m.id}">Xoá</button></td>
       </tr>
     `).join('');
@@ -268,7 +271,7 @@
       });
     });
 
-    const opts = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    const opts = list.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
     document.getElementById('medA').innerHTML = opts;
     document.getElementById('medB').innerHTML = opts;
   }
@@ -282,7 +285,7 @@
         <td>${i.medicineAName}</td>
         <td>${i.medicineBName}</td>
         <td><span class="pill ${i.severity}">${SEVERITY_LABELS[i.severity]}</span></td>
-        <td>${i.description}</td>
+        <td>${esc(i.description)}</td>
         <td><button class="ghost del-int" data-id="${i.id}">Xoá</button></td>
       </tr>
     `).join('');
@@ -443,11 +446,9 @@
       document.getElementById('noAccessCard').hidden = false; return;
     }
     document.getElementById('content').hidden = false;
+    // Danh sách thuốc cần có trước (ô chọn cặp tương tác dùng nó); phần còn lại độc lập, tải song song.
     await loadMedicines();
-    await loadInteractions();
-    await loadServicePrices();
-    await loadDiscountRates();
-    await loadBankAccount();
+    await Promise.all([loadInteractions(), loadServicePrices(), loadDiscountRates(), loadBankAccount()]);
   })();
 </script>
 </body>

@@ -5,8 +5,11 @@ const { SPECIALTIES, APPOINTMENT_STATUSES } = require('../constants');
 const { createAppointment, updateAppointment, BookingError } = require('../lib/appointmentService');
 const { getAvailableSlots } = require('../lib/availability');
 const { logAudit } = require('../lib/audit');
+const { intParam } = require('../middleware/params');
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 

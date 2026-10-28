@@ -69,7 +69,17 @@ entry points. When changing booking validation, change it once in `appointmentSe
 
 Similarly `src/lib/availability.js` (`getAvailableSlots`, `FIXED_SLOTS` = every 30 min, 07:00–20:30) is the
 single source of truth for open slots, used by both the booking calendar and the AI's `check_available_slots`
-tool.
+tool. Appointments booked without a specific doctor (`doctor_id` NULL) still consume one doctor of that
+specialty at that time: a slot is open only while free doctors > unassigned appointments. The DB unique index
+only covers assigned appointments, so `createAppointment`/`updateAppointment` re-check with `isSlotOpen()`
+before writing — keep that check when touching booking.
+
+URL ids (`:id`, `:appointmentId`) are validated by `router.param(..., intParam)` (`src/middleware/params.js`) on
+every router — a non-numeric id returns 404 instead of a Postgres type error 500. Register it on new routers too.
+
+Frontend rule: any user- or AI-supplied text interpolated into `innerHTML` must go through the page's `esc()`
+(patient names are self-chosen at registration and render on staff/admin pages — stored XSS otherwise). AI replies
+use `setChatText()` from `chat-format.js`.
 
 ### Billing & discounts
 

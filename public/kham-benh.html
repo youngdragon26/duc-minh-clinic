@@ -130,8 +130,12 @@
   </div>
 </div>
 
+<script src="/chat-format.js"></script>
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   const token = localStorage.getItem('dm_token');
   const params = new URLSearchParams(location.search);
   const appointmentId = params.get('appointmentId');
@@ -160,7 +164,7 @@
   const medRows = document.getElementById('medRows');
 
   function medOptions() {
-    return medicines.map(m => `<option value="${m.id}">${m.name} (${m.unit})</option>`).join('');
+    return medicines.map(m => `<option value="${m.id}">${esc(m.name)} (${esc(m.unit)})</option>`).join('');
   }
 
 function addMedRow() {
@@ -221,7 +225,7 @@ function addMedRow() {
       }
       box.innerHTML = substitutes.map(s => `
         <button type="button" class="ghost pick-sub" data-id="${s.id}" style="margin:2px 4px 2px 0; ${s.safe ? '' : 'border-color:var(--err); color:var(--err);'}">
-          ${s.name} (${s.unit})${s.safe ? '' : ' ⚠ vẫn tương tác với thuốc khác trong đơn'}
+          ${esc(s.name)} (${esc(s.unit)})${s.safe ? '' : ' ⚠ vẫn tương tác với thuốc khác trong đơn'}
         </button>
       `).join('');
       box.querySelectorAll('.pick-sub').forEach(btn => {
@@ -249,7 +253,7 @@ function addMedRow() {
     if (!substitutes || substitutes.length === 0) return '';
     return '<div style="margin-top:4px;">Có thể thay bằng: ' + substitutes.map(s => `
       <button type="button" class="ghost pick-sub-warn" data-old="${medicineId}" data-new="${s.id}" style="margin:2px 4px 0 0; ${s.safe ? '' : 'border-color:var(--err); color:var(--err);'}">
-        ${s.name}${s.safe ? '' : ' ⚠ vẫn tương tác'}
+        ${esc(s.name)}${s.safe ? '' : ' ⚠ vẫn tương tác'}
       </button>
     `).join('') + '</div>';
   }
@@ -268,7 +272,7 @@ function addMedRow() {
       warnBox.innerHTML = '<b>⚠ Cảnh báo tương tác thuốc trong đơn:</b>' + warnings.map(w => `
         <div style="margin-top:6px;">
           <span class="pill ${w.severity}">${SEVERITY_LABELS[w.severity]}</span>
-          <b>${w.medicineAName}</b> + <b>${w.medicineBName}</b>: ${w.description}
+          <b>${w.medicineAName}</b> + <b>${w.medicineBName}</b>: ${esc(w.description)}
           ${substituteButtons(w.medicineAId, w.substitutesA)}
           ${substituteButtons(w.medicineBId, w.substitutesB)}
         </div>
@@ -363,7 +367,9 @@ function addMedRow() {
           method: 'POST',
           body: JSON.stringify({ patientId: appt.patientId }),
         });
-        box.innerHTML = '<b>✨ Tóm tắt AI bệnh sử:</b><div style="white-space:pre-wrap; margin-top:6px;">' + summary + '</div>';
+        // Nội dung do AI sinh: escape + hiển thị chữ đậm/gạch đầu dòng qua chat-format.js (không chèn thẳng HTML).
+        box.innerHTML = '<b>✨ Tóm tắt AI bệnh sử:</b><div style="white-space:pre-wrap; margin-top:6px;"></div>';
+        setChatText(box.lastElementChild, summary);
       } catch (e) {
         box.innerHTML = e.message;
       } finally {
@@ -380,7 +386,7 @@ function addMedRow() {
       document.getElementById('doneCard').hidden = false;
       document.getElementById('doneDiagnosis').textContent = 'Chẩn đoán: ' + record.diagnosis;
       document.getElementById('donePrescription').innerHTML = record.items.length
-        ? '<b>Đơn thuốc:</b><ul>' + record.items.map(it => `<li>${it.medicineName} — ${it.dosage} (SL: ${it.quantity} ${it.unit})</li>`).join('') + '</ul>'
+        ? '<b>Đơn thuốc:</b><ul>' + record.items.map(it => `<li>${esc(it.medicineName)} — ${esc(it.dosage)} (SL: ${it.quantity} ${esc(it.unit)})</li>`).join('') + '</ul>'
         : '<p class="sub" style="margin:8px 0 0;">Không kê đơn thuốc.</p>';
       const printRx = document.getElementById('printRx');
       printRx.href = '/in.html?type=dt&id=' + record.id;

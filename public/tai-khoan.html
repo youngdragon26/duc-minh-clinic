@@ -174,6 +174,9 @@
 
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   let token = localStorage.getItem('dm_token') || null;
   let me = null;
 
@@ -271,9 +274,9 @@
     const body = document.getElementById('usersBody');
     body.innerHTML = users.map(u => `
       <tr data-id="${u.id}">
-        <td>${u.name}</td>
-        <td>${u.email}</td>
-        <td>${u.phone || '—'}</td>
+        <td>${esc(u.name)}</td>
+        <td>${esc(u.email)}</td>
+        <td>${esc(u.phone || '—')}</td>
         <td><span class="pill ${u.role}">${roleLabel(u.role)}</span></td>
         <td>${u.isActive === false ? '<span class="pill locked">Đã khoá</span>' : '<span class="pill patient">Hoạt động</span>'}</td>
         <td>${u.specialty || '—'}</td>

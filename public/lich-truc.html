@@ -94,6 +94,9 @@
 
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   const token = localStorage.getItem('dm_token');
 
   async function api(path, opts = {}) {
@@ -189,7 +192,7 @@
     doctors = users.filter((u) => u.role === 'doctor');
     const select = document.getElementById('doctorSelect');
     select.innerHTML = doctors.length
-      ? doctors.map((d) => `<option value="${d.id}">${d.name}${d.specialty ? ' — ' + d.specialty : ''}</option>`).join('')
+      ? doctors.map((d) => `<option value="${d.id}">${esc(d.name)}${d.specialty ? ' — ' + d.specialty : ''}</option>`).join('')
       : '<option value="">Chưa có bác sĩ nào</option>';
     select.addEventListener('change', loadShifts);
     await loadShifts();

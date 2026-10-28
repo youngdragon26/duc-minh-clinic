@@ -1,6 +1,8 @@
 const { pool } = require('../db');
 const { SPECIALTIES, GENDERS, DISCOUNT_CATEGORIES } = require('../constants');
-const { FIXED_SLOTS, isDoctorWorkingAt } = require('./availability');
+const { FIXED_SLOTS, isDoctorWorkingAt, isSlotOpen } = require('./availability');
+
+const SLOT_FULL_MESSAGE = 'Khung giờ này đã kín lịch, vui lòng chọn giờ khác.';
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 // Chỉ sửa/huỷ được lịch hẹn khi chưa bắt đầu khám — tránh sửa "sau lưng" 1 buổi
@@ -112,6 +114,9 @@ async function createAppointment({ patientId, specialty, doctorId, date, time, n
   if (doctorIdNum && !(await isDoctorWorkingAt(doctorIdNum, date, time))) {
     throw new BookingError('Bác sĩ không có ca trực vào khung giờ này, vui lòng chọn giờ khác trong lịch làm việc của bác sĩ.');
   }
+  if (!(await isSlotOpen({ specialty, date, time, doctorId: doctorIdNum }))) {
+    throw new BookingError(SLOT_FULL_MESSAGE, 409);
+  }
 
   try {
     const inserted = await pool.query(
@@ -158,6 +163,9 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
   // bệnh nhân tự sửa lịch của mình vẫn phải theo đúng ca trực như lúc đặt mới.
   if (!isStaffLike && doctorIdNum && !(await isDoctorWorkingAt(doctorIdNum, date, time))) {
     throw new BookingError('Bác sĩ không có ca trực vào khung giờ này, vui lòng chọn giờ khác trong lịch làm việc của bác sĩ.');
+  }
+  if (!isStaffLike && !(await isSlotOpen({ specialty: appt.specialty, date, time, doctorId: doctorIdNum, excludeAppointmentId: id }))) {
+    throw new BookingError(SLOT_FULL_MESSAGE, 409);
   }
 
   try {

@@ -3,8 +3,11 @@ const { pool } = require('../db');
 const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
 const { logAudit } = require('../lib/audit');
 const { SPECIALTIES, INVOICE_STATUSES, PAYMENT_METHODS, DISCOUNT_CATEGORIES, DISCOUNT_CATEGORY_LABELS } = require('../constants');
+const { intParam } = require('../middleware/params');
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 router.use(authenticate);
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];

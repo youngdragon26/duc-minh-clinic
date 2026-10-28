@@ -4,8 +4,11 @@ const { pool, ROLES } = require('../db');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { SPECIALTIES } = require('../constants');
 const { logAudit, ACTION_LABELS } = require('../lib/audit');
+const { intParam } = require('../middleware/params');
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 router.use(authenticate, requireAdmin);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

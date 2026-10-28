@@ -2,8 +2,11 @@ const express = require('express');
 const { pool } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { logAudit } = require('../lib/audit');
+const { intParam } = require('../middleware/params');
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 router.use(authenticate);
 
 const TODAY_VN = "(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date";

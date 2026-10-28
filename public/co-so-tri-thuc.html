@@ -109,6 +109,9 @@
 
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   const token = localStorage.getItem('dm_token');
 
   async function api(path, opts = {}) {
@@ -129,7 +132,7 @@
       <div class="doc">
         <div class="doc-head">
           <div>
-            <b>${d.title}</b>
+            <b>${esc(d.title)}</b>
             <div class="doc-meta">${d.chunkCount} đoạn · thêm ngày ${new Date(d.createdAt).toLocaleDateString('vi-VN')}</div>
           </div>
           <button class="ghost del-doc" data-id="${d.id}">Xoá</button>

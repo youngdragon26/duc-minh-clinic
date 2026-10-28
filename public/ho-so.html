@@ -75,6 +75,9 @@
 <script src="/invoice-sheet.js"></script>
 <script>
   const API = '';
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
   const token = localStorage.getItem('dm_token');
 
   const STATUS_LABELS = { chua_thanh_toan: 'Chưa thanh toán', da_thanh_toan: 'Đã thanh toán' };
@@ -245,15 +248,15 @@
       <div class="card">
         <div class="record-head">
           <b>${r.specialty}</b>
-          <span>${new Date(r.date).toLocaleDateString('vi-VN')} · BS. ${r.doctorName}</span>
+          <span>${new Date(r.date).toLocaleDateString('vi-VN')} · BS. ${esc(r.doctorName)}</span>
         </div>
-        ${r.symptoms ? `<div class="field"><b>Triệu chứng</b>${r.symptoms}</div>` : ''}
-        <div class="field"><b>Chẩn đoán</b>${r.diagnosis}</div>
-        ${r.notes ? `<div class="field"><b>Ghi chú</b>${r.notes}</div>` : ''}
+        ${r.symptoms ? `<div class="field"><b>Triệu chứng</b>${esc(r.symptoms)}</div>` : ''}
+        <div class="field"><b>Chẩn đoán</b>${esc(r.diagnosis)}</div>
+        ${r.notes ? `<div class="field"><b>Ghi chú</b>${esc(r.notes)}</div>` : ''}
         <div class="field">
           <b>Đơn thuốc ${r.code} · <a href="/in.html?type=dt&id=${r.id}" target="_blank" style="font-weight:500;">🖨 In đơn thuốc</a></b>
           ${r.items.length
-            ? `<ul class="rx">${r.items.map(it => `<li>${it.medicineName} — ${it.dosage} (SL: ${it.quantity} ${it.unit})</li>`).join('')}</ul>`
+            ? `<ul class="rx">${r.items.map(it => `<li>${esc(it.medicineName)} — ${esc(it.dosage)} (SL: ${it.quantity} ${esc(it.unit)})</li>`).join('')}</ul>`
             : 'Không kê đơn thuốc.'}
         </div>
         ${await invoiceHtml(r.appointmentId)}

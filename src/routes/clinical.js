@@ -3,8 +3,11 @@ const { pool } = require('../db');
 const { authenticate, requireAdmin, requireRole } = require('../middleware/auth');
 const { INTERACTION_SEVERITIES } = require('../constants');
 const { logAudit } = require('../lib/audit');
+const { intParam } = require('../middleware/params');
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 router.use(authenticate);
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];

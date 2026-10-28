@@ -10,6 +10,7 @@ const { toolsForRole, runTool } = require('../lib/assistantTools');
 const { analyzeMessage, isBlankMessage, upcomingDaysNote } = require('../lib/chatAnalysis');
 const { logAudit } = require('../lib/audit');
 const llm = require('../lib/llm');
+const { intParam } = require('../middleware/params');
 const { withRetry, aiErrorResponse } = llm;
 
 // Công cụ tra cứu dữ liệu CỦA CHÍNH bệnh nhân — dùng ngay trong khung chat chính khi bệnh nhân
@@ -43,6 +44,8 @@ async function persistTurn(userId, conversationId, userText, replyText, channel 
 }
 
 const router = express.Router();
+router.param('id', intParam);
+router.param('appointmentId', intParam);
 
 // Ngữ cảnh "RAG" lấy trực tiếp từ CSDL thật của phòng khám (giá khám, bác sĩ đang
 // có theo từng chuyên khoa) — không bịa thêm kiến thức y khoa bên ngoài.
