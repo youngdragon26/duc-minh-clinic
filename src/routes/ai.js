@@ -130,21 +130,37 @@ const formatVnd = (n) => n.toLocaleString('vi-VN') + 'đ';
 // Hỏi lịch làm việc của 1 bác sĩ có tên trong tin — đọc bảng ca trực (doctor_shifts). Không có ca nào nghĩa là
 // khám theo giờ chung (cùng quy ước với getAvailableSlots). Đo thật vòng 5: model trả lời vô nghĩa.
 const DOCTOR_SCHEDULE_RE = /thứ mấy|lịch làm|ca trực|làm (?:việc )?(?:vào )?(?:ngày|hôm|thứ) nào|khám (?:vào )?(?:ngày|hôm|thứ) (?:nào|mấy)|(?:có )?khám (?:thứ|chủ nhật|hôm)/i;
-async function doctorScheduleReply(clinic, msg) {
+const plainName = (d) => d.name.replace(/^BS\.\s*/i, '').toLowerCase();
+// "bác sĩ đó/ấy" → các bác sĩ có tên trong câu trả lời ngay trước (vòng 7: "bác sĩ đó có khám chủ nhật không" bị trả
+// lời sai "không khám chủ nhật").
+async function doctorScheduleReply(clinic, msg, lastAssistantText) {
   if (!DOCTOR_SCHEDULE_RE.test(msg)) return null;
   const lower = msg.toLowerCase();
-  const doctor = clinic.doctors.find((d) => lower.includes(d.name.replace(/^BS\.\s*/i, '').toLowerCase()));
-  if (!doctor) return null;
-  const shifts = (await pool.query(
-    "SELECT weekday, to_char(start_time, 'HH24:MI') AS s, to_char(end_time, 'HH24:MI') AS e FROM doctor_shifts WHERE doctor_id = $1 ORDER BY weekday, start_time",
-    [doctor.id]
-  )).rows;
-  const role = doctor.specialty ? `bác sĩ chuyên khoa ${doctor.specialty}` : 'bác sĩ tổng quát, khám được mọi chuyên khoa';
-  if (!shifts.length) {
-    return `${doctor.name} (${role}) khám theo giờ chung của phòng khám: 7:00–21:00 từ Thứ 2 đến Thứ 7; Chủ nhật chỉ khám theo hẹn trước và cần bác sĩ đồng ý. Bạn hỏi mình lịch trống theo ngày để xem giờ còn trống nhé.`;
+  let doctors = clinic.doctors.filter((d) => lower.includes(plainName(d)));
+  if (!doctors.length && /(?:bác sĩ|bs) (?:đó|ấy|này)/i.test(msg)) {
+    doctors = clinic.doctors.filter((d) => lastAssistantText.toLowerCase().includes(plainName(d)));
   }
+  if (!doctors.length) return null;
   const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-  return [`${doctor.name} (${role}) có ca trực:`, ...shifts.map((x) => `- ${days[x.weekday]}: ${x.s}–${x.e}`)].join('\n');
+  const lines = [];
+  for (const doctor of doctors) {
+    const shifts = (await pool.query(
+      "SELECT weekday, to_char(start_time, 'HH24:MI') AS s, to_char(end_time, 'HH24:MI') AS e FROM doctor_shifts WHERE doctor_id = $1 ORDER BY weekday, start_time",
+      [doctor.id]
+    )).rows;
+    const role = doctor.specialty ? `bác sĩ chuyên khoa ${doctor.specialty}` : 'bác sĩ tổng quát, khám được mọi chuyên khoa';
+    lines.push(shifts.length
+      ? `${doctor.name} (${role}) có ca trực: ${shifts.map((x) => `${days[x.weekday]} ${x.s}–${x.e}`).join('; ')}.`
+      : `${doctor.name} (${role}) khám theo giờ chung: 7:00–21:00 từ Thứ 2 đến Thứ 7; Chủ nhật chỉ khám theo hẹn trước và cần bác sĩ đồng ý.`);
+  }
+  return [...lines, 'Bạn hỏi mình lịch trống theo ngày để xem giờ còn trống nhé.'].join('\n');
+}
+
+// "Bác sĩ là ai / bác sĩ nào" → danh sách bác sĩ của chuyên khoa đang nói tới (vòng 7: model lặp lại câu trả lời trước).
+const DOCTOR_WHO_RE = /bác sĩ (?:là ai|nào|tên (?:là )?gì|gồm (?:những )?ai)|ai (?:là bác sĩ|khám)/i;
+function doctorListReply(clinic, specialty) {
+  if (specialty) return `Bác sĩ khám chuyên khoa ${specialty}: ${clinic.describeSpecialty(specialty).replace(/^.*bác sĩ: /, '')}. Khi đặt lịch bạn có thể chọn bác sĩ cụ thể.`;
+  return ['Bác sĩ theo từng chuyên khoa:', ...SPECIALTIES.map((s) => `- ${s}: ${clinic.describeSpecialty(s).replace(/^.*bác sĩ: /, '')}`)].join('\n');
 }
 
 const FACILITY_REPLIES = {
@@ -256,19 +272,21 @@ async function slotFacts(specialty, dates, todayVN) {
 function specialtyFromConversation(message, turns) {
   const fromMessage = detectSpecialty(message);
   if (fromMessage) return fromMessage.specialty;
-  // Người khám (trẻ em / mang thai) quyết định chuyên khoa cho cả cuộc trò chuyện — đo thật: "khám nhi → bé 5 tuổi
-  // → bị ho sốt → mai có lịch không" từng trả lịch khoa Nội vì tin gần nhất chỉ có triệu chứng.
-  const userTurns = turns.filter((t) => t.role === 'user').slice(-4).reverse().map((t) => detectSpecialty(normalizeMessage(t.content).text));
+  // Người khám (trẻ em / mang thai) quyết định chuyên khoa cho cả cuộc trò chuyện, xét MỌI lượt của khách — đo thật:
+  // "bé 3 tuổi → sốt 38 độ → có ho nhẹ → nên khám khoa nào → giá bao nhiêu → mai có lịch không" từng trả lịch khoa
+  // Nội khi chỉ xét 4 lượt gần nhất.
+  const userTurns = turns.filter((t) => t.role === 'user').reverse().map((t) => detectSpecialty(normalizeMessage(t.content).text));
   const person = userTurns.find((s) => s && s.byPerson);
   if (person) return person.specialty;
-  for (const role of ['user', 'assistant']) {
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].role !== role) continue;
-      const found = detectSpecialty(normalizeMessage(turns[i].content).text);
-      if (found) return found.specialty;
-    }
+  // Rồi tới chuyên khoa trợ lý vừa gợi ý ("Bạn nên khám chuyên khoa X") — đó là ngữ cảnh khách đang trả lời theo.
+  // Bỏ qua câu nhắc từ 2 khoa trở lên (bảng giá, danh sách khoa).
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role !== 'assistant') continue;
+    const named = SPECIALTIES.filter((s) => new RegExp(s.replace(/\s*–\s*/g, '\\s*[–-]\\s*'), 'i').test(turns[i].content));
+    if (named.length === 1) return named[0];
   }
-  return null;
+  const fromUser = userTurns.find(Boolean);
+  return fromUser ? fromUser.specialty : null;
 }
 
 // Tool Gemini gọi để ĐẶT LỊCH THẬT cho khách — chỉ nên gọi sau khi đã thu thập
@@ -357,7 +375,8 @@ async function retrieveKnowledge(query, k = 4, taskType = 'RETRIEVAL_QUERY') {
     );
     return result.rows;
   } catch (e) {
-    console.error('Retrieval error:', e);
+    // Hết hạn ngạch nhúng Gemini (1000 lượt/ngày) lặp lại ở mọi lượt chat — chỉ in 1 dòng, không in cả stack.
+    console.error('Retrieval error:', String((e && e.message) || e).slice(0, 160));
     return []; // Retrieval lỗi không nên làm sập cả chatbot — chỉ mất phần ngữ cảnh bổ sung.
   }
 }
@@ -550,12 +569,19 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     if (emergency.length) {
       facts.unshift(`- CẤP CỨU: khách nói "${emergency.join(', ')}" → câu ĐẦU TIÊN phải khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.`);
     }
-    const slotQuery = detectSlotQuery(msg, todayVN);
+    let slotQuery = detectSlotQuery(msg, todayVN);
+    const lastAssistant = [...turns].reverse().find((t) => t.role === 'assistant');
+    const lastAssistantText = lastAssistant ? lastAssistant.content : '';
+    // Vừa xem lịch trống rồi chỉ nói ngày ("thứ 3") — tra lại đúng ngày đó. Vòng 7: model tự tính "thứ 3 = 02/11" (sai).
+    if (!slotQuery && /^Lịch còn trống khoa/.test(lastAssistantText) && !/\d{1,2}\s*(?:h|giờ|:)/.test(msg)
+      && /thứ|chủ nhật|mai|ngày kia|hôm nay|\d{1,2}\s*[/.-]\s*\d{1,2}/.test(msg)) {
+      slotQuery = detectSlotQuery(`${msg} còn trống không`, todayVN);
+    }
     let suggested = detectSpecialty(msg);
     // Hội thoại về trẻ em/người mang thai: tin sau chỉ nói triệu chứng ("sốt 38.5 độ từ tối qua") vẫn thuộc
     // Nhi/Sản — đo thật: chỉ xét tin hiện tại thì lượt thứ 3 đổi sang gợi ý Nội tổng quát.
     if (suggested && !suggested.byPerson) {
-      const person = turns.filter((t) => t.role === 'user').slice(-4).reverse()
+      const person = turns.filter((t) => t.role === 'user').reverse()
         .map((t) => detectSpecialty(normalizeMessage(t.content).text)).find((s) => s && s.byPerson);
       if (person) suggested = { ...person, keywords: suggested.keywords };
     }
@@ -566,7 +592,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     // Cấp cứu: model thêm "gọi hotline phòng khám" ngay sau lời khuyên 115 — khách hoảng dễ gọi nhầm số.
     if (shortcutOk && emergency.length) {
       return reply([
-        `⚠️ ${emergency.join(', ')} có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất, đừng chờ đặt lịch.`,
+        `⚠️ Triệu chứng "${emergency.join(', ')}" có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất, đừng chờ đặt lịch.`,
         suggested ? `Khi tình trạng đã ổn định, bạn có thể tái khám chuyên khoa ${suggested.specialty} tại phòng khám.` : '',
       ].filter(Boolean).join('\n\n'));
     }
@@ -604,9 +630,8 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
     // Khách chưa đăng nhập vừa xem lịch trống rồi chọn giờ ("9h được không") — đo thật vòng 5: model bịa giờ của
     // bác sĩ khoa khác. Tra lại đúng khoa + ngày của lịch vừa xem. (Đã đăng nhập thì để model đặt lịch bằng công cụ.)
-    const lastAssistant = [...turns].reverse().find((t) => t.role === 'assistant');
     const pickedTime = (facts.find((f) => /Giờ khách nói = (\d{2}:\d{2})/.test(f)) || '').match(/(\d{2}:\d{2})/);
-    const shownSlots = lastAssistant && lastAssistant.content.match(/^Lịch còn trống khoa (.+?):[\s\S]*?(\d{2})\/(\d{2})\/(\d{4})/);
+    const shownSlots = lastAssistantText.match(/^Lịch còn trống khoa (.+?):[\s\S]*?(\d{2})\/(\d{2})\/(\d{4})/);
     if (shortcutOk && !req.user && !slotQuery && pickedTime && shownSlots && SPECIALTIES.includes(shownSlots[1])) {
       const dateNote = facts.find((f) => /= (\d{4}-\d{2}-\d{2})/.test(f));
       const date = dateNote ? dateNote.match(/(\d{4}-\d{2}-\d{2})/)[1] : `${shownSlots[4]}-${shownSlots[3]}-${shownSlots[2]}`;
@@ -630,8 +655,18 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
     const facility = detectFacilityInfo(msg);
     if (shortcutOk && !slotQuery && facility) return reply(FACILITY_REPLIES[facility]);
-    const schedule = shortcutOk && !slotQuery ? await doctorScheduleReply(clinic, msg) : null;
+    const schedule = shortcutOk && !slotQuery ? await doctorScheduleReply(clinic, msg, lastAssistantText) : null;
     if (schedule) return reply(schedule);
+    const conversationSpecialty = suggested ? suggested.specialty : specialtyFromConversation(msg, turns);
+    if (shortcutOk && !slotQuery && DOCTOR_WHO_RE.test(msg)) return reply(doctorListReply(clinic, conversationSpecialty));
+    // "Khoa nào?" giữa hội thoại — trả lời theo ngữ cảnh (vòng 7: "Sản phụ khoa hay Nội tổng quát?", liệt kê cả 6 khoa).
+    if (shortcutOk && !slotQuery && conversationSpecialty && /khoa nào|nên khám (?:gì|ở khoa nào)|khám gì|chuyên khoa gì/i.test(msg)) {
+      return reply(`Bạn nên khám chuyên khoa ${conversationSpecialty} (${clinic.describeSpecialty(conversationSpecialty)}). Bạn có muốn mình xem lịch trống không?`);
+    }
+    // Huỷ/đổi lịch — làm trên trang /dat-lich.html (vòng 7: model bảo "nhắn thông tin lịch cho mình để huỷ").
+    if (shortcutOk && !slotQuery && /(?:huỷ|hủy|đổi|dời|sửa)[^.?!]{0,15}(?:lịch|giờ khám|ngày khám|sang ngày)/i.test(msg)) {
+      return reply('Bạn đăng nhập rồi vào trang Đặt lịch (/dat-lich.html), mục "Tất cả lịch hẹn của tôi": bấm "Huỷ" để huỷ, hoặc chọn lịch để sửa ngày giờ (chỉ sửa được khi lịch đang chờ xác nhận hoặc đã xác nhận). Huỷ lịch trên hệ thống không mất phí; cần hỗ trợ thì gọi hotline 0974 755 333.');
+    }
 
     const plainQuestion = shortcutOk && !slotQuery && !suggested;
     // Tin cụt mở đầu cuộc trò chuyện ("vâng", "hả?", "123") — đo thật: model bịa "bạn đã đăng nhập thành
@@ -652,7 +687,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       return reply('Lịch làm việc ngày lễ, Tết có thể thay đổi nên mình chưa có thông tin chính xác. Bạn gọi hotline 0974 755 333 để hỏi trước khi đến nhé. Ngày thường phòng khám làm việc 7:00–21:00, Thứ 2 đến Thứ 7.');
     }
     // Than đau/mệt chung chung ("ui đau ghê") — model nói "đau dữ dội, gọi hotline" thay vì hỏi đau ở đâu.
-    if (plainQuestion && isVagueComplaint(msg)) {
+    if (plainQuestion && !conversationSpecialty && isVagueComplaint(msg)) {
       return reply('Bạn đang đau hay khó chịu ở đâu, từ bao giờ, và có kèm sốt hay triệu chứng nào khác không? Bạn kể thêm để mình gợi ý đúng chuyên khoa nhé. Nếu đau dữ dội, khó thở hoặc ngất thì hãy gọi cấp cứu 115.');
     }
     // Bệnh về mắt — phòng khám không có khoa Mắt mà model vẫn mời đến khám. Cả với trẻ em ("con tôi bị cận thị").
@@ -904,6 +939,8 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         || (suggested && /chuyên khoa nào/i.test(s))
         // Nêu thêm khoa khác ("khám Da liễu hoặc Nhi khoa" cho bé vàng da) khi code đã xác định khoa.
         || otherSpecialties.some((re) => re.test(s))
+        // Câu nhắc đăng nhập do code chèn ở lượt trước — model chép lại thành câu cụt vô nghĩa (vòng 7).
+        || /một trong hai cách này|Lịch CHƯA được đặt/i.test(s)
         // Cả câu bằng tiếng Anh.
         || (/^[\x00-\x7F]+$/.test(s.trim()) && /\b(?:the|is|are|you|I|am|to|of|and|have)\b/.test(s))
         // Tự đoán nguyên nhân bệnh — đo thật: "lưỡi trắng do thiếu vitamin B9", "ngáy do thiếu ngủ, stress",
@@ -928,7 +965,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       answer = `💊 Kháng sinh và thuốc kê đơn chỉ dùng khi bác sĩ đã khám và kê đơn — bạn đừng tự mua uống.\n\n${answer}`;
     }
     if (emergency.length && !/115/.test(answer)) {
-      answer = `⚠️ ${emergency.join(', ')} có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.\n\n${answer}`;
+      answer = `⚠️ Triệu chứng "${emergency.join(', ')}" có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.\n\n${answer}`;
     }
     // Khách chưa đăng nhập gửi thông tin đặt lịch (tên, số điện thoại…) — đo thật vòng 5: model chỉ nhắc lại
     // thông tin mà không nói cần đăng nhập, khách tưởng đã đặt xong.

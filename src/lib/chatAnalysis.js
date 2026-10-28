@@ -145,7 +145,7 @@ const ACCENT_PHRASES = {
   'tai mui hong': 'tai mũi họng', 'noi tong quat': 'nội tổng quát', 'san phu khoa': 'sản phụ khoa', 'khoa san': 'khoa sản',
   'kham san': 'khám sản', 'khoa noi': 'khoa nội', 'kham noi': 'khám nội', 'ca nguoi': 'cả người', 'toan than': 'toàn thân',
   // "rang" lẻ: trong ngữ cảnh phòng khám gần như luôn là "răng" ("gia kham rang bao nhieu"); "ro rang" vẫn là "rõ ràng".
-  rang: 'răng', 'ro rang': 'rõ ràng', 'con khong': 'còn không', 'phu khoa': 'phụ khoa', 'kham da': 'khám da',
+  rang: 'răng', 'ro rang': 'rõ ràng', 'con khong': 'còn không', 'o ron': 'ở rốn', 'quanh ron': 'quanh rốn', 'tu toi qua': 'từ tối qua', 'phu khoa': 'phụ khoa', 'kham da': 'khám da',
   ngay: 'ngày', 'hom nay': 'hôm nay', 'ngay mai': 'ngày mai', 'hom qua': 'hôm qua', 'tuan nay': 'tuần này',
   'tuan sau': 'tuần sau', 'tuan toi': 'tuần tới', 'thu hai': 'thứ hai', 'thu ba': 'thứ ba', 'thu tu': 'thứ tư',
   'thu nam': 'thứ năm', 'thu sau': 'thứ sáu', 'thu bay': 'thứ bảy', 'chu nhat': 'chủ nhật', sang: 'sáng', chieu: 'chiều',
@@ -239,7 +239,7 @@ const SYMPTOM_RULES = [
   ['Nội tổng quát', words('sốt', 'ho', 'đau bụng', 'tiêu chảy', 'đau đầu', 'nhức đầu', 'chóng mặt', 'huyết áp', 'tiểu đường', 'đường huyết', 'mỡ máu', 'mệt mỏi', 'dạ dày', 'khó tiêu', 'ợ chua', 'trào ngược', 'thượng vị', 'buồn nôn', 'nôn', 'táo bón', 'cảm cúm', 'cúm', 'bị cảm', 'cảm lạnh', 'khám sức khỏe', 'khám sức khoẻ', 'khám tổng quát', 'nội khoa', 'nội tổng quát', 'khoa nội', 'khám nội', 'tim', 'gan', 'sỏi thận', 'đau thận',
     'hay quên', 'trí nhớ', 'sụt cân', 'thiếu máu', 'covid', 'cúm a',
     // Cách nói đảo trật tự / dân dã (đo thật vòng 6: "bụng đau", "đau quặn vùng rốn", "đầy bụng" không nhận ra).
-    'bụng (?:đau|chướng)', 'đầu (?:đau|nhức)', 'đau quặn', '(?:quanh|vùng) rốn', 'đầy bụng', 'chướng bụng', 'ợ hơi',
+    'bụng (?:đau|chướng)', 'đầu (?:đau|nhức)', 'đau quặn', '(?:quanh|vùng|ở) rốn', 'đầy bụng', 'chướng bụng', 'ợ hơi',
     'đi ngoài', 'phân lỏng', 'ớn lạnh', 'lúc nóng lúc lạnh', 'khát nước', 'phù (?:chân|mặt|người)', 'đánh trống ngực', 'hồi hộp', 'vàng da', 'phân đen', 'rét run',
     // Phòng khám không có khoa Nam học — Nội tổng quát khám ban đầu.
     'tinh hoàn', 'xuất tinh', 'cương dương',
@@ -400,7 +400,7 @@ const EMERGENCY_RE = words('khó thở', 'đau ngực', 'tức ngực', 'bất t
   // Vòng 6: "nghẹt thở", "ngực đau thắt", "nói ngọng, tay yếu" (đột quỵ), "ngã đập đầu", "ngã không đứng dậy được".
   'nghẹt thở', 'ngực (?:đau|tức)', 'đau thắt ngực', 'nói ngọng', 'nói khó', '(?:tay|chân) yếu', 'yếu (?:tay|chân)', 'tê nửa người',
   '(?:đập|va|chấn thương) đầu', 'ngã (?:\\p{L}+ ){0,2}không (?:đứng|dậy)',
-  'tím tái', 'lơ mơ', 'vỡ ối', '(?:mang thai|có thai|bầu)(?:[ ,.]+[\\p{L}\\d]+){0,4}[ ,.]+(?:ra máu|ra nước|đau bụng từng cơn|đau bụng dữ dội)');
+  'tím tái', 'lơ mơ', 'vỡ ối', 'dữ dội (?:và )?đột ngột', 'đột ngột (?:\\p{L}+ )?dữ dội', '(?:mang thai|có thai|bầu)(?:[ ,.]+[\\p{L}\\d]+){0,4}[ ,.]+(?:ra máu|ra nước|đau bụng từng cơn|đau bụng dữ dội)');
 
 // Dấu hiệu có thể cấp cứu — trả về các từ khớp (mảng rỗng nếu không có).
 function detectEmergency(message) {
@@ -411,7 +411,7 @@ const WEEKDAY_WORDS = { '2': 1, hai: 1, '3': 2, ba: 2, '4': 3, 'tư': 3, '5': 4,
 // "có chỗ" KHÔNG tính (đo thật: "có chỗ gửi xe không" bị trả lời bằng danh sách lịch trống).
 // "đánh trống ngực" là triệu chứng tim mạch, không phải hỏi lịch trống (đo thật vòng 4).
 // Vòng 6: "mai khám nhi được không", "lịch khám nhi mai còn không".
-const SLOT_INTENT_RE = /(?<!đánh )trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|có (?:lịch|giờ khám|ai khám)|còn khám (?:được )?không|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm|thứ|chủ nhật)|(?:check|kiểm tra|xem) lịch|lịch[^.?!]{0,30}(?:còn|có)[^.?!]{0,10}không|(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,20}khám[^.?!]{0,15}được không/;
+const SLOT_INTENT_RE = /(?<!đánh )trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|có (?:lịch|giờ khám|ai khám)|còn khám (?:được )?không|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm|thứ|chủ nhật)|(?:check|kiểm tra|xem) lịch|lịch[^.?!]{0,30}(?:còn|có)[^.?!]{0,10}không|(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,20}khám[^.?!]{0,15}được không|khám[^.?!]{0,20}(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,10}được không/;
 // "Lịch của tôi", "tôi đã đặt", "tôi có lịch hẹn nào"… là hỏi lịch hẹn của chính khách (my_appointments), không phải lịch trống.
 const OWN_APPOINTMENT_RE = /lịch(?: hẹn| khám)? của (?:tôi|mình|em)|(?:tôi|mình|em) (?:đã đặt|có lịch)/;
 

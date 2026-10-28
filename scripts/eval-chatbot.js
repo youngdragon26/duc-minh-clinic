@@ -116,6 +116,51 @@ const CASES = [
   { q: 'Tết có làm việc không?', mustNot: [/bình thường/i] },
   { q: 'bạn giúp được gì', mustNot: [/chưa hiểu/i] },
 
+  // Vòng 7 (16 hội thoại dài, 107 lượt) — giữ ngữ cảnh qua nhiều lượt.
+  {
+    q: 'mai có lịch không',
+    history: [
+      { role: 'user', content: 'con tôi bị sốt' }, { role: 'assistant', content: 'Bạn nên khám chuyên khoa Nhi khoa.' },
+      { role: 'user', content: 'bé 3 tuổi' }, { role: 'assistant', content: 'Bé 3 tuổi khám chuyên khoa Nhi khoa.' },
+      { role: 'user', content: 'sốt 38 độ từ sáng' }, { role: 'assistant', content: 'Bạn nên khám chuyên khoa Nhi khoa.' },
+      { role: 'user', content: 'có ho nhẹ' }, { role: 'assistant', content: 'Bạn nên khám chuyên khoa Nhi khoa.' },
+      { role: 'user', content: 'giá bao nhiêu' }, { role: 'assistant', content: 'Giá khám chuyên khoa Nhi khoa là 180.000đ.' },
+    ],
+    must: [/khoa Nhi khoa/],
+  },
+  {
+    q: 'đau dữ dội đột ngột',
+    history: [{ role: 'user', content: 'tôi bị đau đầu' }, { role: 'assistant', content: 'Bạn nên khám chuyên khoa Nội tổng quát.' }],
+    must: [/115/],
+  },
+  {
+    q: 'bác sĩ đó có khám chủ nhật không',
+    history: [
+      { role: 'user', content: 'bác sĩ da liễu là ai' },
+      { role: 'assistant', content: 'Bác sĩ khám chuyên khoa Da liễu: BS. Phạm Thị Dung, Bùi Đức Minh.' },
+    ],
+    must: [/hẹn trước/i], mustNot: [/không khám chủ nhật/i],
+  },
+  {
+    q: 'khoa nào',
+    history: [{ role: 'user', content: 'vợ tôi có bầu 10 tuần muốn khám thai' }, { role: 'assistant', content: 'Bạn nên khám chuyên khoa Sản phụ khoa.' }],
+    must: [/Sản phụ khoa/], mustNot: [/Nội tổng quát/],
+  },
+  {
+    q: 'thứ 3',
+    history: [
+      { role: 'user', content: 'khoa sản tuần sau còn lịch không' },
+      { role: 'assistant', content: 'Lịch còn trống khoa Sản phụ khoa:\n- Thứ Hai 02/11/2026: BS. Hoàng Thị Em: 07:00–20:30\nBạn muốn chọn giờ nào?' },
+    ],
+    must: [/Thứ Ba 03\/11/], mustNot: [/thứ 3, 02\/11/i],
+  },
+  {
+    q: 'đau 2 ngày rồi',
+    history: [{ role: 'user', content: 'tôi bị đau răng' }, { role: 'assistant', content: 'Bạn nên khám chuyên khoa Răng – Hàm – Mặt.' }],
+    mustNot: [/đau hay khó chịu ở đâu/i],
+  },
+  { q: 'khám nhi mai được không', must: [SLOT_TIME] },
+
   // Vòng 6 (108 lượt — đổi cách hỏi các nhóm đã sửa).
   { q: 'bị nghẹt thở', must: [/115/] },
   { q: 'đột nhiên nói ngọng, tay yếu', must: [/115/] },
