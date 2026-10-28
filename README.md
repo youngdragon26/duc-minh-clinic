@@ -118,17 +118,35 @@ Chatbot lấy ngữ cảnh (giá khám, bác sĩ theo chuyên khoa) trực tiế
 
 ## Bước 6.5 — (Tuỳ chọn) Chạy AI ngay trên máy bằng Ollama
 
-Khi chạy server **trên máy cá nhân**, có thể dùng mô hình AI cục bộ qua [Ollama](https://ollama.com) thay cho Gemini — không bị giới hạn 20 lượt/ngày. Bản deploy trên Render **không** dùng được cách này (Render không có Ollama), cứ để mặc định Gemini.
+Có thể dùng mô hình AI chạy trên máy qua [Ollama](https://ollama.com) thay cho Gemini — không bị giới hạn 20 lượt/ngày.
+Server chạy cùng máy thì làm theo các bước dưới; muốn **bản deploy trên Render** cũng dùng Ollama của laptop thì
+làm thêm Bước 6.6.
 
-1. Cài Ollama, rồi tải model: `ollama pull qwen3:4b-instruct`
-   (**không** dùng `qwen3:4b` — bản đó luôn "suy nghĩ" dài, mỗi câu trả lời chậm 20–60 giây).
+1. Cài Ollama, rồi tải model phù hợp với card đồ hoạ:
+   - Card rời **4 GB VRAM** (vd RTX 3050 Laptop): `ollama pull qwen3:1.7b` — nằm trọn trên GPU, mỗi câu trả lời ~1–4 giây.
+     `qwen3:4b-instruct` không vừa 4 GB (khoảng 1/3 phải chạy bằng CPU) nên mất 10–40 giây/câu.
+     Muốn câu trả lời chi tiết hơn mà chấp nhận ~10 giây/câu: bản 4B nén Q3
+     `ollama pull hf.co/unsloth/Qwen3-4B-Instruct-2507-GGUF:UD-Q3_K_XL` (đặt nguyên tên này vào `OLLAMA_MODEL`).
+   - Card **≥ 6 GB VRAM**: `ollama pull qwen3:4b-instruct` — trả lời chi tiết hơn.
+   - **Không** dùng `qwen3:4b` — bản đó là Thinking-2507, luôn "suy nghĩ" dài, mỗi câu trả lời chậm 20–60 giây.
 2. Thêm vào file `.env`:
    ```
    AI_PROVIDER=ollama
-   OLLAMA_MODEL=qwen3:4b-instruct
+   OLLAMA_MODEL=qwen3:1.7b
    OLLAMA_HOST=http://127.0.0.1:11434
    ```
-3. `npm run dev` lại server.
+3. (Nên làm) Đặt 2 biến môi trường **của Windows** (không phải `.env`) để giảm bộ nhớ ngữ cảnh, rồi thoát hẳn
+   Ollama ở khay hệ thống và mở lại:
+   ```
+   setx OLLAMA_FLASH_ATTENTION 1
+   setx OLLAMA_KV_CACHE_TYPE q8_0
+   ```
+4. `npm run dev` lại server. Kiểm tra bằng `ollama ps`: cột PROCESSOR phải là `100% GPU`.
+
+**Máy có 2 card (Intel Iris Xe + NVIDIA):** nếu Ollama khởi động lúc máy thiếu RAM, nó không khởi tạo được CUDA
+và lặng lẽ chạy model trên card Intel (Task Manager thấy GPU 0 – Intel 100%, GPU 1 – NVIDIA 0%), chậm gấp
+nhiều lần. Khi đó đóng bớt ứng dụng (Chrome, Discord…), thoát Ollama ở khay hệ thống rồi mở lại.
+Không đặt `OLLAMA_IGPU_ENABLE=1`: Ollama không chia model ra 2 card mà dồn hết sang card Intel (dùng chung RAM, chậm).
 
 Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 
@@ -139,6 +157,32 @@ Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 | `AI_QUERY_EXPANSION` | bật với Gemini, tắt với Ollama | Bước mở rộng câu hỏi Multi-Query + HyDE (tốn thêm 1 lượt gọi AI mỗi câu) |
 
 **Lưu ý:** dù dùng Ollama, phần tìm kiếm tài liệu y khoa (RAG) vẫn nhúng vector bằng Gemini — muốn chatbot trích dẫn được Cẩm nang MSD thì vẫn cần `GEMINI_API_KEY`.
+Gọi Ollama lỗi (chưa mở Ollama, laptop tắt…) mà có `GEMINI_API_KEY` thì server tự chuyển sang Gemini cho câu đó.
+
+## Bước 6.6 — (Tuỳ chọn) Cho bản deploy trên Render dùng Ollama của laptop
+
+Laptop mở 1 đường hầm Cloudflare (miễn phí, không cần tài khoản) để Render gọi về Ollama. Ollama không có mật
+khẩu, nên đường hầm trỏ vào 1 proxy có khoá (`OLLAMA_API_KEY`) chỉ cho đi qua đúng `POST /api/chat`.
+
+```
+Trình duyệt → Render (server) → https://xxx.trycloudflare.com → proxy có khoá :11435 → Ollama :11434 (laptop)
+```
+
+Cài đặt **1 lần**:
+
+1. Cài cloudflared: `winget install --id Cloudflare.cloudflared` (mở terminal mới sau khi cài).
+2. `.env` của laptop: `OLLAMA_API_KEY=<chuỗi bí mật dài>` và `REMOTE_SERVER_URL=https://duc-minh-clinic.onrender.com`.
+   Tạo chuỗi: `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`
+3. Render → service → **Environment**: thêm `AI_PROVIDER=ollama`, `OLLAMA_MODEL=qwen3:1.7b`,
+   `OLLAMA_API_KEY=<đúng chuỗi ở bước 2>` (giữ `GEMINI_API_KEY` để dự phòng). Lưu → Render tự deploy lại.
+
+Mỗi lần dùng: mở Ollama, rồi `npm run tunnel` (để cửa sổ đó chạy). Script mở đường hầm, cứ 2 phút báo địa chỉ
+đường hầm lên Render (`POST /api/ai/ollama-endpoint`, bắt buộc đúng khoá), giữ model nạp sẵn và giữ bản Render
+miễn phí không "ngủ". Mỗi lượt web gọi Ollama được in ra cửa sổ đó.
+
+Tắt script hoặc tắt laptop: sau tối đa 5 phút Render tự quay về Gemini (trong lúc đó các câu hỏi cũng tự
+chuyển sang Gemini vì gọi đường hầm lỗi). Nếu Ollama lỗi **sau khi** đã chạy công cụ (vd đặt lịch) thì không
+chuyển sang Gemini — tránh đặt lịch trùng — mà báo lỗi để khách thử lại.
 
 ---
 
@@ -171,7 +215,8 @@ Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 | PATCH | `/api/billing/invoices/:id/status` | Nhân viên/admin | Xác nhận đã thu tiền |
 | PATCH | `/api/billing/invoices/:id/claim-online-payment` | Bệnh nhân (chủ hoá đơn) | Báo đã chuyển khoản qua QR — chỉ đánh dấu để nhân viên ưu tiên đối chiếu, KHÔNG tự động xác nhận đã thu tiền |
 | GET | `/api/billing/invoices/:id/payment-status` | Chủ hoá đơn, nhân viên/bác sĩ/admin | Chỉ trả trạng thái thanh toán (không ghi nhật ký) — trang Hồ sơ gọi sau khi bệnh nhân báo chuyển khoản (3 lần đầu 5 giây/lần, sau đó 30 giây/lần, tối đa ~10 phút): có xác nhận thì báo "Chuyển khoản thành công", lần 3 vẫn chưa có thì yêu cầu gọi nhân viên hỗ trợ |
-| POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (cần `GEMINI_API_KEY`) |
+| POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (Gemini, hoặc Ollama khi `AI_PROVIDER=ollama`) |
+| POST | `/api/ai/ollama-endpoint` | Laptop chạy `npm run tunnel` (khoá `OLLAMA_API_KEY`) | Báo địa chỉ đường hầm Ollama hiện tại |
 | POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 
 Các API cần đăng nhập thì gửi kèm header `Authorization: Bearer <token>`.

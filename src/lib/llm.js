@@ -3,8 +3,10 @@
 //   - "gemini" (mặc định): gọi Gemini qua SDK @google/genai, cần GEMINI_API_KEY.
 //   - "ollama": gọi mô hình chạy NGAY TRÊN MÁY qua Ollama (http://127.0.0.1:11434) — không
 //     tốn hạn ngạch 20 lượt/ngày của Gemini, không phụ thuộc mạng tới Google. Chỉ dùng được
-//     khi server Node chạy cùng máy (hoặc cùng mạng) với Ollama; bản deploy trên Render
-//     không gọi được Ollama trên laptop nên vẫn để "gemini".
+//     khi server Node gọi tới được Ollama: cùng máy, hoặc bản deploy trên Render gọi về laptop
+//     qua đường hầm do scripts/ollama-tunnel.js mở (laptop tự báo địa chỉ lên, xem
+//     setRemoteOllama). Gọi Ollama lỗi (laptop tắt, đường hầm đứt) thì tự chuyển sang Gemini
+//     nếu có GEMINI_API_KEY — chatbot trên web không chết theo laptop.
 // Embedding (vector cho RAG, lib/embeddings.js) KHÔNG đi qua đây — vẫn luôn dùng Gemini, vì
 // toàn bộ kb_chunks đã được nhúng bằng gemini-embedding-001 (3072 chiều); đổi mô hình nhúng
 // thì phải nhúng lại cả cơ sở tri thức.
@@ -24,6 +26,31 @@ const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120000;
 // Qwen3 mặc định "suy nghĩ" (sinh cả đoạn lập luận ẩn trước khi trả lời) — chậm gấp nhiều lần
 // mà với câu trả lời 2-4 câu của chatbot thì không cần, nên tắt trừ khi đặt OLLAMA_THINK=true.
 const OLLAMA_THINK = process.env.OLLAMA_THINK === 'true';
+// Khoá chung giữa server và laptop: server gửi kèm khi gọi Ollama qua đường hầm (proxy trên laptop
+// kiểm tra), laptop gửi kèm khi báo địa chỉ đường hầm lên server. Để trống = tắt cả 2 chiều.
+const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
+
+// Địa chỉ đường hầm laptop báo lên gần nhất. Script báo lại mỗi 2 phút, nên quá 5 phút không
+// nghe báo là coi như laptop đã tắt và quay về OLLAMA_HOST (trên Render: không gọi được → Gemini).
+const REMOTE_OLLAMA_TTL_MS = 5 * 60 * 1000;
+let remoteOllama = null;
+
+function setRemoteOllama(url) {
+  remoteOllama = { url: url.replace(/\/+$/, ''), seenAt: Date.now() };
+}
+
+function ollamaHost() {
+  if (remoteOllama && Date.now() - remoteOllama.seenAt < REMOTE_OLLAMA_TTL_MS) return remoteOllama.url;
+  return OLLAMA_HOST;
+}
+
+// So khoá theo thời gian hằng (so băm SHA-256 cùng độ dài) để không lộ khoá qua thời gian phản hồi.
+function checkOllamaKey(token) {
+  if (!OLLAMA_API_KEY || !token) return false;
+  const crypto = require('crypto');
+  const hash = (s) => crypto.createHash('sha256').update(String(s)).digest();
+  return crypto.timingSafeEqual(hash(token), hash(OLLAMA_API_KEY));
+}
 
 const PROVIDER_LABEL = PROVIDER === 'ollama' ? `Ollama (${OLLAMA_MODEL})` : `Gemini (${GEMINI_CHAT_MODEL})`;
 
@@ -95,9 +122,12 @@ function aiErrorResponse(e) {
 async function ollamaChat(body) {
   let res;
   try {
-    res = await fetch(OLLAMA_HOST + '/api/chat', {
+    res = await fetch(ollamaHost() + '/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(OLLAMA_API_KEY ? { Authorization: 'Bearer ' + OLLAMA_API_KEY } : {}),
+      },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         stream: false,
@@ -142,59 +172,87 @@ async function warmUp() {
 
 // ---------- API chung ----------
 
+// AI_PROVIDER=ollama: thử Ollama trước, lỗi (không kết nối được, đường hầm đứt, chưa có model…)
+// thì chuyển sang Gemini nếu có GEMINI_API_KEY. Riêng lỗi xảy ra SAU KHI đã chạy công cụ (e.toolsRan)
+// thì không chuyển — Gemini sẽ chạy lại công cụ, vd đặt lịch lần 2 thành lịch trùng.
+async function withFallback(ollamaFn, geminiFn) {
+  if (PROVIDER !== 'ollama') return geminiFn();
+  try {
+    return await ollamaFn();
+  } catch (e) {
+    if (!e || e.provider !== 'ollama' || e.toolsRan || !getGeminiClient()) throw e;
+    console.error('Ollama lỗi, chuyển sang Gemini:', e.message);
+    return geminiFn();
+  }
+}
+
 // Sinh 1 đối tượng JSON theo đúng schema (dùng cho bước mở rộng câu hỏi RAG).
 async function generateJSON({ system, prompt, schema }) {
-  if (PROVIDER === 'ollama') {
-    const msg = await ollamaChat({
-      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-      format: schema,
-      options: { temperature: 0.4 },
-    });
-    return JSON.parse(msg.content || '{}');
-  }
-  const result = await withRetry(() =>
-    getGeminiClient().models.generateContent({
-      model: GEMINI_CHAT_MODEL,
-      contents: prompt,
-      config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema },
-    })
+  return withFallback(
+    async () => {
+      const msg = await ollamaChat({
+        messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+        format: schema,
+        options: { temperature: 0.4 },
+      });
+      return JSON.parse(msg.content || '{}');
+    },
+    async () => {
+      const result = await withRetry(() =>
+        getGeminiClient().models.generateContent({
+          model: GEMINI_CHAT_MODEL,
+          contents: prompt,
+          config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema },
+        })
+      );
+      return JSON.parse(result.text || '{}');
+    }
   );
-  return JSON.parse(result.text || '{}');
 }
 
 // Sinh 1 đoạn văn bản, không có công cụ (dùng cho tóm tắt bệnh sử).
 async function generateText({ system, prompt }) {
-  if (PROVIDER === 'ollama') {
-    const msg = await ollamaChat({ messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] });
-    return (msg.content || '').trim();
-  }
-  const result = await withRetry(() =>
-    getGeminiClient().models.generateContent({
-      model: GEMINI_SUMMARY_MODEL,
-      contents: prompt,
-      config: { systemInstruction: system },
-    })
+  return withFallback(
+    async () => {
+      const msg = await ollamaChat({ messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] });
+      return (msg.content || '').trim();
+    },
+    async () => {
+      const result = await withRetry(() =>
+        getGeminiClient().models.generateContent({
+          model: GEMINI_SUMMARY_MODEL,
+          contents: prompt,
+          config: { systemInstruction: system },
+        })
+      );
+      return (result.text || '').trim();
+    }
   );
-  return (result.text || '').trim();
 }
 
 // Hội thoại có công cụ: gửi tin nhắn mới kèm lịch sử, mỗi khi model yêu cầu gọi công cụ thì chạy
 // handleCall(name, args) và gửi kết quả lại, tối đa maxRounds vòng. Trả về câu trả lời cuối
 // (chuỗi rỗng nếu model không trả lời bằng chữ). history: [{ role: 'user'|'assistant', content }].
-async function chatWithTools({ system, history, message, declarations, temperature, maxRounds, handleCall }) {
-  if (PROVIDER === 'ollama') {
-    const messages = [
-      { role: 'system', content: system },
-      ...history.map((h) => ({ role: h.role, content: h.content })),
-      { role: 'user', content: message },
-    ];
-    const tools = declarations.map((d) => ({ type: 'function', function: d }));
+async function chatWithTools(params) {
+  return withFallback(() => ollamaChatWithTools(params), () => geminiChatWithTools(params));
+}
+
+async function ollamaChatWithTools({ system, history, message, declarations, temperature, maxRounds, handleCall }) {
+  const messages = [
+    { role: 'system', content: system },
+    ...history.map((h) => ({ role: h.role, content: h.content })),
+    { role: 'user', content: message },
+  ];
+  const tools = declarations.map((d) => ({ type: 'function', function: d }));
+  let toolsRan = false;
+  try {
     let reply = await ollamaChat({ messages, tools, options: { temperature } });
     let rounds = 0;
     while (reply.tool_calls && reply.tool_calls.length > 0 && rounds < maxRounds) {
       messages.push(reply);
       for (const call of reply.tool_calls) {
         const name = call.function && call.function.name;
+        toolsRan = true;
         const output = await handleCall(name, (call.function && call.function.arguments) || {});
         messages.push({ role: 'tool', tool_name: name, content: JSON.stringify(output) });
       }
@@ -202,8 +260,13 @@ async function chatWithTools({ system, history, message, declarations, temperatu
       rounds++;
     }
     return (reply.content || '').trim();
+  } catch (e) {
+    if (e) e.toolsRan = toolsRan;
+    throw e;
   }
+}
 
+async function geminiChatWithTools({ system, history, message, declarations, temperature, maxRounds, handleCall }) {
   // Gemini dùng vai "model" thay vì "assistant", và lịch sử phải bắt đầu bằng "user".
   const turns = history.map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content }] }));
   while (turns.length && turns[0].role !== 'user') turns.shift();
@@ -240,4 +303,6 @@ module.exports = {
   generateText,
   chatWithTools,
   warmUp,
+  setRemoteOllama,
+  checkOllamaKey,
 };

@@ -122,8 +122,15 @@ use `setChatText()` from `chat-format.js`.
   no letters/digits, or that are pure numbers, skip the query-expansion Gemini call entirely to save quota.
 - All LLM calls go through `src/lib/llm.js` (`chatWithTools`, `generateJSON`, `generateText`), which picks the
   provider from `AI_PROVIDER`: `gemini` (default, what production on Render uses) or `ollama` (a local model,
-  default `qwen3:4b-instruct` — not `qwen3:4b`, which is the always-thinking Thinking-2507 variant and takes 20-60s per reply; only reachable when the server runs on the same machine as Ollama). Don't call the Gemini
-  SDK directly from routes. Embeddings (`src/lib/embeddings.js`) always stay on Gemini regardless of
+  default `qwen3:4b-instruct` — not `qwen3:4b`, which is the always-thinking Thinking-2507 variant and takes 20-60s per reply;
+  the dev laptop uses `qwen3:1.7b` since its 4 GB GPU can't hold the 4B fully). Don't call the Gemini
+  SDK directly from routes. Ollama errors fall back to Gemini (`withFallback`) when `GEMINI_API_KEY` is set — except
+  after a tool already ran in that turn (`e.toolsRan`), since replaying tools on Gemini could double-book.
+- Render reaches the laptop's Ollama via `npm run tunnel` (`scripts/ollama-tunnel.js`): an auth proxy (only
+  `POST /api/chat` with `Bearer OLLAMA_API_KEY`) behind a Cloudflare quick tunnel, whose changing URL the script
+  re-registers every 2 min at `POST /api/ai/ollama-endpoint` (same key). The registered URL is in-memory and expires
+  after 5 min without a heartbeat (`REMOTE_OLLAMA_TTL_MS`), then `OLLAMA_HOST` is used again. Never relax the key check
+  on that endpoint — whoever can register a URL receives every patient's chat. Embeddings (`src/lib/embeddings.js`) always stay on Gemini regardless of
   `AI_PROVIDER` — `kb_chunks` holds 3072-dim `gemini-embedding-001` vectors, so switching embedding models
   means re-embedding the whole knowledge base. With Ollama, Qwen3's thinking mode is off (`OLLAMA_THINK`),
   `num_ctx` is raised to 8192 (the default 4096 silently truncates the long chat system prompt), and the

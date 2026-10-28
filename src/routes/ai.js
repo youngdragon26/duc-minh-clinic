@@ -483,6 +483,18 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
   }
 });
 
+// Laptop chạy Ollama báo địa chỉ đường hầm hiện tại lên đây (scripts/ollama-tunnel.js) để bản
+// deploy gọi về được. Bắt buộc đúng OLLAMA_API_KEY — không thì ai cũng trỏ được chatbot sang máy
+// của họ và đọc toàn bộ câu hỏi của bệnh nhân. Không đặt OLLAMA_API_KEY = tắt hẳn endpoint này.
+router.post('/ollama-endpoint', (req, res) => {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!llm.checkOllamaKey(token)) return res.status(401).json({ error: 'Sai hoặc thiếu khoá OLLAMA_API_KEY.' });
+  const url = String((req.body && req.body.url) || '');
+  if (!/^https:\/\/[a-z0-9.-]+\/?$/i.test(url)) return res.status(400).json({ error: 'Địa chỉ đường hầm phải có dạng https://tên-miền.' });
+  llm.setRemoteOllama(url);
+  res.json({ ok: true, model: llm.PROVIDER_LABEL });
+});
+
 router.use(authenticate);
 
 // ---------- Lịch sử trò chuyện của bệnh nhân (chỉ chủ tài khoản xem được) ----------
