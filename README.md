@@ -179,14 +179,14 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    báo kháng sinh, nhắc đăng nhập khi khách chưa đăng nhập gửi thông tin đặt lịch.
 
 Đo chất lượng bằng `npm run eval-chat` (server phải đang chạy; `EVAL_URL=https://duc-minh-clinic.onrender.com
-npm run eval-chat` để đo bản deploy). Bộ test gồm 86 câu, phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
-năng hiểu câu chưa từng gặp; được xây qua 5 vòng hỏi dò (~600 lượt), mỗi lỗi tìm ra thành 1 câu test:
+npm run eval-chat` để đo bản deploy). Bộ test gồm 100 câu, phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
+năng hiểu câu chưa từng gặp; được xây qua 6 vòng hỏi dò (~700 lượt), mỗi lỗi tìm ra thành 1 câu test:
 
 | Cấu hình (`qwen3:1.7b`) | Kết quả | Thời gian TB |
 |---|---|---|
 | Prompt đầy đủ (ban đầu) | 6/15 | 2,9 s |
 | Prompt rút gọn + dữ kiện tính sẵn | 15/15 | 1,3 s |
-| + chuẩn hoá, trả lời cố định, câu mẫu, bộ lọc (sau 5 vòng) | 86/86 | 0,6 s |
+| + chuẩn hoá, trả lời cố định, câu mẫu, bộ lọc (sau 6 vòng) | 100/100 | 0,5 s |
 
 Chưa kiểm thử tự động được luồng của **bệnh nhân đã đăng nhập** (đặt lịch qua chat, tra hồ sơ/hoá đơn) — cần
 tài khoản bệnh nhân; nên tự thử tay sau mỗi lần sửa chatbot.
@@ -212,8 +212,9 @@ Cài đặt **1 lần**:
    `OLLAMA_API_KEY=<đúng chuỗi ở bước 2>` (giữ `GEMINI_API_KEY` để dự phòng). Lưu → Render tự deploy lại.
 
 Mỗi lần dùng: mở Ollama, rồi `npm run tunnel` (để cửa sổ đó chạy). Script mở đường hầm, cứ 2 phút báo địa chỉ
-đường hầm lên Render (`POST /api/ai/ollama-endpoint`, bắt buộc đúng khoá), giữ model nạp sẵn và giữ bản Render
-miễn phí không "ngủ". Mỗi lượt web gọi Ollama được in ra cửa sổ đó.
+đường hầm lên Render (`POST /api/ai/ollama-endpoint`, bắt buộc đúng khoá), giữ model nạp sẵn (cùng `OLLAMA_NUM_CTX`
+với server — lệch nhau thì Ollama nạp lại model mỗi lượt, chậm 7–9 s) và giữ bản Render miễn phí không "ngủ". Mỗi
+lượt web gọi Ollama được in ra cửa sổ đó.
 
 Địa chỉ đường hầm chỉ lưu trong bộ nhớ server, nên ngay sau khi Render deploy lại/khởi động lại, các câu hỏi
 tạm dùng Gemini cho tới lần báo kế tiếp của script (tối đa 2 phút).
