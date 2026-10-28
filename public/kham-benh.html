@@ -114,7 +114,7 @@
 
       <label style="margin-top:20px;">Đơn thuốc</label>
       <div id="medRows"></div>
-      <button type="button" class="ghost" id="addMedBtn" style="margin-top:10px;">+ Thêm thuốc</button>
+      <button type="button" class="ghost" id="addMedBtn" style="margin-top:10px;" disabled>+ Thêm thuốc</button>
 
       <label style="margin-top:20px;">Hẹn tái khám (không bắt buộc)</label>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -379,6 +379,9 @@ function addMedRow() {
 
     const { medicines: list } = await api('/api/clinical/medicines');
     medicines = list;
+    // Form hiện ra trước khi có danh mục thuốc — chỉ mở nút "Thêm thuốc" khi đã tải xong,
+    // nếu không bấm sớm sẽ tạo dòng thuốc với ô chọn rỗng.
+    document.getElementById('addMedBtn').disabled = false;
 
     try {
       const { record } = await api('/api/clinical/records/by-appointment/' + appointmentId);
