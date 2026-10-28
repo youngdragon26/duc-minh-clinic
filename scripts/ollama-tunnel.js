@@ -19,10 +19,11 @@ const REMOTE_SERVER_URL = (process.env.REMOTE_SERVER_URL || 'https://duc-minh-cl
 const PROXY_PORT = Number(process.env.OLLAMA_PROXY_PORT) || 11435;
 const CLOUDFLARED = process.env.CLOUDFLARED_PATH || 'cloudflared';
 const HEARTBEAT_MS = 2 * 60 * 1000;
+const OLLAMA_API_KEY = (process.env.OLLAMA_API_KEY || '').trim();
 
 const now = () => new Date().toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 
-if (!process.env.OLLAMA_API_KEY) {
+if (!OLLAMA_API_KEY) {
   console.error('Thiếu OLLAMA_API_KEY trong .env — đặt 1 chuỗi bí mật dài, và đặt ĐÚNG chuỗi đó trên Render.');
   process.exit(1);
 }
@@ -65,7 +66,7 @@ async function register(tunnelUrl) {
     // Bản Render miễn phí đang "ngủ" có thể mất ~1 phút mới thức dậy trả lời.
     const res = await fetch(REMOTE_SERVER_URL + '/api/ai/ollama-endpoint', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.OLLAMA_API_KEY },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + OLLAMA_API_KEY },
       body: JSON.stringify({ url: tunnelUrl }),
       signal: AbortSignal.timeout(90000),
     });

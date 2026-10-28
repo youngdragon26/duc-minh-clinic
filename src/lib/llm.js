@@ -28,7 +28,8 @@ const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120000;
 const OLLAMA_THINK = process.env.OLLAMA_THINK === 'true';
 // Khoá chung giữa server và laptop: server gửi kèm khi gọi Ollama qua đường hầm (proxy trên laptop
 // kiểm tra), laptop gửi kèm khi báo địa chỉ đường hầm lên server. Để trống = tắt cả 2 chiều.
-const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
+// trim(): dán khoá vào ô Environment của Render dễ dính dấu xuống dòng ở cuối.
+const OLLAMA_API_KEY = (process.env.OLLAMA_API_KEY || '').trim();
 
 // Địa chỉ đường hầm laptop báo lên gần nhất. Script báo lại mỗi 2 phút, nên quá 5 phút không
 // nghe báo là coi như laptop đã tắt và quay về OLLAMA_HOST (trên Render: không gọi được → Gemini).
@@ -49,7 +50,7 @@ function checkOllamaKey(token) {
   if (!OLLAMA_API_KEY || !token) return false;
   const crypto = require('crypto');
   const hash = (s) => crypto.createHash('sha256').update(String(s)).digest();
-  return crypto.timingSafeEqual(hash(token), hash(OLLAMA_API_KEY));
+  return crypto.timingSafeEqual(hash(String(token).trim()), hash(OLLAMA_API_KEY));
 }
 
 const PROVIDER_LABEL = PROVIDER === 'ollama' ? `Ollama (${OLLAMA_MODEL})` : `Gemini (${GEMINI_CHAT_MODEL})`;
