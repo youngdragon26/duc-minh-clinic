@@ -120,14 +120,19 @@ use `setChatText()` from `chat-format.js`.
   number with an adjacent age (e.g. "0353102966 25 tuổi" mis-parsed as one 12-digit number) — prefer fixing
   bugs like that in `chatAnalysis.js`'s deterministic parsing over re-prompting the model. Also: messages with
   no letters/digits, or that are pure numbers, skip the query-expansion Gemini call entirely to save quota.
-- The same file also decides, deterministically, the suggested specialty from symptom keywords (`detectSpecialty`
-  — child/pregnancy rules win over symptoms, `Nội tổng quát` loses ties), emergencies (`detectEmergency`) and
-  "free slots?" questions with their dates (`detectSlotQuery`). `/api/ai/chat` turns these into facts in the prompt;
-  with `COMPACT_PROMPT` (default on for Ollama — the full ~40-rule prompt overwhelms `qwen3:1.7b`) a slot question
-  is answered straight from `getAvailableSlots` without calling the model, and the 115 emergency advice is
-  prepended in code if the model's reply lacks it (in both modes). Measure prompt/model changes with
-  `npm run eval-chat` (`scripts/eval-chatbot.js`, 15 regex-graded cases against a running server): the full
-  prompt on `qwen3:1.7b` scored 6/15, the current compact setup 15/15.
+- `/api/ai/chat` is layered, the model is the LAST resort (built over 5 probing rounds, ~600 questions, against
+  `qwen3:1.7b`): (1) `normalizeMessage` fixes repeated letters, teencode and missing diacritics; (2) `chatAnalysis.js`
+  detectors — specialty (child/pregnancy beats symptoms, `Nội tổng quát` loses ties), emergency, crisis, slot
+  query + dates, price/discount, dose, antibiotics, own-data, privacy/prompt-injection, off-topic, identity…;
+  (3) fixed code replies for anything with a deterministic answer (crisis and privacy refusals in ALL modes, the rest
+  only with `COMPACT_PROMPT`, default on for Ollama); (4) `chat_examples` few-shot bank (`src/lib/chatExamples.js`,
+  admin UI on `/co-so-tri-thuc.html`, seed `scripts/seed-chat-examples.js`) — Gemini vectors, falling back to
+  trigram matching when the free embedding quota (1000/day, really exhausted during testing) runs out;
+  (5) compact prompt + a post-filter on the model's reply. Rules learned the hard way: never put quoted phrases in
+  the compact prompt (the 1.7B model copies them verbatim — it replied "Bạn là ai?" to "ok"); every detector regex
+  needs negative cases ("5/11" is a date, not division; "đánh trống ngực" is not a slot question; "bệnh nhân" is not
+  a complaint). Every bug found becomes a case in `npm run eval-chat` (`scripts/eval-chatbot.js`, 86 cases, mostly
+  phrased differently from the seeded examples) — keep it at 100% across repeated runs.
 - All LLM calls go through `src/lib/llm.js` (`chatWithTools`, `generateJSON`, `generateText`), which picks the
   provider from `AI_PROVIDER`: `gemini` (default, what production on Render uses) or `ollama` (a local model,
   default `qwen3:4b-instruct` — not `qwen3:4b`, which is the always-thinking Thinking-2507 variant and takes 20-60s per reply;

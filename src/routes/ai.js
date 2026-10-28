@@ -1,7 +1,7 @@
 const express = require('express');
 const { pool } = require('../db');
 const { authenticate, optionalAuthenticate, requireAdmin, requireRole } = require('../middleware/auth');
-const { SPECIALTIES, GENDERS } = require('../constants');
+const { SPECIALTIES, GENDERS, DISCOUNT_CATEGORY_LABELS } = require('../constants');
 const { chunkText } = require('../lib/chunk');
 const { embedText, toVectorLiteral } = require('../lib/embeddings');
 const { getAvailableSlots } = require('../lib/availability');
@@ -15,7 +15,25 @@ const {
   detectSpecialty,
   detectEmergency,
   detectSlotQuery,
+  detectPrescriptionQuestion,
+  isVagueComplaint,
+  mentionsEye,
+  detectOffTopic,
+  detectOffTopicTask,
+  detectIdentityQuestion,
+  detectOtherFacilityQuestion,
+  detectHolidayQuestion,
+  detectCrisis,
+  detectDoseQuestion,
+  detectOwnDataQuestion,
+  detectPrivacyRequest,
+  detectInsult,
+  detectEnglish,
+  detectPriceQuestion,
+  detectFacilityInfo,
+  normalizeMessage,
 } = require('../lib/chatAnalysis');
+const { tryEmbedQuestion, findExamples } = require('../lib/chatExamples');
 const { logAudit } = require('../lib/audit');
 const llm = require('../lib/llm');
 const { intParam } = require('../middleware/params');
@@ -58,9 +76,10 @@ router.param('appointmentId', intParam);
 // Ngữ cảnh "RAG" lấy trực tiếp từ CSDL thật của phòng khám (giá khám, bác sĩ đang
 // có theo từng chuyên khoa) — không bịa thêm kiến thức y khoa bên ngoài.
 async function buildClinicContext() {
-  const [prices, doctors] = await Promise.all([
+  const [prices, doctors, discounts] = await Promise.all([
     pool.query('SELECT specialty, price FROM service_prices'),
-    pool.query("SELECT name, specialty FROM users WHERE role = 'doctor' ORDER BY specialty, name"),
+    pool.query("SELECT id, name, specialty FROM users WHERE role = 'doctor' ORDER BY specialty, name"),
+    pool.query('SELECT category, percent FROM discount_rates'),
   ]);
   const priceMap = Object.fromEntries(prices.rows.map((r) => [r.specialty, r.price]));
   // Bác sĩ specialty = NULL là "bác sĩ tổng quát", phụ trách được mọi chuyên khoa
@@ -79,6 +98,12 @@ async function buildClinicContext() {
     return `giá khám ${price}; bác sĩ: ${docs}`;
   };
   const specialtyLines = SPECIALTIES.map((s) => `- ${s}: ${describeSpecialty(s)}`).join('\n');
+  // Đo thật: không có dữ kiện này, model trả lời "không có giảm giá cho sinh viên" (sai) và đoán bừa
+  // Bùi Đức Minh "thuộc 4 chuyên khoa".
+  const discountText = discounts.rows.length
+    ? discounts.rows.map((r) => `${DISCOUNT_CATEGORY_LABELS[r.category] || r.category} giảm ${r.percent}%`).join(', ')
+      + ' — chỉ giảm tiền khám (không giảm tiền thuốc), mỗi lần khám áp dụng 1 loại; chọn khi đặt lịch và mang thẻ để nhân viên kiểm tra lúc thanh toán.'
+    : 'chưa có chương trình giảm giá.';
 
   const text = [
     'Thông tin phòng khám (chỉ dùng đúng dữ kiện dưới đây, không bịa thêm):',
@@ -88,10 +113,75 @@ async function buildClinicContext() {
     '- Giờ làm việc: 7:00–21:00, Thứ 2 – Thứ 7. Chủ nhật KHÔNG khám thường xuyên, chỉ có người trực cho trường hợp đột xuất: muốn khám Chủ nhật phải hẹn trước với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 của tuần đó, và chỉ được khám khi chính bác sĩ đó đồng ý (lịch sẽ ở trạng thái chờ xác nhận cho tới khi bác sĩ đồng ý).',
     '- Cách đặt lịch: đăng nhập/đăng ký tại /tai-khoan.html rồi đặt lịch tại /dat-lich.html.',
     '',
+    '- Thanh toán: tiền mặt tại quầy hoặc chuyển khoản (quét mã QR ở trang /ho-so.html).',
+    `- Giảm giá: ${discountText}`,
+    '',
     'Chuyên khoa, giá khám và bác sĩ hiện có:',
     specialtyLines,
+    ...(generalDoctors.length ? [`(${generalDoctors.join(', ')}: bác sĩ tổng quát, khám được mọi chuyên khoa.)`] : []),
   ].join('\n');
-  return { text, describeSpecialty };
+  const discountPercent = Object.fromEntries(discounts.rows.map((r) => [r.category, r.percent]));
+  return { text, describeSpecialty, priceOf: (s) => (priceMap[s] != null ? priceMap[s] : null), discountPercent, doctors: doctors.rows };
+}
+
+const formatVnd = (n) => n.toLocaleString('vi-VN') + 'đ';
+
+// Hỏi lịch làm việc của 1 bác sĩ có tên trong tin — đọc bảng ca trực (doctor_shifts). Không có ca nào nghĩa là
+// khám theo giờ chung (cùng quy ước với getAvailableSlots). Đo thật vòng 5: model trả lời vô nghĩa.
+const DOCTOR_SCHEDULE_RE = /thứ mấy|lịch làm|ca trực|làm (?:việc )?(?:vào )?(?:ngày|hôm|thứ) nào|khám (?:vào )?(?:ngày|hôm|thứ) (?:nào|mấy)|(?:có )?khám (?:thứ|chủ nhật|hôm)/i;
+async function doctorScheduleReply(clinic, msg) {
+  if (!DOCTOR_SCHEDULE_RE.test(msg)) return null;
+  const lower = msg.toLowerCase();
+  const doctor = clinic.doctors.find((d) => lower.includes(d.name.replace(/^BS\.\s*/i, '').toLowerCase()));
+  if (!doctor) return null;
+  const shifts = (await pool.query(
+    "SELECT weekday, to_char(start_time, 'HH24:MI') AS s, to_char(end_time, 'HH24:MI') AS e FROM doctor_shifts WHERE doctor_id = $1 ORDER BY weekday, start_time",
+    [doctor.id]
+  )).rows;
+  const role = doctor.specialty ? `bác sĩ chuyên khoa ${doctor.specialty}` : 'bác sĩ tổng quát, khám được mọi chuyên khoa';
+  if (!shifts.length) {
+    return `${doctor.name} (${role}) khám theo giờ chung của phòng khám: 7:00–21:00 từ Thứ 2 đến Thứ 7; Chủ nhật chỉ khám theo hẹn trước và cần bác sĩ đồng ý. Bạn hỏi mình lịch trống theo ngày để xem giờ còn trống nhé.`;
+  }
+  const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  return [`${doctor.name} (${role}) có ca trực:`, ...shifts.map((x) => `- ${days[x.weekday]}: ${x.s}–${x.e}`)].join('\n');
+}
+
+const FACILITY_REPLIES = {
+  address: 'Phòng khám Đa khoa Đức Minh ở Phường Túc Duyên, TP. Thái Nguyên. Bạn gọi hotline 0974 755 333 để được chỉ đường cụ thể nhé.',
+  contact: 'Bạn liên hệ phòng khám qua hotline 0974 755 333, hoặc nhắn Zalo cùng số 0974 755 333 (nút Zalo ở góc phải màn hình). Mình chưa có thông tin về email hay fanpage chính thức.',
+  feedback: 'Bạn có thể góp ý hoặc phản ánh qua hotline 0974 755 333 (hoặc Zalo cùng số), hay trực tiếp với nhân viên tại quầy để phòng khám tiếp nhận.',
+  unknown: 'Mình chưa có thông tin chính xác về việc này. Bạn gọi hotline 0974 755 333 để được giải đáp nhé.',
+};
+
+// Trả lời hỏi giá bằng số liệu CSDL — đo thật vòng 5: model không trừ 10% sinh viên, trả lời trống cho
+// "bảng giá các chuyên khoa", lạc đề khi so sánh "khám nhi đắt hơn khám nội không".
+function priceReply(clinic, price, specialty) {
+  const priceText = (s) => {
+    const p = clinic.priceOf(s);
+    return p != null ? formatVnd(p) : 'chưa niêm yết';
+  };
+  if (price.policy) {
+    const rates = Object.entries(clinic.discountPercent).map(([c, p]) => `${DISCOUNT_CATEGORY_LABELS[c] || c} giảm ${p}%`);
+    if (!rates.length) return 'Hiện phòng khám chưa có chương trình giảm giá, bạn gọi hotline 0974 755 333 để hỏi thêm nhé.';
+    const asked = price.discount && clinic.discountPercent[price.discount] != null
+      ? `Có bạn nhé — ${DISCOUNT_CATEGORY_LABELS[price.discount]} được giảm ${clinic.discountPercent[price.discount]}% tiền khám. `
+      : '';
+    return `${asked}Phòng khám đang giảm giá: ${rates.join(', ')}. Chỉ giảm tiền khám (không giảm tiền thuốc), mỗi lần khám áp dụng 1 loại; bạn chọn khi đặt lịch và mang thẻ để nhân viên kiểm tra lúc thanh toán.`;
+  }
+  if (price.list || !specialty) {
+    return [
+      'Giá khám từng chuyên khoa hiện tại:',
+      ...SPECIALTIES.map((s) => `- ${s}: ${priceText(s)}`),
+      'Giá khám chưa gồm tiền thuốc. Khoa chưa niêm yết giá, bạn gọi hotline 0974 755 333 để hỏi.',
+    ].join('\n');
+  }
+  const base = clinic.priceOf(specialty);
+  if (base == null) return `Giá khám chuyên khoa ${specialty} hiện chưa niêm yết, bạn gọi hotline 0974 755 333 để được báo giá nhé.`;
+  const percent = price.discount && clinic.discountPercent[price.discount];
+  if (!percent) return `Giá khám chuyên khoa ${specialty} là ${formatVnd(base)} (chưa gồm tiền thuốc).`;
+  const label = DISCOUNT_CATEGORY_LABELS[price.discount] || price.discount;
+  return `Giá khám chuyên khoa ${specialty} là ${formatVnd(base)}; có ${label} được giảm ${percent}% còn ${formatVnd(Math.round(base * (100 - percent) / 100))}. `
+    + 'Giảm giá chỉ áp dụng cho tiền khám (không giảm tiền thuốc); bạn chọn loại giảm giá khi đặt lịch và mang thẻ khi đến khám.';
 }
 
 // Tool Gemini có thể tự gọi để tra cứu khung giờ còn trống THẬT trong CSDL —
@@ -165,10 +255,15 @@ async function slotFacts(specialty, dates, todayVN) {
 function specialtyFromConversation(message, turns) {
   const fromMessage = detectSpecialty(message);
   if (fromMessage) return fromMessage.specialty;
+  // Người khám (trẻ em / mang thai) quyết định chuyên khoa cho cả cuộc trò chuyện — đo thật: "khám nhi → bé 5 tuổi
+  // → bị ho sốt → mai có lịch không" từng trả lịch khoa Nội vì tin gần nhất chỉ có triệu chứng.
+  const userTurns = turns.filter((t) => t.role === 'user').slice(-4).reverse().map((t) => detectSpecialty(normalizeMessage(t.content).text));
+  const person = userTurns.find((s) => s && s.byPerson);
+  if (person) return person.specialty;
   for (const role of ['user', 'assistant']) {
     for (let i = turns.length - 1; i >= 0; i--) {
       if (turns[i].role !== role) continue;
-      const found = detectSpecialty(turns[i].content);
+      const found = detectSpecialty(normalizeMessage(turns[i].content).text);
       if (found) return found.specialty;
     }
   }
@@ -410,31 +505,155 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
       .slice(-HISTORY_TURNS_FOR_MODEL);
 
+    // Bản chuẩn hoá (bỏ chữ lặp, đổi viết tắt, thêm dấu cho tin gõ không dấu) dùng cho RAG, các bước
+    // nhận diện và tin gửi model; lịch sử vẫn lưu nguyên văn khách gõ.
+    const msg = normalizeMessage(userText).text;
+    const reply = async (text) => {
+      if (req.user) convId = await persistTurn(req.user.id, convId, userText, text);
+      return res.json({ reply: text, conversationId: convId });
+    };
+
+    // Ý nghĩ tự sát/tự hại: câu trả lời an toàn cố định ở MỌI chế độ, không phụ thuộc model (đo thật: model
+    // nhỏ trả lời lẫn tiếng Anh và đưa hotline phòng khám thay vì cấp cứu).
+    if (detectCrisis(msg)) {
+      return reply('Mình rất tiếc khi bạn đang phải trải qua cảm giác này, và mình muốn bạn được an toàn. Nếu bạn đang có ý định làm hại bản thân, hãy gọi ngay cấp cứu 115 hoặc đến cơ sở y tế gần nhất, và báo cho một người thân hay bạn bè bạn tin tưởng để họ ở bên bạn lúc này. Bạn không phải đối mặt với chuyện này một mình — khi sẵn sàng, bạn có thể đặt lịch khám để bác sĩ hỗ trợ và giới thiệu chuyên gia phù hợp.');
+    }
+    // Đòi dữ liệu người khác / thông tin nội bộ / ghi đè hướng dẫn — từ chối cố định ở mọi chế độ, trước cả
+    // bước tìm tài liệu (không tốn lượt nhúng Gemini).
+    if (detectPrivacyRequest(msg)) {
+      return reply('Mình không thể cung cấp thông tin cá nhân của người khác hay thông tin nội bộ của hệ thống. Mình chỉ hỗ trợ các việc về khám chữa bệnh: chuyên khoa phù hợp, giờ làm việc, giá khám và đặt lịch.');
+    }
+    if (COMPACT_PROMPT && detectInsult(msg)) {
+      return reply('Mình xin lỗi nếu câu trả lời trước chưa giúp được bạn. Bạn cho mình biết bạn cần gì — triệu chứng, giá khám hay lịch trống — mình trả lời lại cho đúng nhé; hoặc gọi hotline 0974 755 333 để gặp nhân viên.');
+    }
+    if (COMPACT_PROMPT && detectEnglish(msg)) {
+      return reply('Xin lỗi, mình hiện chỉ hỗ trợ tiếng Việt. Sorry, this assistant currently supports Vietnamese only — please call our hotline 0974 755 333 for help.');
+    }
+
     const prepStart = Date.now();
-    const [clinic, retrieved] = await Promise.all([
+    const [clinic, retrieved, examples] = await Promise.all([
       buildClinicContext(),
-      retrieveKnowledgeExpanded(userText),
+      retrieveKnowledgeExpanded(msg),
+      findExamples(msg),
     ]);
-    if (process.env.AI_DEBUG === 'true') console.log(`[chat] lấy ngữ cảnh CSDL + tìm tài liệu RAG: ${((Date.now() - prepStart) / 1000).toFixed(1)}s`);
+    if (process.env.AI_DEBUG === 'true') console.log(`[chat] lấy ngữ cảnh CSDL + tìm tài liệu RAG + câu mẫu: ${((Date.now() - prepStart) / 1000).toFixed(1)}s`);
     const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 
     // Dữ kiện tính TẤT ĐỊNH cho tin nhắn này (chatAnalysis.js) — model chỉ việc diễn đạt lại.
-    const facts = analyzeMessage(userText, todayVN).map((n) => `- ${n}`);
-    const emergency = detectEmergency(userText);
+    const facts = analyzeMessage(msg, todayVN).map((n) => `- ${n}`);
+    // Đang đặt lịch dở (tin có số điện thoại, hoặc có tuổi khi hội thoại đang thu thập thông tin đặt lịch) — các
+    // lối tắt trả lời thẳng bên dưới không được cắt ngang. Chỉ có tuổi thì chưa phải: "con tôi 10 tuổi bị cận thị".
+    const inBookingFlow = turns.slice(-4).some((t) => /họ tên|số điện thoại|xác nhận|đặt lịch/i.test(t.content));
+    const bookingDetails = facts.some((f) => /Số điện thoại/.test(f)) || (inBookingFlow && facts.some((f) => /Tuổi/.test(f)));
+    const emergency = detectEmergency(msg);
     if (emergency.length) {
       facts.unshift(`- CẤP CỨU: khách nói "${emergency.join(', ')}" → câu ĐẦU TIÊN phải khuyên gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.`);
     }
-    const slotQuery = detectSlotQuery(userText, todayVN);
-    const suggested = detectSpecialty(userText);
+    const slotQuery = detectSlotQuery(msg, todayVN);
+    let suggested = detectSpecialty(msg);
+    // Hội thoại về trẻ em/người mang thai: tin sau chỉ nói triệu chứng ("sốt 38.5 độ từ tối qua") vẫn thuộc
+    // Nhi/Sản — đo thật: chỉ xét tin hiện tại thì lượt thứ 3 đổi sang gợi ý Nội tổng quát.
+    if (suggested && !suggested.byPerson) {
+      const person = turns.filter((t) => t.role === 'user').slice(-4).reverse()
+        .map((t) => detectSpecialty(normalizeMessage(t.content).text)).find((s) => s && s.byPerson);
+      if (person) suggested = { ...person, keywords: suggested.keywords };
+    }
+
+    // ---- Trả lời cố định bằng code (chỉ với prompt rút gọn) — mỗi trường hợp dưới đây đều đo thật thấy model
+    // nhỏ làm sai dù prompt đã dặn, mà câu trả lời đúng thì cố định. Tin đang đặt lịch dở không bị cắt ngang. ----
+    const shortcutOk = COMPACT_PROMPT && !bookingDetails;
+    // Cấp cứu: model thêm "gọi hotline phòng khám" ngay sau lời khuyên 115 — khách hoảng dễ gọi nhầm số.
+    if (shortcutOk && emergency.length) {
+      return reply([
+        `⚠️ ${emergency.join(', ')} có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất, đừng chờ đặt lịch.`,
+        suggested ? `Khi tình trạng đã ổn định, bạn có thể tái khám chuyên khoa ${suggested.specialty} tại phòng khám.` : '',
+      ].filter(Boolean).join('\n\n'));
+    }
+    // Câu gần như trùng 1 câu mẫu admin đã soạn → trả nguyên câu mẫu. Tin quá ngắn ("ok") phụ thuộc ngữ cảnh nên bỏ qua.
+    const topExample = examples[0];
+    if (shortcutOk && !slotQuery && topExample && topExample.direct && msg.split(/\s+/).length >= 3) {
+      return reply(topExample.answer);
+    }
+    // Khách chưa đăng nhập hỏi hoá đơn/đơn thuốc/lịch hẹn CỦA HỌ — model từng bịa "bạn chưa thanh toán".
+    if (shortcutOk && !req.user && detectOwnDataQuestion(msg)) {
+      return reply('Để xem đơn thuốc, hoá đơn, hồ sơ khám hay lịch hẹn của bạn, bạn cần đăng nhập tại /tai-khoan.html. Sau khi đăng nhập, bạn hỏi lại ở đây để mình tra cứu, hoặc xem trực tiếp ở trang Hồ sơ khám (/ho-so.html) và mục lịch hẹn ở /dat-lich.html.');
+    }
+    // Hỏi liều thuốc — model từng đưa liều paracetamol sai.
+    if (shortcutOk && !slotQuery && detectDoseQuestion(msg)) {
+      return reply([
+        'Liều thuốc phụ thuộc tuổi, cân nặng, bệnh lý và các thuốc đang dùng nên mình không đưa liều cụ thể được. Bạn dùng đúng theo tờ hướng dẫn sử dụng hoặc hỏi bác sĩ, dược sĩ; trẻ em, phụ nữ có thai hay đang cho con bú cần hỏi bác sĩ trước khi dùng.',
+        suggested ? `Nếu cần khám, chuyên khoa phù hợp là ${suggested.specialty}.` : '',
+      ].filter(Boolean).join(' '));
+    }
+    // Nhiệm vụ ngoài phạm vi (làm thơ, dịch, viết code…) luôn từ chối, kể cả câu có nhắc triệu chứng.
+    if (shortcutOk && !slotQuery && (detectOffTopicTask(msg) || (!suggested && detectOffTopic(msg)))) {
+      return reply('Mình là trợ lý của Phòng khám Đa khoa Đức Minh nên chỉ hỗ trợ được các việc về khám chữa bệnh thôi bạn nhé. Bạn cần hỏi về chuyên khoa, giờ làm việc hay đặt lịch khám không?');
+    }
+    // Hỏi cơ sở khác — model lúc có lúc không vẫn nêu tên bệnh viện. Kèm chuyên khoa phù hợp nếu có.
+    if (shortcutOk && !slotQuery && detectOtherFacilityQuestion(msg)) {
+      return reply([
+        'Mình chỉ có thông tin về Phòng khám Đa khoa Đức Minh nên không đánh giá hay giới thiệu được cơ sở y tế khác.',
+        suggested
+          ? `Nếu bạn muốn khám tại Đức Minh, chuyên khoa phù hợp là ${suggested.specialty} — mình có thể giúp xem lịch trống.`
+          : 'Nếu bạn muốn khám tại Đức Minh, mình có thể giúp tìm chuyên khoa và lịch trống.',
+      ].join(' '));
+    }
+    // Khách chưa đăng nhập vừa xem lịch trống rồi chọn giờ ("9h được không") — đo thật vòng 5: model bịa giờ của
+    // bác sĩ khoa khác. Tra lại đúng khoa + ngày của lịch vừa xem. (Đã đăng nhập thì để model đặt lịch bằng công cụ.)
+    const lastAssistant = [...turns].reverse().find((t) => t.role === 'assistant');
+    const pickedTime = (facts.find((f) => /Giờ khách nói = (\d{2}:\d{2})/.test(f)) || '').match(/(\d{2}:\d{2})/);
+    const shownSlots = lastAssistant && lastAssistant.content.match(/^Lịch còn trống khoa (.+?):[\s\S]*?(\d{2})\/(\d{2})\/(\d{4})/);
+    if (shortcutOk && !req.user && !slotQuery && pickedTime && shownSlots && SPECIALTIES.includes(shownSlots[1])) {
+      const dateNote = facts.find((f) => /= (\d{4}-\d{2}-\d{2})/.test(f));
+      const date = dateNote ? dateNote.match(/(\d{4}-\d{2}-\d{2})/)[1] : `${shownSlots[4]}-${shownSlots[3]}-${shownSlots[2]}`;
+      const time = pickedTime[1];
+      const { doctors } = await getAvailableSlots({ specialty: shownSlots[1], date });
+      const free = doctors.filter((d) => d.freeSlots.includes(time)).map((d) => d.doctorName);
+      const [y, m, d] = date.split('-');
+      return reply(free.length
+        ? `Khung ${time} ngày ${d}/${m}/${y} khoa ${shownSlots[1]} còn trống với: ${free.join(', ')}. Bạn đăng nhập tại /tai-khoan.html rồi nhắn lại để mình đặt giúp, hoặc tự đặt tại /dat-lich.html.`
+        : `Khung ${time} ngày ${d}/${m}/${y} khoa ${shownSlots[1]} đã kín. Bạn chọn giờ khác trong danh sách lịch trống ở trên nhé.`);
+    }
+    // Hỏi giá — số liệu từ CSDL, giảm giá tính sẵn. Câu hỏi "giá đã gồm xét nghiệm/thuốc chưa", "trả góp" để quy trình chính.
+    const price = detectPriceQuestion(msg);
+    if (shortcutOk && !slotQuery && price && !/gồm|xét nghiệm|trả góp|giá thuốc/i.test(msg)) {
+      return reply(priceReply(clinic, price, suggested ? suggested.specialty : specialtyFromConversation(msg, turns)));
+    }
+    const facility = detectFacilityInfo(msg);
+    if (shortcutOk && !slotQuery && facility) return reply(FACILITY_REPLIES[facility]);
+    const schedule = shortcutOk && !slotQuery ? await doctorScheduleReply(clinic, msg) : null;
+    if (schedule) return reply(schedule);
+
+    const plainQuestion = shortcutOk && !slotQuery && !suggested;
+    // Tin cụt mở đầu cuộc trò chuyện ("vâng", "hả?", "123") — đo thật: model bịa "bạn đã đăng nhập thành
+    // công", "bạn đang nói sai". Có lịch sử thì để model hiểu theo ngữ cảnh (vd "vâng" là đồng ý câu trước).
+    if (plainQuestion && !turns.length && /^(?:ok\p{L}*|oke|vâng|dạ|ừ+|uh+|có|không|hả|gì|gì cơ|sao|sao cơ|không hiểu|nói lại(?: đi)?|bạn nói lại(?: đi)?|ê+|bot ơi|có ai không|test|abc|hi+|hihi+|haha+|hello|alo+|[\d\s.+-]+)[\s?!.]*$/iu.test(msg)) {
+      return reply('Chào bạn! Mình là trợ lý ảo của Phòng khám Đa khoa Đức Minh. Bạn cần hỏi về chuyên khoa phù hợp với triệu chứng, giờ làm việc, giá khám hay đặt lịch khám?');
+    }
+    // Hỏi trợ lý là ai — model bịa "được tạo ra bởi đội ngũ kỹ thuật" kể cả khi có câu mẫu.
+    if (plainQuestion && detectIdentityQuestion(msg)) {
+      return reply('Mình là trợ lý ảo (AI) của Phòng khám Đa khoa Đức Minh, giúp bạn tìm chuyên khoa phù hợp, xem giờ làm việc, lịch trống và đặt lịch khám. Mình không phải bác sĩ nên không thay được việc thăm khám trực tiếp.');
+    }
+    // Lịch ngày lễ/Tết — phòng khám chưa công bố, model bịa "vẫn hoạt động bình thường".
+    if (plainQuestion && detectHolidayQuestion(msg)) {
+      return reply('Lịch làm việc ngày lễ, Tết có thể thay đổi nên mình chưa có thông tin chính xác. Bạn gọi hotline 0974 755 333 để hỏi trước khi đến nhé. Ngày thường phòng khám làm việc 7:00–21:00, Thứ 2 đến Thứ 7.');
+    }
+    // Than đau/mệt chung chung ("ui đau ghê") — model nói "đau dữ dội, gọi hotline" thay vì hỏi đau ở đâu.
+    if (plainQuestion && isVagueComplaint(msg)) {
+      return reply('Bạn đang đau hay khó chịu ở đâu, từ bao giờ, và có kèm sốt hay triệu chứng nào khác không? Bạn kể thêm để mình gợi ý đúng chuyên khoa nhé. Nếu đau dữ dội, khó thở hoặc ngất thì hãy gọi cấp cứu 115.');
+    }
+    // Bệnh về mắt — phòng khám không có khoa Mắt mà model vẫn mời đến khám. Cả với trẻ em ("con tôi bị cận thị").
+    if (shortcutOk && !slotQuery && (!suggested || suggested.byPerson) && mentionsEye(msg)) {
+      return reply('Phòng khám Đa khoa Đức Minh hiện chưa có chuyên khoa Mắt, bạn nên đến cơ sở chuyên khoa mắt để được khám. Nếu mắt đau nhiều, nhìn mờ đột ngột hoặc bị chấn thương thì cần đi khám ngay.');
+    }
+
     if (slotQuery) {
-      const specialty = specialtyFromConversation(userText, turns);
+      const specialty = specialtyFromConversation(msg, turns);
       const slotLines = specialty ? await slotFacts(specialty, slotQuery.dates, todayVN) : null;
       // Model nhỏ bỏ qua cả lịch trống đã tra sẵn trong prompt (vẫn hứa "mình sẽ kiểm tra"), mà câu trả
       // lời ở đây xác định hoàn toàn từ dữ liệu — nên với bản rút gọn, code trả lời luôn, không gọi model.
-      // Tin có kèm số điện thoại/tuổi là đang đặt lịch dở — để model xử lý tiếp, không cắt ngang.
-      const bookingDetails = facts.some((f) => /Số điện thoại|Tuổi/.test(f));
       if (COMPACT_PROMPT && !emergency.length && !bookingDetails) {
-        const reply = slotLines
+        return reply(slotLines
           ? [
               `Lịch còn trống khoa ${specialty}:`,
               ...slotLines,
@@ -442,9 +661,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
                 ? 'Bạn muốn chọn giờ nào? Mình có thể đặt lịch giúp bạn luôn.'
                 : 'Bạn muốn chọn giờ nào? Bạn đăng nhập tại /tai-khoan.html để mình đặt giúp, hoặc tự đặt tại /dat-lich.html.',
             ].join('\n')
-          : `Bạn muốn xem lịch trống của chuyên khoa nào? Phòng khám có: ${SPECIALTIES.join(', ')}.`;
-        if (req.user) convId = await persistTurn(req.user.id, convId, userText, reply);
-        return res.json({ reply, conversationId: convId });
+          : `Bạn muốn xem lịch trống của chuyên khoa nào? Phòng khám có: ${SPECIALTIES.join(', ')}.`);
       }
       facts.push(
         ...(slotLines
@@ -456,14 +673,33 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
           : [`- Khách hỏi lịch trống nhưng CHƯA RÕ chuyên khoa → hỏi lại khách muốn khám chuyên khoa nào (${SPECIALTIES.join(', ')}).`])
       );
     }
-    if (!req.user && /đặt (?:lịch|hẹn)|book/i.test(userText)) {
+    if (!req.user && /đặt (?:lịch|hẹn|khám|cho|giúp|giùm|luôn)|book/i.test(msg)) {
       facts.push('- Khách muốn đặt lịch nhưng CHƯA ĐĂNG NHẬP → hướng dẫn khách đăng nhập/đăng ký tại /tai-khoan.html rồi quay lại chat, hoặc tự đặt tại /dat-lich.html.');
     }
     if (!slotQuery && suggested) {
       facts.push(`- CHUYÊN KHOA PHÙ HỢP: ${suggested.specialty} (vì khách nói "${suggested.keywords.join(', ')}") — ${clinic.describeSpecialty(suggested.specialty)}. Gợi ý ĐÚNG chuyên khoa này và chỉ nêu bác sĩ của chuyên khoa này.`);
+      // Đo thật: tài liệu RAG "sốt ở trẻ em" khiến model hỏi "bé bao nhiêu tuổi" khi người lớn hỏi "ho và sốt".
+      if (suggested.specialty !== 'Nhi khoa') facts.push('- Người khám là NGƯỜI LỚN (khách không nhắc tới trẻ em) — không hỏi tuổi/cân nặng của bé.');
+    }
+    const prescription = detectPrescriptionQuestion(msg);
+    if (prescription) {
+      facts.push('- Khách hỏi về KHÁNG SINH/THUỐC KÊ ĐƠN → nói rõ: chỉ dùng khi bác sĩ đã khám và kê đơn, không tự mua uống; không nêu tên hay liều kháng sinh nào; mời khách đi khám.');
+    }
+    if (isVagueComplaint(msg)) {
+      facts.push('- Khách chỉ than CHUNG CHUNG, chưa rõ triệu chứng → hỏi lại cụ thể: khó chịu/đau ở đâu, từ bao giờ, có sốt hay triệu chứng nào khác. CHƯA hỏi số điện thoại hay thông tin đặt lịch.');
+    }
+    if (mentionsEye(msg)) {
+      facts.push('- Phòng khám CHƯA CÓ chuyên khoa Mắt → nói rõ điều này và khuyên khách đến cơ sở chuyên khoa mắt; không tự nêu tên cơ sở cụ thể nào.');
     }
     const analysisBlock = facts.length
       ? ['KẾT QUẢ KIỂM TRA TỰ ĐỘNG tin nhắn MỚI NHẤT của khách (do hệ thống tính, ĐÚNG TUYỆT ĐỐI — tin theo đây, không tự đếm/tính lại):', ...facts].join('\n')
+      : '';
+
+    const examplesBlock = examples.length
+      ? [
+          'CÂU TRẢ LỜI MẪU do phòng khám soạn cho các câu hỏi tương tự — bắt chước nội dung và cách trả lời:',
+          ...examples.map((e) => `Khách: ${e.question}\nTrợ lý: ${e.answer}`),
+        ].join('\n\n')
       : '';
 
     const knowledgeBlock = retrieved.length
@@ -525,14 +761,25 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       'QUY TẮC:',
       '1. Chỉ dùng dữ kiện có trong prompt này (thông tin phòng khám, kết quả kiểm tra tự động, kết quả công cụ, tài liệu). Không bịa giá, bác sĩ, giờ trống, thuốc.',
       '2. Không chẩn đoán bệnh thay bác sĩ. Tên thuốc/liều dùng chỉ nêu khi có trong "Tài liệu tham khảo", ghi (Nguồn: ...) và nhắc chỉ để tham khảo. Với trẻ em không nêu liều, khuyên cho bé đi khám.',
-      '3. Không bao giờ nói "mình sẽ kiểm tra rồi báo lại": cần dữ liệu thì gọi công cụ ngay, thiếu thông tin thì hỏi lại đúng 1 câu.',
+      // Không đặt cụm từ trong ngoặc kép ở đây: model nhỏ chép nguyên văn mọi cụm được trích (đo thật: trả lời
+      // "Bạn là ai?" cho tin "ok", lặp "mình sẽ kiểm tra" vì chính quy tắc này từng trích cụm đó).
+      '3. Không hứa hẹn làm việc gì sau đó: cần dữ liệu thì gọi công cụ ngay, thiếu thông tin thì hỏi lại đúng 1 câu. Không lặp lại nguyên văn câu của khách.',
       '4. Tin ngắn như "0912345678", "mai", "9 giờ", "nam", "ok" là câu trả lời cho câu bạn vừa hỏi — hiểu theo ngữ cảnh hội thoại.',
       // Không trích nguyên văn câu xin xác nhận: model nhỏ chép lại câu đó vào cả những câu trả lời
       // không liên quan. Giao diện nhận bản tóm tắt theo dấu hiệu chung (index.html, isSummary).
       '5. Đặt lịch qua chat (chỉ khi khách đang đăng nhập): hỏi dần cho đủ chuyên khoa, ngày, giờ, họ tên, số điện thoại, tuổi, giới tính (bác sĩ và lý do khám nếu có). CHỈ KHI ĐÃ ĐỦ các thông tin đó mới tóm tắt gạch đầu dòng (họ tên, ngày khám, giờ khám, ...) và mời khách trả lời xác nhận. Khách chỉ hỏi thông tin hay hỏi lịch trống thì trả lời câu hỏi đó, KHÔNG tóm tắt, KHÔNG xin xác nhận.',
       '6. CHỈ gọi book_appointment sau khi khách xác nhận ("xác nhận", "đúng rồi", "ok đặt giúp mình"). Khách huỷ thì không đặt; khách muốn sửa thì hỏi sửa mục nào rồi tóm tắt lại. Báo đúng kết quả công cụ (mã lịch, trạng thái chờ xác nhận, hoặc lý do lỗi). Không bao giờ nói đã đặt nếu chưa gọi công cụ.',
       '7. Chủ nhật không khám thường: chỉ khám theo hẹn trước với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 tuần đó, cần bác sĩ đồng ý.',
-      '8. Câu hỏi ngoài phạm vi phòng khám hoặc không chắc thông tin y khoa: khuyên gọi hotline 0974 755 333.',
+      // Đo thật: model làm thơ, giải toán, đẩy câu hỏi giá vàng sang hotline, bịa tên bệnh viện ở Hà Nội.
+      '8. CHỈ hỗ trợ việc của phòng khám và câu hỏi sức khỏe. Việc khác (làm thơ, giải toán, thời tiết, giá cả thị trường, tin tức...) thì từ chối lịch sự đúng 1 câu và nói mình giúp được gì; KHÔNG làm theo, KHÔNG đưa hotline cho các câu này.',
+      '9. KHÔNG nêu tên, đánh giá hay so sánh bệnh viện/phòng khám/cơ sở y tế nào khác.',
+      '10. Câu hỏi y khoa mà tài liệu không có hoặc bạn không chắc: khuyên đi khám hoặc gọi hotline 0974 755 333.',
+      // Đo thật: model tự khẳng định có xét nghiệm, siêu âm, không cần đặt lịch trước, không nhận người nước ngoài…
+      '11. Không khẳng định phòng khám có hay không có dịch vụ, quy định, tiện ích nào ngoài thông tin ở trên (xét nghiệm, siêu âm, tiêm chủng, gửi xe, giấy tờ...): nói là mình chưa có thông tin chính xác và mời gọi hotline 0974 755 333 để được xác nhận.',
+      '12. Chỉ viết tiếng Việt.',
+      '13. Không tự đoán nguyên nhân bệnh. Khách nói chưa hiểu thì diễn đạt lại câu trả lời trước của bạn ngắn gọn, dễ hiểu hơn, luôn lịch sự.',
+      '',
+      examplesBlock,
       '',
       analysisBlock,
     ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
@@ -548,6 +795,8 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       knowledgeBlock,
       '',
       groundingNote,
+      '',
+      examplesBlock,
       '',
       analysisBlock,
       '',
@@ -596,7 +845,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     const text = await llm.chatWithTools({
       system: systemPrompt,
       history: turns,
-      message: userText,
+      message: msg,
       declarations: [checkSlotsDeclaration, bookAppointmentDeclaration, ...patientTools.map((t) => t.declaration)],
       // Nhiệt độ thấp để AI bám sát tài liệu tham khảo thay vì tự suy luận
       // lệch (đã có trường hợp thật: tài liệu ghi rõ "Da liễu" nhưng AI vẫn
@@ -619,13 +868,61 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         return { error: 'Công cụ không được hỗ trợ.' };
       },
     });
-    let reply = text || 'Mình chưa hiểu rõ ý bạn. Bạn nói lại cụ thể hơn giúp mình nhé (ví dụ: hỏi giờ làm việc, chuyên khoa phù hợp hoặc đặt lịch khám).';
-    // An toàn không phó mặc cho model: đo thật, model nhỏ lúc khuyên 115, lúc lại chỉ đưa hotline phòng khám.
-    if (emergency.length && !/115/.test(reply)) {
-      reply = `⚠️ ${emergency.join(', ')} có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.\n\n${reply}`;
+    let answer = text;
+    // Lọc câu thừa model nhỏ hay thêm (đo thật): hứa "mình sẽ kiểm tra lịch…" mà không làm; hỏi lại
+    // "khám chuyên khoa nào?" ngay sau khi đã có chuyên khoa code xác định; và KHẲNG ĐỊNH còn/hết lịch trống
+    // ("hiện có khung giờ trống hôm nay") khi lượt này không hề tra lịch — câu hỏi mời xem lịch thì giữ.
+    // Không lọc hết thì giữ nguyên.
+    if (COMPACT_PROMPT && answer) {
+      // Qwen đôi khi chèn chữ Hán ("hỏi bác sĩ hoặc 药师") hay tiếng Anh ("mình rất sorry").
+      answer = answer.replace(/\p{Script=Han}+/gu, '').replace(/\bsorry\b/gi, 'tiếc').replace(/[ \t]{2,}/g, ' ');
+      // Chỉ tách câu ở dấu câu theo sau là khoảng trắng/hết đoạn — đo thật: tách ở mọi dấu chấm làm đứt
+      // "/dat-lich.html" giữa chừng.
+      const sentences = answer.match(/[^\n]+?(?:[.!?](?=\s|$)|$)\s*|\n+/g) || [answer];
+      const otherSpecialties = suggested
+        ? SPECIALTIES.filter((s) => s !== suggested.specialty).map((s) => new RegExp(s.replace(/\s*–\s*/g, '\\s*[–-]\\s*'), 'i'))
+        : [];
+      const isQuestion = (s) => s.trim().endsWith('?');
+      const drop = (s) => /mình (?:sẽ |đang |có thể )?(?:(?:giúp|hỗ trợ)(?: bạn)? )?(?:kiểm tra|xem|check|đặt) lịch|mình (?:sẽ |đang |có thể )?(?:giúp|hỗ trợ)(?: bạn)? (?:kiểm tra|xem|check|đặt)|mình sẽ (?:kiểm tra|xem|check|hỗ trợ)|sẽ báo lại|(?:mình|tôi) sẽ kiểm tra/i.test(s) && !isQuestion(s)
+        // Khuyên dùng thuốc không có trong tài liệu — đo thật: "ngủ ngáy… dùng thuốc hỗ trợ ngủ".
+        || /(?:dùng|uống) (?:thêm )?thuốc (?:hỗ trợ|ngủ|an thần|giảm đau|kháng sinh)|thuốc hỗ trợ ngủ/i.test(s)
+        // Lời khuyên sai đo thật vòng 5: "bé sốt nên chườm đá" (phải lau nước ấm), "không cần ngừng thuốc huyết áp".
+        || /chườm (?:đá|lạnh|nước đá)|(?:không cần|nên) ngừng (?:uống )?thuốc/i.test(s)
+        || (suggested && /chuyên khoa nào/i.test(s))
+        // Nêu thêm khoa khác ("khám Da liễu hoặc Nhi khoa" cho bé vàng da) khi code đã xác định khoa.
+        || otherSpecialties.some((re) => re.test(s))
+        // Cả câu bằng tiếng Anh.
+        || (/^[\x00-\x7F]+$/.test(s.trim()) && /\b(?:the|is|are|you|I|am|to|of|and|have)\b/.test(s))
+        // Tự đoán nguyên nhân bệnh — đo thật: "lưỡi trắng do thiếu vitamin B9", "ngáy do thiếu ngủ, stress",
+        // "yếu nửa người do mất điện giải". Chẩn đoán là việc của bác sĩ.
+        || /(?:có thể|thường) (?:là )?do (?:nhiều )?(?:nguyên nhân|yếu tố)|có thể (?:là )?(?:dấu hiệu|do) (?:của )?(?:thiếu|bệnh|rối loạn|nhiễm|viêm|virus)/i.test(s)
+        || (!slotQuery && !isQuestion(s)
+          && /khung giờ|giờ trống|lịch trống|còn trống|hết (?:chỗ|lịch)|(?:hôm nay|ngày mai) hoặc|trong ngày hôm nay/i.test(s));
+      answer = sentences.filter((s) => !drop(s)).join('').trim();
+      // Lọc hết: ghép câu trả lời từ dữ kiện đã có thay vì trả lại câu sai.
+      if (!answer && suggested) {
+        answer = `Bạn nên khám chuyên khoa ${suggested.specialty} (${clinic.describeSpecialty(suggested.specialty)}). Bạn có muốn mình xem lịch trống không?`;
+      }
     }
-    if (req.user) convId = await persistTurn(req.user.id, convId, userText, reply);
-    res.json({ reply, conversationId: convId });
+    answer = answer || 'Mình chưa hiểu rõ ý bạn. Bạn nói lại cụ thể hơn giúp mình nhé (ví dụ: hỏi giờ làm việc, chuyên khoa phù hợp hoặc đặt lịch khám).';
+    // Những ý bắt buộc không phó mặc cho model — đo thật, model nhỏ lúc có lúc không:
+    // khuyên 115 khi cấp cứu, cảnh báo tự dùng kháng sinh, và nêu đúng chuyên khoa code đã xác định.
+    if (suggested && !slotQuery && !emergency.length) {
+      const specialtyRe = new RegExp(suggested.specialty.replace(/\s*–\s*/g, '\\s*[–-]\\s*'), 'i');
+      if (!specialtyRe.test(answer)) answer = `Bạn nên khám chuyên khoa ${suggested.specialty}.\n\n${answer}`;
+    }
+    if (prescription && !/kê đơn/i.test(answer)) {
+      answer = `💊 Kháng sinh và thuốc kê đơn chỉ dùng khi bác sĩ đã khám và kê đơn — bạn đừng tự mua uống.\n\n${answer}`;
+    }
+    if (emergency.length && !/115/.test(answer)) {
+      answer = `⚠️ ${emergency.join(', ')} có thể là dấu hiệu nguy hiểm — bạn hãy gọi cấp cứu 115 hoặc đến ngay cơ sở y tế gần nhất.\n\n${answer}`;
+    }
+    // Khách chưa đăng nhập gửi thông tin đặt lịch (tên, số điện thoại…) — đo thật vòng 5: model chỉ nhắc lại
+    // thông tin mà không nói cần đăng nhập, khách tưởng đã đặt xong.
+    if (!req.user && (bookingDetails || /đặt (?:lịch|hẹn|khám|cho|giúp)/i.test(msg)) && !/đăng nhập|tai-khoan/i.test(answer)) {
+      answer += '\n\nĐể mình đặt lịch qua chat, bạn cần đăng nhập/đăng ký tại /tai-khoan.html rồi nhắn lại; hoặc bạn tự đặt tại /dat-lich.html. Lịch CHƯA được đặt cho tới khi bạn làm một trong hai cách này.';
+    }
+    return reply(answer);
   } catch (e) {
     console.error(e);
     const { status, error } = aiErrorResponse(e);
@@ -765,6 +1062,96 @@ router.delete('/kb/:id', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM kb_documents WHERE id = $1', [Number(req.params.id)]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Không tìm thấy tài liệu.' });
+    res.status(204).end();
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// ---------- Câu trả lời mẫu cho chatbot (few-shot, lib/chatExamples.js) — chỉ admin ----------
+
+const EXAMPLE_FIELDS = 'id, question, answer, created_at AS "createdAt", updated_at AS "updatedAt"';
+
+function readExample(body) {
+  const question = String((body && body.question) || '').trim();
+  const answer = String((body && body.answer) || '').trim();
+  if (question.length < 2 || question.length > 500) return { error: 'Câu hỏi cần từ 2 đến 500 ký tự.' };
+  if (!answer || answer.length > 2000) return { error: 'Câu trả lời không được trống và tối đa 2000 ký tự.' };
+  return { question, answer };
+}
+
+router.get('/examples', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT ${EXAMPLE_FIELDS} FROM chat_examples ORDER BY updated_at DESC`);
+    res.json({ examples: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Thử 1 câu hỏi xem chatbot sẽ lấy những câu mẫu nào (và độ giống) — để admin biết câu mẫu có "trúng" không.
+router.post('/examples/match', requireAdmin, async (req, res) => {
+  try {
+    const question = normalizeMessage(String((req.body && req.body.question) || '')).text.trim();
+    if (!question) return res.status(400).json({ error: 'Nhập câu hỏi cần thử.' });
+    res.json({ normalized: question, matches: await findExamples(question, 5) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
+  }
+});
+
+// Không nhúng được câu hỏi (thiếu key, hết hạn ngạch Gemini) vẫn lưu — câu mẫu dùng được ngay qua so khớp chữ.
+router.post('/examples', requireAdmin, async (req, res) => {
+  const input = readExample(req.body);
+  if (input.error) return res.status(400).json({ error: input.error });
+  try {
+    const vector = await tryEmbedQuestion(normalizeMessage(input.question).text);
+    const result = await pool.query(
+      `INSERT INTO chat_examples (question, answer, embedding, created_by) VALUES ($1,$2,$3::vector,$4) RETURNING ${EXAMPLE_FIELDS}`,
+      [input.question, input.answer, vector, req.user.id]
+    );
+    logAudit(req.user, 'chat_example.create', 'chat_example', result.rows[0].id, { question: input.question });
+    res.status(201).json({ example: result.rows[0] });
+  } catch (e) {
+    console.error(e);
+    const { status, error } = aiErrorResponse(e);
+    res.status(status).json({ error });
+  }
+});
+
+router.put('/examples/:id', requireAdmin, async (req, res) => {
+  const input = readExample(req.body);
+  if (input.error) return res.status(400).json({ error: input.error });
+  try {
+    const current = await pool.query('SELECT question FROM chat_examples WHERE id = $1', [Number(req.params.id)]);
+    if (current.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy câu trả lời mẫu.' });
+    // Chỉ nhúng lại khi đổi câu hỏi — sửa câu trả lời không tốn lượt gọi Gemini. Đổi câu hỏi mà không nhúng
+    // được thì XOÁ vector cũ (không thì câu mẫu bị tìm theo nghĩa câu hỏi cũ) — so khớp chữ dùng tạm.
+    const questionChanged = current.rows[0].question !== input.question;
+    const vector = questionChanged ? await tryEmbedQuestion(normalizeMessage(input.question).text) : null;
+    const result = await pool.query(
+      `UPDATE chat_examples SET question = $1, answer = $2,
+         embedding = CASE WHEN $3 THEN $4::vector ELSE embedding END, updated_at = now()
+       WHERE id = $5 RETURNING ${EXAMPLE_FIELDS}`,
+      [input.question, input.answer, questionChanged, vector, Number(req.params.id)]
+    );
+    logAudit(req.user, 'chat_example.update', 'chat_example', result.rows[0].id, { question: input.question });
+    res.json({ example: result.rows[0] });
+  } catch (e) {
+    console.error(e);
+    const { status, error } = aiErrorResponse(e);
+    res.status(status).json({ error });
+  }
+});
+
+router.delete('/examples/:id', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM chat_examples WHERE id = $1 RETURNING question', [Number(req.params.id)]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Không tìm thấy câu trả lời mẫu.' });
+    logAudit(req.user, 'chat_example.delete', 'chat_example', Number(req.params.id), { question: result.rows[0].question });
     res.status(204).end();
   } catch (e) {
     console.error(e);

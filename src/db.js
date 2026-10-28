@@ -192,6 +192,21 @@ async function init() {
   // Không có chỉ mục thì similarity search vẫn đúng, chỉ là quét tuần tự thay vì
   // ANN — hoàn toàn ổn với quy mô vài trăm tài liệu như 1 phòng khám nhỏ.
 
+  // Câu trả lời mẫu cho chatbot (few-shot): admin soạn cặp hỏi–đáp chuẩn, mỗi lượt chat tìm vài
+  // cặp có câu hỏi gần nhất (so vector câu hỏi) đưa vào prompt để model nhỏ bắt chước — "dạy"
+  // chatbot mà không cần huấn luyện lại model. Cùng loại vector 3072 chiều, cũng KHÔNG tạo chỉ mục.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_examples (
+      id SERIAL PRIMARY KEY,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      embedding vector(3072),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
 
   // Nhóm thuốc/hoạt chất (vd "Hạ sốt - giảm đau (Paracetamol)") — admin tự đặt tên

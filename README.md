@@ -157,17 +157,39 @@ Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 | `AI_QUERY_EXPANSION` | bật với Gemini, tắt với Ollama | Bước mở rộng câu hỏi Multi-Query + HyDE (tốn thêm 1 lượt gọi AI mỗi câu) |
 | `AI_COMPACT_PROMPT` | tắt với Gemini, bật với Ollama | Prompt rút gọn cho model nhỏ + trả lời câu hỏi lịch trống thẳng từ dữ liệu, không qua model |
 
-**Chatbot với model nhỏ:** model ~1,7B không theo nổi prompt đầy đủ (~40 quy tắc), nên phần chắc chắn được tính
-bằng code trong `src/lib/chatAnalysis.js` rồi đưa vào prompt như dữ kiện: chuyên khoa theo triệu chứng
-("đau họng" → Tai – Mũi – Họng, "con tôi 5 tuổi…" → Nhi khoa), dấu hiệu cấp cứu (luôn kèm lời khuyên gọi 115),
-câu hỏi lịch trống kèm ngày ("tuần này", "thứ 7", "mai"…) — với prompt rút gọn, câu hỏi lịch trống được trả lời
-thẳng từ CSDL. Đo chất lượng bằng `npm run eval-chat` (15 câu mẫu, server phải đang chạy;
-`EVAL_URL=https://duc-minh-clinic.onrender.com npm run eval-chat` để đo bản deploy):
+**Chatbot với model nhỏ** — model ~1,7B không theo nổi prompt đầy đủ (~40 quy tắc), nên chatbot có nhiều lớp,
+model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
+
+1. **Chuẩn hoá tin nhắn** (`normalizeMessage`): bỏ chữ gõ lặp ("họngggg"), đổi viết tắt ("ko bít", "t7", "pk"),
+   thêm dấu cho tin gõ không dấu ("toi bi dau hong" → "tôi bị đau họng").
+2. **Nhận diện bằng code** (`src/lib/chatAnalysis.js`): chuyên khoa theo triệu chứng / người khám (trẻ em, mang
+   thai), cấp cứu, ý nghĩ tự hại, hỏi lịch trống + ngày, hỏi giá/giảm giá, liều thuốc, kháng sinh, dữ liệu cá nhân,
+   câu ngoài phạm vi, tấn công prompt…
+3. **Trả lời cố định bằng code** cho những câu có đáp án chắc chắn (model nhỏ đo thật hay làm sai): cấp cứu → 115,
+   tự hại, từ chối lộ dữ liệu, lịch trống (từ CSDL), giá + giá sau giảm (từ CSDL), lịch bác sĩ (bảng ca trực),
+   danh tính trợ lý, câu ngoài phạm vi, khoa Mắt (không có), ngày lễ/Tết, tiện ích chưa có thông tin…
+4. **Câu trả lời mẫu** (few-shot, bảng `chat_examples`): admin tự dạy chatbot ở trang `/co-so-tri-thuc.html`
+   (thêm/sửa/xoá + ô "Thử 1 câu hỏi" xem chatbot lấy câu mẫu nào). Câu hỏi gần như trùng → trả nguyên văn; gần
+   giống → đưa vào prompt làm ví dụ. Tìm bằng vector Gemini; **hết hạn ngạch nhúng Gemini (gói miễn phí
+   1000 lượt/ngày) thì tự so khớp chữ** (trigram, chỉ bắt câu gần giống về chữ). Bộ câu mẫu ban đầu (64 câu, mỗi
+   câu nhắm 1 lỗi đã gặp): `node scripts/seed-chat-examples.js` — chạy lại được, tự bổ sung vector còn thiếu.
+5. **Model** với prompt rút gọn (dữ kiện tính sẵn để cuối prompt, không trích cụm từ trong ngoặc kép vì model nhỏ
+   chép nguyên văn), rồi **bộ lọc câu trả lời**: bỏ câu hứa hẹn suông, khẳng định lịch trống không có cơ sở, nêu sai
+   khoa, tự đoán nguyên nhân bệnh, khuyên dùng thuốc, chữ Hán/tiếng Anh lẫn vào; luôn chèn 115 khi cấp cứu, cảnh
+   báo kháng sinh, nhắc đăng nhập khi khách chưa đăng nhập gửi thông tin đặt lịch.
+
+Đo chất lượng bằng `npm run eval-chat` (server phải đang chạy; `EVAL_URL=https://duc-minh-clinic.onrender.com
+npm run eval-chat` để đo bản deploy). Bộ test gồm 86 câu, phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
+năng hiểu câu chưa từng gặp; được xây qua 5 vòng hỏi dò (~600 lượt), mỗi lỗi tìm ra thành 1 câu test:
 
 | Cấu hình (`qwen3:1.7b`) | Kết quả | Thời gian TB |
 |---|---|---|
-| Prompt đầy đủ (trước) | 6/15 | 2,9 s |
-| Prompt rút gọn + dữ kiện tính sẵn (hiện tại) | 15/15 | 1,3 s |
+| Prompt đầy đủ (ban đầu) | 6/15 | 2,9 s |
+| Prompt rút gọn + dữ kiện tính sẵn | 15/15 | 1,3 s |
+| + chuẩn hoá, trả lời cố định, câu mẫu, bộ lọc (sau 5 vòng) | 86/86 | 0,6 s |
+
+Chưa kiểm thử tự động được luồng của **bệnh nhân đã đăng nhập** (đặt lịch qua chat, tra hồ sơ/hoá đơn) — cần
+tài khoản bệnh nhân; nên tự thử tay sau mỗi lần sửa chatbot.
 
 **Lưu ý:** dù dùng Ollama, phần tìm kiếm tài liệu y khoa (RAG) vẫn nhúng vector bằng Gemini — muốn chatbot trích dẫn được Cẩm nang MSD thì vẫn cần `GEMINI_API_KEY`.
 Gọi Ollama lỗi (chưa mở Ollama, laptop tắt…) mà có `GEMINI_API_KEY` thì server tự chuyển sang Gemini cho câu đó.
@@ -233,6 +255,9 @@ chuyển sang Gemini — tránh đặt lịch trùng — mà báo lỗi để kh
 | GET | `/api/billing/invoices/:id/payment-status` | Chủ hoá đơn, nhân viên/bác sĩ/admin | Chỉ trả trạng thái thanh toán (không ghi nhật ký) — trang Hồ sơ gọi sau khi bệnh nhân báo chuyển khoản (3 lần đầu 5 giây/lần, sau đó 30 giây/lần, tối đa ~10 phút): có xác nhận thì báo "Chuyển khoản thành công", lần 3 vẫn chưa có thì yêu cầu gọi nhân viên hỗ trợ |
 | POST | `/api/ai/chat` | Ai cũng gọi được | Chatbot AI (Gemini, hoặc Ollama khi `AI_PROVIDER=ollama`) |
 | POST | `/api/ai/ollama-endpoint` | Laptop chạy `npm run tunnel` (khoá `OLLAMA_API_KEY`) | Báo địa chỉ đường hầm Ollama hiện tại |
+| GET/POST | `/api/ai/examples` | Admin | Xem / thêm câu trả lời mẫu cho chatbot |
+| PUT/DELETE | `/api/ai/examples/:id` | Admin | Sửa / xoá câu trả lời mẫu |
+| POST | `/api/ai/examples/match` | Admin | Thử 1 câu hỏi xem chatbot lấy câu mẫu nào |
 | POST | `/api/ai/summarize-patient` | Bác sĩ/nhân viên/admin | Tóm tắt AI bệnh sử 1 bệnh nhân |
 
 Các API cần đăng nhập thì gửi kèm header `Authorization: Bearer <token>`.

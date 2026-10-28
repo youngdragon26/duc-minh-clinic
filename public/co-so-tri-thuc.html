@@ -62,6 +62,14 @@
   .doc-meta{font-size:.76rem; color:var(--ink-muted); margin-top:2px;}
   .doc-content{font-size:.85rem; color:var(--ink-muted); margin-top:8px; line-height:1.6; white-space:pre-wrap;}
   .empty{color:var(--ink-muted); font-size:.86rem; padding:8px 0;}
+  textarea.short{min-height:80px;}
+  .row-actions{display:flex; gap:6px; flex-shrink:0;}
+  .match{border-top:1px solid var(--line); padding:10px 0; font-size:.85rem; line-height:1.55;}
+  .match:first-child{border-top:none;}
+  .sim{display:inline-block; font-size:.72rem; font-weight:600; padding:1px 7px; border-radius:10px; margin-right:6px;
+       background:var(--surface-2); color:var(--ink-muted);}
+  .sim.direct{background:color-mix(in srgb, var(--accent) 22%, var(--surface)); color:var(--accent-deep);}
+  .hint{font-size:.78rem; color:var(--ink-muted); margin-top:6px; line-height:1.55;}
   [hidden]{display:none !important;}
 </style>
 </head>
@@ -104,6 +112,39 @@
       <div id="docList"></div>
       <div class="empty" id="docEmpty" hidden>Chưa có tài liệu nào trong cơ sở tri thức.</div>
     </div>
+
+    <h1 style="margin-top:36px;">Câu trả lời mẫu cho chatbot</h1>
+    <p class="sub">Dạy chatbot bằng ví dụ: khi khách hỏi câu giống 1 câu mẫu, chatbot bắt chước câu trả lời mẫu; giống gần như hệt thì trả nguyên văn câu mẫu.
+      Gặp câu chatbot trả lời sai → thêm câu đó cùng câu trả lời đúng vào đây. Không ghi giá khám, tên bác sĩ, lịch làm việc vào câu mẫu — các thông tin đó chatbot tự lấy từ hệ thống nên luôn mới.</p>
+
+    <div class="card">
+      <b>Thử 1 câu hỏi</b>
+      <form id="matchForm">
+        <input type="text" id="matchQuestion" placeholder="Ví dụ: uong khang sinh gi de het viem hong" required>
+        <button class="primary" type="submit" id="matchSubmit">Xem chatbot lấy câu mẫu nào</button>
+      </form>
+      <div class="msg" id="matchMsg"></div>
+      <div id="matchList"></div>
+    </div>
+
+    <div class="card">
+      <b id="exFormTitle">Thêm câu trả lời mẫu</b>
+      <form id="exForm">
+        <label>Câu hỏi của khách</label>
+        <input type="text" id="exQuestion" placeholder="Ví dụ: Uống kháng sinh gì để hết viêm họng?" required maxlength="500">
+        <label>Câu trả lời đúng</label>
+        <textarea class="short" id="exAnswer" placeholder="Câu trả lời ngắn gọn 2-4 câu, xưng &quot;mình&quot;, gọi khách là &quot;bạn&quot;" required maxlength="2000"></textarea>
+        <button class="primary" type="submit" id="exSubmit">Thêm câu mẫu</button>
+        <button class="ghost" type="button" id="exCancel" hidden style="margin-left:8px;">Huỷ sửa</button>
+        <div class="msg" id="exMsg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <b>Danh sách câu mẫu</b>
+      <div id="exList"></div>
+      <div class="empty" id="exEmpty" hidden>Chưa có câu trả lời mẫu nào.</div>
+    </div>
   </div>
 </div>
 
@@ -137,7 +178,7 @@
           </div>
           <button class="ghost del-doc" data-id="${d.id}">Xoá</button>
         </div>
-        <div class="doc-content">${d.content}</div>
+        <div class="doc-content">${esc(d.content)}</div>
       </div>
     `).join('');
     list.querySelectorAll('.del-doc').forEach(btn => {
@@ -178,6 +219,111 @@
     }
   });
 
+  // ---------- Câu trả lời mẫu ----------
+  let examples = [];
+  let editingId = null;
+
+  async function loadExamples() {
+    ({ examples } = await api('/api/ai/examples'));
+    document.getElementById('exEmpty').hidden = examples.length > 0;
+    const list = document.getElementById('exList');
+    list.innerHTML = examples.map(ex => `
+      <div class="doc">
+        <div class="doc-head">
+          <div><b>${esc(ex.question)}</b>
+            <div class="doc-meta">sửa lần cuối ${new Date(ex.updatedAt).toLocaleString('vi-VN')}</div></div>
+          <div class="row-actions">
+            <button class="ghost edit-ex" data-id="${ex.id}">Sửa</button>
+            <button class="ghost del-ex" data-id="${ex.id}">Xoá</button>
+          </div>
+        </div>
+        <div class="doc-content">${esc(ex.answer)}</div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.edit-ex').forEach(btn => btn.addEventListener('click', () => startEdit(Number(btn.dataset.id))));
+    list.querySelectorAll('.del-ex').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('Xoá câu trả lời mẫu này?')) return;
+      try {
+        await api('/api/ai/examples/' + btn.dataset.id, { method: 'DELETE' });
+        if (editingId === Number(btn.dataset.id)) stopEdit();
+        loadExamples();
+      } catch (e) { alert(e.message); }
+    }));
+  }
+
+  function startEdit(id) {
+    const ex = examples.find(x => x.id === id);
+    if (!ex) return;
+    editingId = id;
+    document.getElementById('exQuestion').value = ex.question;
+    document.getElementById('exAnswer').value = ex.answer;
+    document.getElementById('exFormTitle').textContent = 'Sửa câu trả lời mẫu';
+    document.getElementById('exSubmit').textContent = 'Lưu thay đổi';
+    document.getElementById('exCancel').hidden = false;
+    document.getElementById('exForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function stopEdit() {
+    editingId = null;
+    document.getElementById('exForm').reset();
+    document.getElementById('exFormTitle').textContent = 'Thêm câu trả lời mẫu';
+    document.getElementById('exSubmit').textContent = 'Thêm câu mẫu';
+    document.getElementById('exCancel').hidden = true;
+  }
+
+  document.getElementById('exCancel').addEventListener('click', stopEdit);
+
+  document.getElementById('exForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('exMsg');
+    const btn = document.getElementById('exSubmit');
+    msg.textContent = ''; msg.className = 'msg';
+    btn.disabled = true;
+    try {
+      const body = JSON.stringify({
+        question: document.getElementById('exQuestion').value,
+        answer: document.getElementById('exAnswer').value,
+      });
+      if (editingId) await api('/api/ai/examples/' + editingId, { method: 'PUT', body });
+      else await api('/api/ai/examples', { method: 'POST', body });
+      msg.textContent = editingId ? 'Đã lưu thay đổi.' : 'Đã thêm câu mẫu.';
+      msg.className = 'msg ok';
+      stopEdit();
+      loadExamples();
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('matchForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('matchMsg');
+    const list = document.getElementById('matchList');
+    const btn = document.getElementById('matchSubmit');
+    msg.textContent = ''; msg.className = 'msg'; list.innerHTML = '';
+    btn.disabled = true;
+    try {
+      const r = await api('/api/ai/examples/match', {
+        method: 'POST', body: JSON.stringify({ question: document.getElementById('matchQuestion').value }),
+      });
+      msg.innerHTML = `Chatbot hiểu câu hỏi là: <b>${esc(r.normalized)}</b>` +
+        '<div class="hint">Danh sách dưới là các câu mẫu chatbot sẽ dùng. "So khớp chữ" = câu mẫu chưa có vector hoặc Gemini đang hết hạn ngạch — chỉ bắt được câu gần giống về chữ.</div>';
+      list.innerHTML = r.matches.length
+        ? r.matches.map(m => `
+            <div class="match">
+              <span class="sim ${m.direct ? 'direct' : ''}">${Math.round(m.similarity * 100)}%${m.lexical ? ' · so khớp chữ' : ''}${m.direct ? ' · trả nguyên văn' : ''}</span>
+              <b>${esc(m.question)}</b><div class="doc-content">${esc(m.answer)}</div>
+            </div>`).join('')
+        : '<div class="empty">Không có câu mẫu nào đủ giống — chatbot sẽ tự trả lời. Nếu câu trả lời chưa đúng, hãy thêm câu mẫu cho câu này.</div>';
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   (async function init() {
     if (!token) { document.getElementById('noAccessCard').hidden = false; return; }
     try {
@@ -187,7 +333,7 @@
       document.getElementById('noAccessCard').hidden = false; return;
     }
     document.getElementById('content').hidden = false;
-    await loadDocs();
+    await Promise.all([loadDocs(), loadExamples()]);
   })();
 </script>
 </body>

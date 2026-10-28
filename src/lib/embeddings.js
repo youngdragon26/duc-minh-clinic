@@ -16,7 +16,14 @@ function getClient() {
   return client;
 }
 
+// Mỗi lượt chat nhúng cùng 1 câu hỏi cho cả tìm tài liệu (RAG) lẫn tìm câu trả lời mẫu — nhớ
+// vài trăm kết quả gần nhất để không tốn 2 lượt gọi Gemini (có hạn ngạch) cho cùng 1 câu.
+const CACHE_SIZE = 300;
+const cache = new Map();
+
 async function embedText(text, taskType) {
+  const key = taskType + '\u0000' + text;
+  if (cache.has(key)) return cache.get(key);
   const c = getClient();
   if (!c) throw Object.assign(new Error('Thiếu GEMINI_API_KEY'), { code: 'no_client' });
   const result = await c.models.embedContent({
@@ -24,7 +31,10 @@ async function embedText(text, taskType) {
     contents: text,
     config: { taskType },
   });
-  return result.embeddings[0].values;
+  const values = result.embeddings[0].values;
+  cache.set(key, values);
+  if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value);
+  return values;
 }
 
 // pgvector nhận vector qua SQL dưới dạng chuỗi '[0.1,0.2,...]'.

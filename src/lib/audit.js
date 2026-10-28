@@ -39,6 +39,9 @@ const ACTION_LABELS = {
   'auth.login': 'Đăng nhập thành công',
   'auth.login_failed': 'Đăng nhập thất bại (sai thông tin)',
   'auth.login_blocked': 'Đăng nhập bị chặn (tài khoản đã khoá)',
+  'chat_example.create': 'Thêm câu trả lời mẫu cho chatbot',
+  'chat_example.update': 'Sửa câu trả lời mẫu cho chatbot',
+  'chat_example.delete': 'Xoá câu trả lời mẫu cho chatbot',
 };
 
 module.exports = { logAudit, ACTION_LABELS };
