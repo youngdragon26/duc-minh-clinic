@@ -157,7 +157,8 @@ async function doctorScheduleReply(clinic, msg, lastAssistantText) {
 }
 
 // "Bác sĩ là ai / bác sĩ nào" → danh sách bác sĩ của chuyên khoa đang nói tới (vòng 7: model lặp lại câu trả lời trước).
-const DOCTOR_WHO_RE = /bác sĩ (?:là ai|nào|tên (?:là )?gì|gồm (?:những )?ai)|ai (?:là bác sĩ|khám)/i;
+// Cho phép vài chữ chen giữa ("bác sĩ khám sản là ai" — Render từng trượt câu này vì rơi xuống model).
+const DOCTOR_WHO_RE = /bác sĩ(?: \p{L}+){0,3} (?:là ai|tên (?:là )?gì|gồm (?:những )?ai)|bác sĩ nào|ai (?:là bác sĩ|khám)/iu;
 function doctorListReply(clinic, specialty) {
   if (specialty) return `Bác sĩ khám chuyên khoa ${specialty}: ${clinic.describeSpecialty(specialty).replace(/^.*bác sĩ: /, '')}. Khi đặt lịch bạn có thể chọn bác sĩ cụ thể.`;
   return ['Bác sĩ theo từng chuyên khoa:', ...SPECIALTIES.map((s) => `- ${s}: ${clinic.describeSpecialty(s).replace(/^.*bác sĩ: /, '')}`)].join('\n');
