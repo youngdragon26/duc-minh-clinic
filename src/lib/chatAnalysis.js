@@ -129,6 +129,8 @@ const SHORTHAND = {
   'phỉa': 'phải', phai: 'phải', 'trả lười': 'trả lời', 'tl': 'trả lời',
   h: 'giờ', t2: 'thứ 2', t3: 'thứ 3', t4: 'thứ 4', t5: 'thứ 5', t6: 'thứ 6', t7: 'thứ 7', cn: 'chủ nhật',
   'bao nhiu': 'bao nhiêu', nhiu: 'nhiêu', 'bnhiu': 'bao nhiêu',
+  // "khao" lẻ là "khao khát" — chỉ sửa khi đi với chữ hay gặp sau "khoa" (đo thật: "tại sao không thể khám khao khác").
+  'khao khác': 'khoa khác', 'khao khac': 'khoa khác', 'khao nào': 'khoa nào', 'khao nao': 'khoa nào',
 };
 
 // Cụm từ không dấu → có dấu, chỉ áp dụng khi cả tin nhắn gần như không có dấu. Ưu tiên cụm dài
@@ -164,6 +166,9 @@ const ACCENT_PHRASES = {
   'khong khoe': 'không khỏe', 'kho tho': 'khó thở', 'dau nguc': 'đau ngực', 'tuc nguc': 'tức ngực', ngat: 'ngất',
   'bat tinh': 'bất tỉnh', 'co giat': 'co giật', 'huyet ap': 'huyết áp', 'tieu duong': 'tiểu đường', 'da day': 'dạ dày',
   'kho tieu': 'khó tiêu', 'tao bon': 'táo bón', 'cam cum': 'cảm cúm', 'dau lung': 'đau lưng', 'dau khop': 'đau khớp',
+  'vi sao': 'vì sao', 'sao lai': 'sao lại', 'ly do': 'lý do', 'khoa khac': 'khoa khác', 'chuyen khoa khac': 'chuyên khoa khác',
+  'dau goi': 'đau gối', 'dau dau goi': 'đau đầu gối', 'dau vai': 'đau vai', 'dau chan': 'đau chân', 'dau tay': 'đau tay',
+  'xuong khop': 'xương khớp', 'co xuong khop': 'cơ xương khớp', 'than kinh': 'thần kinh', 'tim mach': 'tim mạch', 'tiet nieu': 'tiết niệu',
   'mang thai': 'mang thai', 'co thai': 'có thai', 'co bau': 'có bầu', 'kham thai': 'khám thai', 'kinh nguyet': 'kinh nguyệt',
   'tre kinh': 'trễ kinh', 'tre em': 'trẻ em', tre: 'trẻ', 'em be': 'em bé', be: 'bé', 'so sinh': 'sơ sinh', nu: 'nữ',
 };
@@ -216,6 +221,9 @@ function normalizeMessage(message) {
   } else {
     for (const [re, value] of MIXED_PHRASES) text = text.replace(re, value);
   }
+  // "tai sao" là "tại sao" — trừ khi than đau tai ("đau tai sao mãi không khỏi"). Đo thật: "tai sao lai kham khoa noi"
+  // bị gợi ý Tai – Mũi – Họng.
+  text = text.replace(/(?<!(?:đau|ù|viêm|ngứa|nhức|dau|u|viem|ngua|nhuc) )(?<!\p{L})tai sao(?!\p{L})/giu, 'tại sao');
   return { text, changed: text !== original };
 }
 
@@ -236,7 +244,8 @@ const SYMPTOM_RULES = [
     'điếc', 'nghe kém', 'ngáy', 'hắt hơi')],
   ['Da liễu', words('ngứa', 'mụn', 'mẩn', 'nổi mẩn', 'phát ban', 'mề đay', 'nấm', 'vảy nến', 'chàm', 'rụng tóc', 'lang ben', 'zona', 'dị ứng', 'da liễu', '(?:trên|ngoài|ở) da', 'da (?:mặt|tay|chân|đầu|bị|khô)',
     'nám', 'sạm da', 'rạn da', 'hôi nách', 'mụn cóc', 'tóc (?:gãy|rụng)', 'khám da', 'khoa da')],
-  ['Nội tổng quát', words('sốt', 'ho', 'đau bụng', 'tiêu chảy', 'đau đầu', 'nhức đầu', 'chóng mặt', 'huyết áp', 'tiểu đường', 'đường huyết', 'mỡ máu', 'mệt mỏi', 'dạ dày', 'khó tiêu', 'ợ chua', 'trào ngược', 'thượng vị', 'buồn nôn', 'nôn', 'táo bón', 'cảm cúm', 'cúm', 'bị cảm', 'cảm lạnh', 'khám sức khỏe', 'khám sức khoẻ', 'khám tổng quát', 'nội khoa', 'nội tổng quát', 'khoa nội', 'khám nội', 'tim', 'gan', 'sỏi thận', 'đau thận',
+  // "đau đầu gối" là đau khớp gối, không phải đau đầu (đo thật: bị hiểu là đau đầu, hỏi lại thì giải thích sai).
+  ['Nội tổng quát', words('sốt', 'ho', 'đau bụng', 'tiêu chảy', 'đau đầu(?! gối)', 'nhức đầu(?! gối)', 'chóng mặt', 'huyết áp', 'tiểu đường', 'đường huyết', 'mỡ máu', 'mệt mỏi', 'dạ dày', 'khó tiêu', 'ợ chua', 'trào ngược', 'thượng vị', 'buồn nôn', 'nôn', 'táo bón', 'cảm cúm', 'cúm', 'bị cảm', 'cảm lạnh', 'khám sức khỏe', 'khám sức khoẻ', 'khám tổng quát', 'nội khoa', 'nội tổng quát', 'khoa nội', 'khám nội', 'tim', 'gan', 'sỏi thận', 'đau thận',
     'hay quên', 'trí nhớ', 'sụt cân', 'thiếu máu', 'covid', 'cúm a',
     // Cách nói đảo trật tự / dân dã (đo thật vòng 6: "bụng đau", "đau quặn vùng rốn", "đầy bụng" không nhận ra).
     'bụng (?:đau|chướng)', 'đầu (?:đau|nhức)', 'đau quặn', '(?:quanh|vùng|ở) rốn', 'đầy bụng', 'chướng bụng', 'ợ hơi',
@@ -245,8 +254,10 @@ const SYMPTOM_RULES = [
     'tinh hoàn', 'xuất tinh', 'cương dương',
     // Phòng khám không có khoa Cơ xương khớp, Tiết niệu, Hậu môn – trực tràng — các triệu chứng này
     // do Nội tổng quát khám ban đầu.
-    'đau (?:lưng|khớp|vai|gáy|cổ|gối|chân|tay)', 'tê (?:tay|chân|bì)', 'gout', 'gút', 'tiểu (?:buốt|rắt|ra máu|nhiều|đêm)',
-    'trĩ', 'mất ngủ', 'khó ngủ', 'đau nửa đầu')],
+    '(?:đau|sưng|mỏi|nhức|cứng) (?:đầu gối|khớp gối|lưng|khớp|vai|gáy|cổ|gối|chân|tay|hông|háng|xương|gót chân|cổ tay|cổ chân|mắt cá|bắp chân|đùi|cột sống)',
+    'đầu gối', 'cổ tay', 'cổ chân', 'mắt cá chân', 'xương khớp', 'thoái hoá', 'thoái hóa', 'thoát vị', 'đĩa đệm', 'cột sống', 'loãng xương', 'bong gân', 'chuột rút', 'viêm khớp',
+    'gai (?:cột sống|xương)', 'tê (?:tay|chân|bì)', 'gout', 'gút', 'tiểu (?:buốt|rắt|ra máu|nhiều|đêm)',
+    'trĩ', 'mất ngủ', 'khó ngủ', 'đau nửa đầu', 'run tay', 'tuyến giáp', 'bướu cổ')],
 ];
 
 // "dị ứng (thuốc) kháng sinh" là khai tiền sử dị ứng, không phải hỏi mua kháng sinh (đo thật vòng 5).
@@ -325,7 +336,8 @@ const detectEnglish = (message) => {
 };
 
 // Hỏi giá: trả về { list: true } (bảng giá / so sánh các khoa) hoặc { discount: 'bhyt'|'sinh_vien'|null } hoặc null.
-const PRICE_RE = /giá|bao nhiêu tiền|hết bao nhiêu|trả bao nhiêu|còn bao nhiêu|chi phí|tốn bao nhiêu|đắt|rẻ|phí khám/;
+// "rẻ" phải là nguyên từ — "trẻ em" từng bị trả lời bằng bảng giá.
+const PRICE_RE = /giá|bao nhiêu tiền|hết bao nhiêu|trả bao nhiêu|còn bao nhiêu|chi phí|tốn bao nhiêu|đắt|(?<!\p{L})rẻ(?!\p{L})|phí khám/u;
 function detectPriceQuestion(message) {
   const lower = String(message || '').toLowerCase();
   if (!PRICE_RE.test(lower) || /giá (?:vàng|xăng|dầu|đô|usd)/.test(lower) || /giá thuốc/.test(lower)) return null;
@@ -396,12 +408,104 @@ function detectSpecialty(message) {
   return best;
 }
 
+// ---------- Giải thích chuyên khoa đã gợi ý ----------
+// Đo thật: khách hỏi tiếp "tại sao lại khám khoa nội tổng quát", "tại sao không thể khám khoa khác" — model nhỏ
+// chỉ lặp lại nguyên câu gợi ý cũ. Lý do chọn khoa xác định được từ từ khoá nên code tự giải thích.
+const SPECIALTY_SCOPE = {
+  'Nội tổng quát': 'khám ban đầu các bệnh nội khoa và triệu chứng toàn thân ở người lớn (sốt, ho, đau đầu, tiêu hoá, huyết áp, xương khớp…)',
+  'Nhi khoa': 'chuyên khám cho trẻ em — thuốc, liều dùng và cách khám ở trẻ khác người lớn',
+  'Tai – Mũi – Họng': 'chuyên khám các bệnh ở tai, mũi, họng và xoang',
+  'Da liễu': 'chuyên khám các bệnh về da, tóc, móng và dị ứng, mẩn ngứa ngoài da',
+  'Sản phụ khoa': 'chuyên khám thai, kinh nguyệt và các vấn đề phụ khoa',
+  'Răng – Hàm – Mặt': 'chuyên khám răng, lợi, miệng và khớp hàm',
+};
+// Từ khoá chỉ là TÊN khoa ("khám nội", "da liễu") — không phải triệu chứng để làm lý do.
+const NAME_KEYWORD_RE = /^(?:nha khoa|tai mũi họng|da liễu|khám da|khoa da|nội khoa|nội tổng quát|khoa nội|khám nội|phụ khoa|sản khoa|sản phụ khoa|khoa sản|khám sản|nhi)$/;
+const symptomKeywords = (detected) => (detected ? detected.keywords.filter((k) => !NAME_KEYWORD_RE.test(k)) : []);
+
+// Khoa phòng khám KHÔNG có: [tên, triệu chứng thuộc khoa đó (do Nội tổng quát khám ban đầu), cách khách gọi tên khoa].
+const MISSING_DEPARTMENTS = [
+  ['Cơ xương khớp', words('đầu gối', 'gối', 'khớp', 'lưng', 'vai', 'gáy', 'cổ tay', 'cổ chân', 'mắt cá', 'hông', 'háng', 'xương', 'cột sống', 'đĩa đệm',
+    'thoát vị', 'thoái ho[áa]', 'bong gân', 'chuột rút', 'gout', 'gút', 'gót chân', 'bắp chân', 'đùi'), 'cơ xương khớp|xương khớp|chấn thương chỉnh hình|chỉnh hình|chấn thương'],
+  ['Thần kinh', words('tê (?:tay|chân|bì)', 'mất ngủ', 'khó ngủ', 'đau nửa đầu', 'hay quên', 'trí nhớ', 'run tay'), 'thần kinh'],
+  ['Tim mạch', words('tim', 'huyết áp', 'đánh trống ngực', 'hồi hộp', 'mỡ máu'), 'tim mạch|tim'],
+  ['Tiết niệu', words('tiểu (?:buốt|rắt|ra máu|nhiều|đêm)', 'sỏi thận', 'đau thận'), 'tiết niệu'],
+  ['Nam khoa', words('tinh hoàn', 'xuất tinh', 'cương dương'), 'nam khoa|nam học'],
+  ['Hậu môn – trực tràng', words('trĩ', 'hậu môn'), 'hậu môn|trực tràng'],
+  ['Nội tiết', words('tiểu đường', 'đường huyết', 'tuyến giáp', 'bướu cổ'), 'nội tiết'],
+  ['Tiêu hoá', words('dạ dày', 'trào ngược', 'ợ chua', 'khó tiêu', 'đại tràng'), 'tiêu hoá|tiêu hóa'],
+  ['Hô hấp', words('phổi', 'hen suyễn'), 'hô hấp|phổi'],
+  ['Tâm thần – Tâm lý', words('trầm cảm', 'lo âu', 'căng thẳng'), 'tâm thần|tâm lý'],
+  ['Ung bướu', words('ung thư', 'khối u'), 'ung bướu|ung thư'],
+];
+const MISSING_DEPARTMENT_ASK = MISSING_DEPARTMENTS.map(([name, , asked]) =>
+  [name, new RegExp(`(?<!\\p{L})(?:chuyên khoa|khoa|bác sĩ|khám|chuyên)(?: \\p{L}+){0,2} (?:${asked})(?!\\p{L})`, 'iu')]);
+
+const missingDepartmentFor = (keywords) => {
+  const found = MISSING_DEPARTMENTS.find(([, re]) => has(re, keywords.join(', ')));
+  return found ? found[0] : null;
+};
+
+// Khách hỏi/đòi khám 1 khoa phòng khám không có ("có khoa cơ xương khớp không", "khám tim mạch ở đâu") → tên khoa.
+function detectMissingDepartmentQuestion(message) {
+  const lower = String(message || '').toLowerCase();
+  const found = MISSING_DEPARTMENT_ASK.find(([, re]) => re.test(lower));
+  return found ? found[0] : null;
+}
+
+// Lý do gợi ý chuyên khoa — detected là kết quả detectSpecialty (của tin có triệu chứng).
+function explainSpecialty(detected) {
+  const { specialty } = detected;
+  const keywords = symptomKeywords(detected);
+  const missing = specialty === 'Nội tổng quát' ? missingDepartmentFor(keywords) : null;
+  const because = detected.byPerson && specialty === 'Nhi khoa' ? 'người đi khám là trẻ em'
+    : keywords.length ? `bạn kể ${keywords.map((k) => `"${k}"`).join(', ')}` : '';
+  return [
+    because ? `Mình gợi ý chuyên khoa ${specialty} vì ${because}: khoa này ${SPECIALTY_SCOPE[specialty]}.` : `Chuyên khoa ${specialty} ${SPECIALTY_SCOPE[specialty]}.`,
+    missing ? `Phòng khám chưa có khoa ${missing} riêng, nên vấn đề này do bác sĩ Nội tổng quát khám ban đầu; nếu cần khám chuyên sâu, bác sĩ sẽ tư vấn nơi khám tiếp phù hợp.` : '',
+  ].filter(Boolean).join(' ');
+}
+
+// Câu hỏi tiếp nối về chuyên khoa vừa gợi ý: 'other' (muốn/hỏi khoa khác) | 'why' (vì sao khoa này, có chắc không,
+// khoa đó khám được không) | null. "đau tai sao…" là than đau tai, không phải "tại sao".
+const SPECIALTY_REF = '(?:chuyên )?khoa|khám (?:nội|nhi|sản|da|răng|tai)|nội tổng quát|nhi khoa|da liễu|sản phụ khoa|tai mũi họng|răng hàm mặt|bác sĩ (?:nội|nhi|sản|da)';
+const WHY_WORDS = '(?:tại sao|(?<!(?:đau|ù|viêm|ngứa|nhức) )tai sao|vì sao|sao (?:lại|phải|không|mình phải)|lý do|căn cứ|dựa vào đâu)';
+const OTHER_SPECIALTY_RE = /(?:chuyên khoa|khoa|chỗ|bên|nơi) (?:nào )?khác|đổi (?:sang )?(?:chuyên )?khoa|không muốn khám (?:khoa |chuyên khoa )?(?:nội|nhi|sản|da|răng|tai)|(?:khám|sang|qua) (?:khoa |chuyên khoa )?(?:nội|nhi|sản|da liễu|da|răng|tai mũi họng)(?: \p{L}+){0,3} (?:được không|thay|thì sao|có được không|có sao không)/u;
+const WHY_SPECIALTY_RE = new RegExp(`${WHY_WORDS}[^.?!]{0,40}(?:${SPECIALTY_REF})|(?:${SPECIALTY_REF})[^.?!]{0,40}(?:tại sao|vì sao|là sao)`
+  // Hỏi cụt cả tin ("tại sao", "vì sao vậy", "là sao") ngay sau lời gợi ý khoa.
+  + '|^\\s*(?:hả,? )?(?:tại sao|tạisao|vì sao|sao|là sao|why)(?: lại)?(?: vậy| thế| v)?\\s*[?!.]*\\s*$'
+  + '|(?:khám|điều trị|chữa)[^.?!]{0,20}không (?:khỏi|đỡ|hết) thì (?:sao|làm sao|thế nào)'
+  + '|(?:có )?chắc (?:chắn )?(?:không|chưa|là đúng)|đúng khoa (?:không|chưa)|khoa (?:đó|này|ấy) (?:có )?(?:đúng|phù hợp)'
+  + '|(?:khoa|bác sĩ) (?:đó|này|ấy|nội|nhi|sản|da liễu)(?: \\p{L}+){0,3} (?:có )?(?:khám|chữa|điều trị|xem|biết|giỏi|rành|chuyên)(?: được| cho| về)?[^.?!]{0,30}(?:không|chứ)', 'iu');
+// Hỏi 1 khoa khám những gì ("nội tổng quát là khoa gì") → tên khoa. Đo thật: model bịa "khám được mọi chuyên khoa".
+const SCOPE_ASK = [
+  ['Nội tổng quát', 'nội tổng quát|khoa nội|nội khoa'], ['Nhi khoa', 'nhi khoa|khoa nhi'], ['Tai – Mũi – Họng', 'tai mũi họng'],
+  ['Da liễu', 'da liễu'], ['Sản phụ khoa', 'sản phụ khoa|khoa sản'], ['Răng – Hàm – Mặt', 'răng hàm mặt'],
+].map(([name, alt]) => [name, new RegExp(`(?:${alt})(?: \\p{L}+){0,2} (?:là (?:khoa |chuyên khoa )?gì|khám (?:những |các )?(?:gì|bệnh gì|bệnh nào)|chuyên (?:về )?gì|gồm (?:những )?gì)`, 'iu')]);
+function detectSpecialtyScopeQuestion(message) {
+  const lower = String(message || '').toLowerCase().replace(/\s*[–-]\s*/g, ' ');
+  const found = SCOPE_ASK.find(([, re]) => re.test(lower));
+  return found ? found[0] : null;
+}
+
+// Hỏi triệu chứng có nguy hiểm/nặng không — đo thật: model khẳng định "đau đầu gối không phải tình trạng nghiêm trọng".
+const DANGER_RE = words('(?:có )?nguy hiểm (?:không|ko|chứ|lắm không)', 'có (?:nặng|nghiêm trọng|đáng lo) (?:không|ko|lắm không)', 'có bị (?:gì|làm sao) không', 'có phải (?:bệnh )?(?:nặng|ung thư) không');
+const detectDangerQuestion = (message) => has(DANGER_RE, message);
+
+function detectSpecialtyFollowUp(message) {
+  const lower = String(message || '').toLowerCase();
+  // "khám nội không khỏi thì sao" hỏi bước tiếp theo, không phải đòi đổi khoa.
+  if (OTHER_SPECIALTY_RE.test(lower) && !/không (?:khỏi|đỡ|hết)/.test(lower)) return 'other';
+  if (WHY_SPECIALTY_RE.test(lower)) return 'why';
+  return null;
+}
+
 // Đo thật vòng 4: "yếu nửa người" (dấu hiệu đột quỵ) bị model đoán là "mất điện giải".
 const EMERGENCY_RE = words('khó thở', 'đau ngực', 'tức ngực', 'bất tỉnh', 'ngất', 'co giật', 'chảy máu nhiều', 'nôn ra máu', 'ho ra máu',
   'đi ngoài ra máu', 'đau bụng (?:quằn quại|dữ dội)', 'đau đầu dữ dội', 'đột quỵ', 'méo miệng', 'yếu nửa người', 'liệt', 'ngừng thở',
   // Vòng 6: "nghẹt thở", "ngực đau thắt", "nói ngọng, tay yếu" (đột quỵ), "ngã đập đầu", "ngã không đứng dậy được".
   'nghẹt thở', 'ngực (?:đau|tức)', 'đau thắt ngực', 'nói ngọng', 'nói khó', '(?:tay|chân) yếu', 'yếu (?:tay|chân)', 'tê nửa người',
-  '(?:đập|va|chấn thương) đầu', 'ngã (?:\\p{L}+ ){0,2}không (?:đứng|dậy)',
+  '(?:đập|va|chấn thương) đầu', 'ngã (?:\\p{L}+ ){0,2}không (?:đứng|dậy)', 'gãy (?:xương|tay|chân)', 'trật khớp',
   'tím tái', 'lơ mơ', 'vỡ ối', 'dữ dội (?:và )?đột ngột', 'đột ngột (?:\\p{L}+ )?dữ dội', '(?:mang thai|có thai|bầu)(?:[ ,.]+[\\p{L}\\d]+){0,4}[ ,.]+(?:ra máu|ra nước|đau bụng từng cơn|đau bụng dữ dội)');
 
 // Dấu hiệu có thể cấp cứu — trả về các từ khớp (mảng rỗng nếu không có).
@@ -483,6 +587,14 @@ module.exports = {
   upcomingDaysNote,
   describeDate,
   detectSpecialty,
+  symptomKeywords,
+  missingDepartmentFor,
+  detectMissingDepartmentQuestion,
+  explainSpecialty,
+  detectSpecialtyFollowUp,
+  detectSpecialtyScopeQuestion,
+  detectDangerQuestion,
+  SPECIALTY_SCOPE,
   detectEmergency,
   detectSlotQuery,
   detectPrescriptionQuestion,

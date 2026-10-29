@@ -229,6 +229,57 @@ const CASES = [
     must: [/Nhi khoa/i],
     mustNot: [/Nội tổng quát/i],
   },
+  // Hỏi tiếp về chuyên khoa vừa gợi ý — đo thật: "đau đầu gối" bị hiểu là "đau đầu", rồi "tại sao lại khám khoa nội
+  // tổng quát" / "tại sao không thể khám khao khác" chỉ nhận lại nguyên câu gợi ý cũ.
+  { q: 'tôi bị đau đầu gối', must: [/Nội tổng quát/i, /chưa có khoa Cơ xương khớp/i] },
+  { q: 'dau dau goi qua', must: [/Nội tổng quát/i], mustNot: [/"đau đầu"/] },
+  ...[
+    ['tại sao lại khám khoa nội tổng quát', [/đầu gối/i, /chưa có khoa Cơ xương khớp/i]],
+    ['tai sao lai kham khoa noi', [/đầu gối/i]],
+    // Câu trả lời này liệt kê đủ 6 khoa nên không kiểm tra "không nhắc Tai – Mũi – Họng".
+    ['tại sao không thể khám khao khác', [/6 chuyên khoa/i, /đầu gối/i], []],
+    ['bác sĩ nội có khám được đầu gối không', [/chưa có khoa Cơ xương khớp/i]],
+    ['có chắc không', [/đầu gối/i]],
+    ['tôi muốn đổi sang khoa da liễu', [/Da liễu/i, /đầu gối/i]],
+  ].map(([q, must, mustNot = [TMH]]) => ({
+    q,
+    history: [
+      { role: 'user', content: 'tôi bị đau đầu gối' },
+      { role: 'assistant', content: 'Bạn nên khám chuyên khoa Nội tổng quát. Bạn có muốn mình xem lịch trống không?' },
+    ],
+    must,
+    mustNot,
+  })),
+  {
+    q: 'tại sao phải khám nhi',
+    history: [
+      { role: 'user', content: 'con tôi 3 tuổi bị sốt' },
+      { role: 'assistant', content: 'Bé nên khám chuyên khoa Nhi khoa.' },
+    ],
+    must: [/Nhi khoa/i, /trẻ em/i],
+  },
+  {
+    q: 'sao lại khám nội mà không phải thần kinh',
+    history: [
+      { role: 'user', content: 'tôi bị mất ngủ kéo dài' },
+      { role: 'assistant', content: 'Bạn nên khám chuyên khoa Nội tổng quát.' },
+    ],
+    must: [/chưa có khoa Thần kinh/i],
+  },
+  {
+    q: 'khám nội được không',
+    history: [
+      { role: 'user', content: 'tôi bị đau họng' },
+      { role: 'assistant', content: 'Bạn nên khám chuyên khoa Tai – Mũi – Họng.' },
+    ],
+    must: [TMH, /họng/i],
+  },
+  { q: 'phòng khám có khoa cơ xương khớp không', must: [/chưa có khoa Cơ xương khớp/i, /Nội tổng quát/i] },
+  { q: 'có khoa tim mạch không', must: [/chưa có khoa Tim mạch/i] },
+  { q: 'có khoa nhi không', must: [/Nhi/i], mustNot: [/chưa có (?:chuyên )?khoa/i] },
+  { q: 'con tôi bị đau tai sao mãi không khỏi', must: [/Nhi/i] },
+  { q: 'sao phải đăng nhập mới đặt lịch được', mustNot: [/Mình gợi ý chuyên khoa/] },
+  { q: 'tôi bị gãy tay', must: [/115/] },
   // Hỏi địa chỉ CHÍNH phòng khám — không được bị nhận nhầm là hỏi cơ sở khác.
   { q: 'Phòng khám ở đâu vậy?', must: [/Túc Duyên/i] },
   { q: 'viêm họng có cần uống kháng sinh không, uống loại nào', must: [/kê đơn/i], mustNot: [/amoxicillin|azithromycin|cef[a-z]+|augmentin/i] },

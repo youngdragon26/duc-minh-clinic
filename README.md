@@ -170,6 +170,13 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
 3. **Trả lời cố định bằng code** cho những câu có đáp án chắc chắn (model nhỏ đo thật hay làm sai): cấp cứu → 115,
    tự hại, từ chối lộ dữ liệu, lịch trống (từ CSDL), giá + giá sau giảm (từ CSDL), lịch bác sĩ (bảng ca trực),
    danh tính trợ lý, câu ngoài phạm vi, khoa Mắt (không có), ngày lễ/Tết, tiện ích chưa có thông tin…
+   **Câu hỏi tiếp nối về chuyên khoa** cũng trả lời bằng code theo ngữ cảnh hội thoại: "tại sao lại khám khoa X",
+   "có chắc không", "khoa khác được không", "đổi sang Da liễu", "bác sĩ nội có khám được đầu gối không" → giải thích
+   theo đúng triệu chứng khách đã kể (`explainSpecialty`); hỏi lại lần nữa thì nói gọn khác chữ, không lặp. Hỏi khoa
+   phòng khám không có (Cơ xương khớp, Thần kinh, Tim mạch, Tiết niệu, Nội tiết, Tiêu hoá…) → nói rõ chưa có, khám
+   ban đầu ở Nội tổng quát (trẻ em: Nhi, mang thai: Sản). "Khoa X khám những gì", "có nguy hiểm không" (không tự
+   đánh giá mức độ bệnh) cũng có câu trả lời cố định. Gợi ý Nội tổng quát cho triệu chứng thuộc khoa không có thì
+   luôn kèm lý do ngay từ đầu.
 4. **Câu trả lời mẫu** (few-shot, bảng `chat_examples`): admin tự dạy chatbot ở trang `/co-so-tri-thuc.html`
    (thêm/sửa/xoá + ô "Thử 1 câu hỏi" xem chatbot lấy câu mẫu nào). Câu hỏi gần như trùng → trả nguyên văn; gần
    giống → đưa vào prompt làm ví dụ. Tìm bằng **vector của model embedding chạy trên Ollama**
@@ -183,8 +190,9 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    báo kháng sinh, nhắc đăng nhập khi khách chưa đăng nhập gửi thông tin đặt lịch.
 
 Đo chất lượng bằng `npm run eval-chat` (server phải đang chạy; `EVAL_URL=https://duc-minh-clinic.onrender.com
-npm run eval-chat` để đo bản deploy). Bộ test gồm 111 câu (cả hội thoại nhiều lượt), phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
-năng hiểu câu chưa từng gặp; được xây qua 7 vòng hỏi dò (~800 lượt), mỗi lỗi tìm ra thành 1 câu test:
+npm run eval-chat` để đo bản deploy). Bộ test gồm 128 câu (cả hội thoại nhiều lượt), phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
+năng hiểu câu chưa từng gặp; được xây qua 8 vòng hỏi dò (~1.100 lượt; vòng 8 gồm 128 hội thoại nhiều lượt về câu hỏi
+tiếp nối chuyên khoa), mỗi lỗi tìm ra thành 1 câu test:
 
 | Cấu hình (`qwen3:1.7b`) | Kết quả | Thời gian TB |
 |---|---|---|

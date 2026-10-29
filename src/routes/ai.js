@@ -13,6 +13,14 @@ const {
   upcomingDaysNote,
   describeDate,
   detectSpecialty,
+  symptomKeywords,
+  missingDepartmentFor,
+  detectMissingDepartmentQuestion,
+  explainSpecialty,
+  detectSpecialtyFollowUp,
+  detectSpecialtyScopeQuestion,
+  detectDangerQuestion,
+  SPECIALTY_SCOPE,
   detectEmergency,
   detectSlotQuery,
   detectPrescriptionQuestion,
@@ -313,6 +321,58 @@ function specialtyFromConversation(message, turns) {
   }
   const fromUser = userTurns.find(Boolean);
   return fromUser ? fromUser.specialty : null;
+}
+
+// Tin gần nhất của khách (tin hiện tại rồi lần ngược) có TRIỆU CHỨNG thuộc đúng chuyên khoa đang bàn — làm lý do
+// khi khách hỏi "tại sao khám khoa này". Tin chỉ gọi tên khoa ("khoa nội tổng quát") không tính.
+function symptomSource(specialty, message, turns) {
+  const texts = [message, ...turns.filter((t) => t.role === 'user').reverse().map((t) => normalizeMessage(t.content).text)];
+  for (const text of texts) {
+    const detected = detectSpecialty(text);
+    if (detected && detected.specialty === specialty && (detected.byPerson || symptomKeywords(detected).length)) return detected;
+  }
+  return { specialty, keywords: [] };
+}
+
+// Trả lời "tại sao khám khoa X" / "khoa khác được không" theo đúng chuyên khoa và triệu chứng đã bàn trong hội thoại.
+function specialtyFollowUpReply(kind, specialty, named, message, turns, lastAssistantText = '') {
+  const source = symptomSource(specialty, message, turns);
+  const reason = explainSpecialty(source);
+  const askSlots = `Bạn có muốn mình xem lịch trống khoa ${specialty} không?`;
+  const full = named === specialty || (kind === 'why' && !named)
+    ? `${reason} Còn nguyên nhân cụ thể thì bác sĩ cần thăm khám trực tiếp mới xác định được. ${askSlots}`
+    : null;
+  // Khách hỏi lại lần nữa ("vẫn chưa hiểu", hỏi y câu cũ) — nói gọn, khác chữ, thay vì lặp nguyên lời giải thích.
+  if (lastAssistantText && sameReply(full || reason, lastAssistantText)) {
+    const keywords = symptomKeywords(source);
+    const missing = specialty === 'Nội tổng quát' ? missingDepartmentFor(keywords) : null;
+    const what = keywords.length ? keywords.join(', ') : 'vấn đề của bạn';
+    return [
+      missing
+        ? `Nói gọn lại: phòng khám không có bác sĩ chuyên ${missing}, nên bác sĩ Nội tổng quát (khám chung cho người lớn) sẽ khám ${what} cho bạn trước.`
+        : `Nói gọn lại: ${what} thuộc đúng chuyên môn của khoa ${specialty}, nên khám ở đó là phù hợp nhất.`,
+      'Nếu khám xong cần điều trị chuyên sâu hoặc chưa đỡ, bác sĩ sẽ hướng dẫn bước tiếp theo và giới thiệu nơi khám phù hợp.',
+      askSlots,
+    ].join(' ');
+  }
+  if (full) return full;
+  return [
+    named && named !== specialty
+      ? `Khoa ${named} ${SPECIALTY_SCOPE[named]}, không phải khoa phù hợp nhất với triệu chứng bạn kể.`
+      : `Phòng khám có 6 chuyên khoa: ${SPECIALTIES.join(', ')}.`,
+    reason,
+    'Bạn vẫn có thể chọn khoa khác khi đặt lịch, nhưng bác sĩ khoa đó có thể sẽ chuyển bạn về đúng khoa nên đi đúng khoa ngay từ đầu sẽ đỡ mất thời gian.',
+    askSlots,
+  ].join(' ');
+}
+
+// Hai câu trả lời gần như trùng chữ (≥ 80% từ chung).
+function sameReply(a, b) {
+  const wordSet = (s) => new Set(s.toLowerCase().match(/[\p{L}\d]+/gu) || []);
+  const x = wordSet(a);
+  const y = wordSet(b);
+  const common = [...x].filter((w) => y.has(w)).length;
+  return common / Math.max(x.size, y.size, 1) >= 0.8;
 }
 
 // Tool Gemini gọi để ĐẶT LỊCH THẬT cho khách — chỉ nên gọi sau khi đã thu thập
@@ -693,6 +753,37 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     if (schedule) return reply(schedule);
     const conversationSpecialty = suggested ? suggested.specialty : specialtyFromConversation(msg, turns);
     if (shortcutOk && !slotQuery && DOCTOR_WHO_RE.test(msg)) return reply(doctorListReply(clinic, conversationSpecialty));
+    // Hỏi/đòi khám khoa phòng khám không có ("có khoa cơ xương khớp không") — nói rõ chưa có và ai khám thay.
+    const missingAsked = detectMissingDepartmentQuestion(msg);
+    if (shortcutOk && !slotQuery && missingAsked) {
+      // Trẻ em / người mang thai thì khám ban đầu ở Nhi / Sản thay vì Nội.
+      const firstStop = ['Nhi khoa', 'Sản phụ khoa'].includes(conversationSpecialty) ? conversationSpecialty : 'Nội tổng quát';
+      return reply(`Phòng khám Đa khoa Đức Minh hiện chưa có khoa ${missingAsked} riêng; các chuyên khoa hiện có: ${SPECIALTIES.join(', ')}. Các vấn đề về ${missingAsked} bạn có thể khám ban đầu ở chuyên khoa ${firstStop} (${clinic.describeSpecialty(firstStop)}); nếu cần khám chuyên sâu, bác sĩ sẽ tư vấn nơi khám tiếp phù hợp. Bạn có muốn mình xem lịch trống không?`);
+    }
+    const scopeAsked = detectSpecialtyScopeQuestion(msg);
+    if (shortcutOk && !slotQuery && scopeAsked) {
+      return reply(`Chuyên khoa ${scopeAsked} ${SPECIALTY_SCOPE[scopeAsked]} (${clinic.describeSpecialty(scopeAsked)}). Bạn kể triệu chứng để mình xem khoa này có phù hợp không nhé.`);
+    }
+    // "Có nguy hiểm không" — không tự đánh giá mức độ bệnh, chỉ nêu dấu hiệu cần đi khám sớm/cấp cứu.
+    if (shortcutOk && !slotQuery && detectDangerQuestion(msg)) {
+      return reply([
+        'Mình không đánh giá được mức độ nặng nhẹ qua tin nhắn — việc đó cần bác sĩ thăm khám trực tiếp.',
+        'Bạn nên đi khám sớm nếu triệu chứng kéo dài vài ngày không đỡ, ngày càng nặng hơn, hoặc kèm sốt, sưng nóng đỏ, khó vận động; nếu đau dữ dội, khó thở, ngất hay chảy máu nhiều thì gọi cấp cứu 115 ngay.',
+        conversationSpecialty ? `Chuyên khoa phù hợp để khám là ${conversationSpecialty} — bạn có muốn mình xem lịch trống không?` : '',
+      ].filter(Boolean).join(' '));
+    }
+    // "Tại sao lại khám khoa X", "khoa khác được không", "bác sĩ nội khám được đầu gối không" — đo thật: model lặp
+    // nguyên câu gợi ý cũ 3 lượt liền. Giải thích theo triệu chứng khách đã kể trong hội thoại.
+    const followUp = detectSpecialtyFollowUp(msg);
+    const priorSpecialty = specialtyFromConversation('', turns);
+    // "sao không khám nhi": chữ "nhi" chỉ là tên khoa, không phải triệu chứng/người khám mới.
+    const ownSymptoms = suggested && symptomKeywords(suggested).length > 0;
+    const namedSpecialty = suggested && !ownSymptoms ? suggested.specialty : null;
+    const followUpSpecialty = ownSymptoms ? suggested.specialty : priorSpecialty || namedSpecialty;
+    // Mở đầu hội thoại bằng "khám da liễu được không" (chưa kể triệu chứng, chưa gợi ý khoa nào) không phải câu hỏi tiếp nối.
+    if (shortcutOk && !slotQuery && followUp && followUpSpecialty && (priorSpecialty || ownSymptoms || followUp === 'why')) {
+      return reply(specialtyFollowUpReply(followUp, followUpSpecialty, namedSpecialty, msg, turns, lastAssistantText));
+    }
     // "Khoa nào?" giữa hội thoại — trả lời theo ngữ cảnh (vòng 7: "Sản phụ khoa hay Nội tổng quát?", liệt kê cả 6 khoa).
     if (shortcutOk && !slotQuery && conversationSpecialty && /khoa nào|nên khám (?:gì|ở khoa nào)|khám gì|chuyên khoa gì/i.test(msg)) {
       return reply(`Bạn nên khám chuyên khoa ${conversationSpecialty} (${clinic.describeSpecialty(conversationSpecialty)}). Bạn có muốn mình xem lịch trống không?`);
@@ -767,6 +858,16 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
       facts.push(`- CHUYÊN KHOA PHÙ HỢP: ${suggested.specialty} (vì khách nói "${suggested.keywords.join(', ')}") — ${clinic.describeSpecialty(suggested.specialty)}. Gợi ý ĐÚNG chuyên khoa này và chỉ nêu bác sĩ của chuyên khoa này.`);
       // Đo thật: tài liệu RAG "sốt ở trẻ em" khiến model hỏi "bé bao nhiêu tuổi" khi người lớn hỏi "ho và sốt".
       if (suggested.specialty !== 'Nhi khoa') facts.push('- Người khám là NGƯỜI LỚN (khách không nhắc tới trẻ em) — không hỏi tuổi/cân nặng của bé.');
+    }
+    const missingDepartment = suggested && suggested.specialty === 'Nội tổng quát' ? missingDepartmentFor(symptomKeywords(suggested)) : null;
+    if (!slotQuery && missingDepartment) {
+      facts.push(`- Phòng khám CHƯA CÓ khoa ${missingDepartment} riêng → nói rõ bác sĩ Nội tổng quát khám ban đầu, cần thì tư vấn nơi khám chuyên sâu.`);
+    }
+    if (followUp && followUpSpecialty) {
+      facts.push(`- Khách hỏi lại về chuyên khoa → giải thích lý do, KHÔNG lặp lại câu trả lời trước: ${explainSpecialty(symptomSource(followUpSpecialty, msg, turns))}`);
+    }
+    if (missingAsked) {
+      facts.push(`- Phòng khám CHƯA CÓ khoa ${missingAsked} → nói rõ, nêu 6 chuyên khoa hiện có và mời khám ban đầu ở Nội tổng quát.`);
     }
     const prescription = detectPrescriptionQuestion(msg);
     if (prescription) {
@@ -980,6 +1081,9 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         || otherSpecialties.some((re) => re.test(s))
         // Câu cộc model nhỏ hay mở đầu khi chưa hiểu ý (đo thật nhiều lần, người dùng phản ánh trên web).
         || /đang nói gì vậy/i.test(s)
+        // Hứa "mình xin kiểm tra lịch…" mà không tra, và câu chỉ nhắc lại triệu chứng của khách ("Bạn đang bị đau đầu gối.").
+        || (/mình xin (?:phép )?(?:kiểm tra|xem|check)/i.test(s) && !isQuestion(s))
+        || /^\s*bạn (?:đang )?bị [^.?!,\n]{1,40}[.!]?\s*$/i.test(s)
         // Câu nhắc đăng nhập do code chèn ở lượt trước — model chép lại thành câu cụt vô nghĩa (vòng 7).
         || /một trong hai cách này|Lịch CHƯA được đặt/i.test(s)
         // Cả câu bằng tiếng Anh.
@@ -1001,6 +1105,16 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     if (suggested && !slotQuery && !emergency.length) {
       const specialtyRe = new RegExp(suggested.specialty.replace(/\s*–\s*/g, '\\s*[–-]\\s*'), 'i');
       if (!specialtyRe.test(answer)) answer = `Bạn nên khám chuyên khoa ${suggested.specialty}.\n\n${answer}`;
+      // Nói luôn lý do khi khoa đúng chuyên môn không có — tránh khách thắc mắc "sao đau gối lại khám Nội".
+      if (missingDepartment && !/chưa có (?:chuyên )?khoa/i.test(answer)) {
+        answer += `\n\nPhòng khám chưa có khoa ${missingDepartment} riêng, nên vấn đề này do bác sĩ Nội tổng quát khám ban đầu; nếu cần khám chuyên sâu, bác sĩ sẽ tư vấn nơi khám tiếp phù hợp.`;
+      }
+    }
+    // Model nhỏ hay lặp nguyên câu trả lời trước khi khách hỏi lại (đo thật: 3 lượt liền cùng 1 câu).
+    if (lastAssistantText && sameReply(answer, lastAssistantText)) {
+      answer = conversationSpecialty
+        ? specialtyFollowUpReply('why', conversationSpecialty, null, msg, turns, lastAssistantText)
+        : 'Mình vừa trả lời ý này ở trên. Bạn muốn hỏi rõ thêm điều gì — lý do chọn chuyên khoa, giá khám, bác sĩ hay lịch trống — để mình trả lời đúng ý nhé?';
     }
     if (prescription && !/kê đơn/i.test(answer)) {
       answer = `💊 Kháng sinh và thuốc kê đơn chỉ dùng khi bác sĩ đã khám và kê đơn — bạn đừng tự mua uống.\n\n${answer}`;
