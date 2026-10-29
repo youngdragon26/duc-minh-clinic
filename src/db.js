@@ -8,7 +8,7 @@ if (!connectionString) {
 
 const pool = new Pool({
   connectionString,
-  // Neon/Supabase yêu cầu SSL nhưng dùng chứng chỉ tự ký nội bộ.
+  // Neon/Supabase yêu cầu SSL nhưng dùng chứng chỉ tự ký.
   ssl: connectionString.includes('sslmode=require') || process.env.NODE_ENV === 'production'
     ? { rejectUnauthorized: false }
     : undefined,
@@ -27,8 +27,7 @@ async function init() {
     );
   `);
 
-  // Mở rộng vai trò cho CSDL đã tồn tại từ trước (chỉ có admin/patient) —
-  // ALTER này chạy lại mỗi lần khởi động nhưng vô hại vì luôn cùng một kết quả.
+  // Mở rộng vai trò cho CSDL cũ (chỉ có admin/patient).
   await pool.query(`
     ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
     ALTER TABLE users ADD CONSTRAINT users_role_check
@@ -36,21 +35,14 @@ async function init() {
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS specialty TEXT;`);
-  // Lý lịch/giới thiệu bác sĩ — bệnh nhân xem được khi đặt lịch hoặc xem chi
-  // tiết lịch hẹn (chỉ có ý nghĩa với tài khoản role = 'doctor').
+  // Lý lịch bác sĩ — bệnh nhân xem khi đặt lịch (chỉ có nghĩa với role = 'doctor').
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;`);
 
-  // Trạng thái tài khoản (UC012: "quản lý trạng thái tài khoản", tách biệt với vai
-  // trò RBAC) — admin khoá tạm 1 tài khoản (vd nhân viên nghỉ việc) mà không cần
-  // xoá hẳn, giữ lại toàn bộ lịch sử/hồ sơ liên quan. Tài khoản bị khoá không đăng
-  // nhập được (chặn ngay ở bước 1, trước khi gửi OTP) nhưng dữ liệu vẫn còn nguyên.
+  // Admin khoá tạm tài khoản mà không xoá, giữ nguyên lịch sử/hồ sơ. Tài khoản khoá không đăng nhập được.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;`);
 
-  // SĐT dùng để đăng nhập thay email (UC001) nên phải là duy nhất — nhưng có thể
-  // NULL/rỗng (chưa khai báo) và nhiều tài khoản cùng để trống thì không tính là
-  // trùng. Bọc try/catch vì CSDL cũ có thể đã lỡ có SĐT trùng nhau trước khi ràng
-  // buộc này tồn tại — không nên làm sập cả server chỉ vì lỗi này, chỉ cảnh báo để
-  // admin tự dọn dữ liệu.
+  // SĐT đăng nhập thay email nên phải duy nhất (được để trống). Bọc try/catch: CSDL cũ có thể đã có SĐT trùng —
+  // chỉ cảnh báo, không làm sập server.
   try {
     await pool.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS ux_users_phone ON users (phone)
@@ -75,8 +67,7 @@ async function init() {
     );
   `);
 
-  // Thông tin người khám khai báo riêng cho từng lượt đặt lịch (có thể khác
-  // thông tin tài khoản, vd đặt hộ người thân) — thu thập ngay lúc đặt lịch.
+  // Thông tin người khám riêng cho từng lượt đặt (có thể đặt hộ người thân).
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS contact_name TEXT;`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS contact_phone TEXT;`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS age INTEGER;`);
@@ -87,10 +78,7 @@ async function init() {
       CHECK (gender IS NULL OR gender IN ('nam','nu','khac'));
   `);
 
-  // Đối tượng ưu tiên bệnh nhân tự khai lúc đặt lịch (BHYT/thẻ sinh viên) — chỉ
-  // 1 loại, không cộng dồn. NULL nghĩa là không thuộc đối tượng ưu tiên nào.
-  // Nhân viên vẫn phải xác minh thẻ thật khi lập hoá đơn, khai sai chỉ ảnh
-  // hưởng tới % giảm giá áp cho phí khám, không tự động miễn phí gì cả.
+  // Đối tượng ưu tiên tự khai (BHYT/sinh viên) — chỉ 1 loại, nhân viên xác minh thẻ khi lập hoá đơn.
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_category TEXT;`);
   await pool.query(`
     ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_discount_category_check;
@@ -98,9 +86,7 @@ async function init() {
       CHECK (discount_category IS NULL OR discount_category IN ('bhyt','sinh_vien'));
   `);
 
-  // Chặn 2 lịch hẹn trùng giờ của cùng 1 bác sĩ ở tầng CSDL (không chỉ kiểm tra
-  // ở code) để tránh race condition khi 2 người đặt cùng lúc — lịch đã huỷ thì
-  // không tính vào, nên giờ đó lại đặt được cho người khác.
+  // Chặn 2 lịch trùng giờ của cùng 1 bác sĩ ở tầng CSDL (race condition); lịch đã huỷ không tính.
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS ux_appointments_doctor_slot
       ON appointments (doctor_id, appointment_date, appointment_time)
@@ -127,7 +113,7 @@ async function init() {
       CHECK (medicine_a_id <> medicine_b_id)
     );
   `);
-  // 1 cặp thuốc chỉ có 1 quy tắc tương tác, không phân biệt thứ tự nhập A/B.
+  // 1 cặp thuốc chỉ có 1 quy tắc tương tác, không phân biệt thứ tự A/B.
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS ux_drug_interactions_pair
       ON drug_interactions (LEAST(medicine_a_id, medicine_b_id), GREATEST(medicine_a_id, medicine_b_id));
@@ -156,8 +142,7 @@ async function init() {
     );
   `);
 
-  // ---------- RAG: cơ sở tri thức (Indexing phase) ----------
-  // text-embedding-004 của Gemini sinh vector 768 chiều.
+  // ---------- RAG: cơ sở tri thức ----------
   await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
 
   await pool.query(`
@@ -181,21 +166,15 @@ async function init() {
     );
   `);
 
-  // gemini-embedding-001 sinh vector 3072 chiều — sửa lại cho CSDL đã tồn tại
-  // từ trước khi biết đúng số chiều (bảng khi đó chưa có dữ liệu nào).
+  // gemini-embedding-001 sinh vector 3072 chiều — sửa cho CSDL tạo từ trước.
   await pool.query(`DROP INDEX IF EXISTS ix_kb_chunks_embedding;`);
   await pool.query(`ALTER TABLE kb_chunks ALTER COLUMN embedding TYPE vector(3072);`);
 
-  // KHÔNG tạo chỉ mục HNSW/IVFFlat: pgvector giới hạn các loại chỉ mục này tối
-  // đa 2000 chiều, trong khi vector ở đây có 3072 chiều — tạo chỉ mục sẽ làm
-  // toàn bộ server sập khi khởi động (đã xảy ra thật, đây là bản vá cho lỗi đó).
-  // Không có chỉ mục thì similarity search vẫn đúng, chỉ là quét tuần tự thay vì
-  // ANN — hoàn toàn ổn với quy mô vài trăm tài liệu như 1 phòng khám nhỏ.
+  // KHÔNG tạo chỉ mục HNSW/IVFFlat: pgvector giới hạn 2000 chiều, vector ở đây 3072 chiều — tạo chỉ mục làm sập
+  // server khi khởi động. Quét tuần tự là đủ với quy mô 1 phòng khám.
 
-  // Câu trả lời mẫu cho chatbot (few-shot): admin soạn cặp hỏi–đáp chuẩn, mỗi lượt chat tìm vài
-  // cặp có câu hỏi gần nhất (so vector câu hỏi) đưa vào prompt để model nhỏ bắt chước — "dạy"
-  // chatbot mà không cần huấn luyện lại model. Vector do model embedding chạy trên Ollama tạo (OLLAMA_EMBED_MODEL,
-  // qwen3-embedding:0.6b = 1024 chiều) — không ghi số chiều để đổi model không phải sửa bảng; KHÔNG tạo chỉ mục.
+  // Câu trả lời mẫu (few-shot) cho chatbot. local_embedding do Ollama (OLLAMA_EMBED_MODEL) tạo — không ghi số chiều
+  // để đổi model không phải sửa bảng; KHÔNG tạo chỉ mục.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_examples (
       id SERIAL PRIMARY KEY,
@@ -207,21 +186,17 @@ async function init() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  // Bản đầu dùng vector Gemini 3072 chiều (cột "embedding") — gói miễn phí chỉ 1000 lượt nhúng/ngày, đã hết thật
-  // khi kiểm thử nên chuyển sang Ollama. Tên cột mới khác hẳn để lệnh dưới không xoá mất vector mới mỗi lần khởi động.
+  // Cột "embedding" cũ (Gemini) bỏ hẳn; tên cột mới khác để lệnh DROP không xoá vector mới.
   await pool.query(`ALTER TABLE chat_examples ADD COLUMN IF NOT EXISTS local_embedding vector;`);
   await pool.query(`ALTER TABLE chat_examples DROP COLUMN IF EXISTS embedding;`);
 
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
 
-  // Nhóm thuốc/hoạt chất (vd "Hạ sốt - giảm đau (Paracetamol)") — admin tự đặt tên
-  // nhóm khi 2 thuốc có thể dùng thay thế nhau. Cùng group_name (khác NULL) thì
-  // được coi là thuốc thay thế của nhau (UC006: "hỗ trợ gợi ý thuốc thay thế").
+  // Cùng group_name (khác NULL) = thuốc thay thế được cho nhau.
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS group_name TEXT;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_medicines_group ON medicines (group_name) WHERE group_name IS NOT NULL;`);
 
-  // Giá khám theo từng chuyên khoa — admin thiết lập trong "Bảng giá dịch vụ".
-  // Không có dòng cho 1 chuyên khoa nghĩa là CHƯA thiết lập giá (khác với giá 0đ = miễn phí).
+  // Giá khám theo chuyên khoa. Không có dòng = CHƯA thiết lập giá (khác 0đ = miễn phí).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS service_prices (
       specialty TEXT PRIMARY KEY,
@@ -229,8 +204,7 @@ async function init() {
     );
   `);
 
-  // % giảm giá theo đối tượng ưu tiên (BHYT/thẻ sinh viên), admin thiết lập
-  // trong "Bảng giá dịch vụ" — không có dòng cho 1 loại nghĩa là 0% (chưa giảm).
+  // % giảm giá theo đối tượng ưu tiên; không có dòng = 0%.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS discount_rates (
       category TEXT PRIMARY KEY CHECK (category IN ('bhyt','sinh_vien')),
@@ -251,7 +225,7 @@ async function init() {
     );
   `);
 
-  // Hình thức thanh toán — chỉ có giá trị khi hoá đơn đã được xác nhận thu tiền.
+  // Chỉ có giá trị khi hoá đơn đã xác nhận thu tiền.
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method TEXT;`);
   await pool.query(`
     ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_payment_method_check;
@@ -259,11 +233,8 @@ async function init() {
       CHECK (payment_method IS NULL OR payment_method IN ('tien_mat','chuyen_khoan'));
   `);
 
-  // Bệnh nhân tự bấm "Tôi đã chuyển khoản" sau khi quét mã QR thanh toán online —
-  // KHÔNG tự động đánh dấu đã thu tiền (chưa có cổng thanh toán/webhook ngân hàng
-  // thật, đúng tinh thần "Human-in-the-Loop" của đồ án): nhân viên vẫn phải đối
-  // chiếu sao kê rồi mới xác nhận qua PATCH .../status như cũ. Cột này chỉ để nhân
-  // viên biết hoá đơn nào cần ưu tiên kiểm tra.
+  // Bệnh nhân tự báo "đã chuyển khoản" — KHÔNG tự đánh dấu đã thu (chưa có webhook ngân hàng); nhân viên đối chiếu
+  // sao kê rồi xác nhận qua PATCH .../status.
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS online_payment_claimed_at TIMESTAMPTZ;`);
 
   await pool.query(`
@@ -277,9 +248,7 @@ async function init() {
     );
   `);
 
-  // Nhật ký hoạt động: ai làm gì, lúc nào, với đối tượng nào. Chỉ thêm, không
-  // sửa/xoá qua ứng dụng. user_name/role chép lại tại thời điểm ghi để dòng
-  // nhật ký vẫn đọc được kể cả khi tài khoản sau đó bị xoá hoặc đổi vai trò.
+  // Nhật ký hoạt động: chỉ thêm. user_name/role chép tại thời điểm ghi để vẫn đọc được khi tài khoản bị xoá/đổi vai trò.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id SERIAL PRIMARY KEY,
@@ -295,7 +264,6 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_audit_logs_created ON audit_logs (created_at DESC);`);
 
-  // Hẹn tái khám do bác sĩ đặt sau mỗi lần khám.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS followups (
       id SERIAL PRIMARY KEY,
@@ -310,11 +278,8 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_followups_doctor_date ON followups (doctor_id, followup_date);`);
 
-  // Ca trực / lịch làm việc theo tuần của bác sĩ (UC009). weekday khớp đúng quy
-  // ước EXTRACT(DOW) của Postgres và Date.getUTCDay() của JS: 0 = Chủ nhật ... 6 =
-  // Thứ 7 — để so trực tiếp không cần quy đổi qua lại. Bác sĩ CHƯA có dòng nào ở
-  // đây thì mặc định coi như làm việc cả ngày theo khung giờ chung của phòng khám
-  // (như hành vi cũ trước khi có bảng này) — xem lib/availability.js.
+  // Ca trực theo tuần. weekday theo EXTRACT(DOW)/getUTCDay(): 0 = Chủ nhật … 6 = Thứ 7.
+  // Bác sĩ chưa có dòng nào = làm cả ngày theo giờ chung (xem lib/availability.js).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS doctor_shifts (
       id SERIAL PRIMARY KEY,
@@ -327,10 +292,7 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_doctor_shifts_doctor ON doctor_shifts (doctor_id, weekday);`);
 
-  // Mã OTP xác thực đăng ký/đăng nhập (UC001, 2FA). "payload" chứa dữ liệu tạm
-  // cần thiết để hoàn tất hành động SAU KHI xác thực đúng mã — vd lúc đăng ký thì
-  // tài khoản CHƯA được tạo ở bước gửi OTP, chỉ tạo thật khi verify đúng mã, nên
-  // phải giữ tạm name/email/sđt/mật khẩu đã băm ở đây.
+  // Mã OTP. payload giữ dữ liệu tạm để hoàn tất hành động sau khi xác thực (vd đăng ký: tài khoản chỉ tạo khi đúng mã).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS otp_codes (
       id SERIAL PRIMARY KEY,
@@ -348,10 +310,7 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_otp_codes_destination ON otp_codes (destination, purpose);`);
 
-  // Thông tin tài khoản ngân hàng phòng khám dùng để sinh mã QR thanh toán online
-  // (VietQR) — luôn đúng 1 dòng duy nhất (id cố định = 1), admin thiết lập trong
-  // "Danh mục thuốc & tương tác thuốc". bank_bin là mã ngân hàng theo chuẩn Napas/
-  // VietQR (vd 970436 = Vietcombank), KHÔNG phải mã số thuế hay số điện thoại.
+  // Tài khoản ngân hàng cho mã VietQR — luôn đúng 1 dòng (id = 1). bank_bin là mã ngân hàng Napas (970436 = Vietcombank).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bank_account (
       id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -363,8 +322,7 @@ async function init() {
     );
   `);
 
-  // Lịch sử trò chuyện với trợ lý AI của bệnh nhân ĐÃ ĐĂNG NHẬP — để mở lại xem hoặc
-  // chat tiếp. Khách chưa đăng nhập không lưu ở CSDL (chỉ nhớ tạm trong trình duyệt).
+  // Lịch sử chat của người dùng đã đăng nhập; khách chưa đăng nhập chỉ lưu trong trình duyệt.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_conversations (
       id SERIAL PRIMARY KEY,
@@ -374,8 +332,7 @@ async function init() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  // channel: 'main' = khung chat chính ở trang chủ (khách + bệnh nhân),
-  // 'assistant' = trợ lý AI riêng của bác sĩ/nhân viên/admin trong không gian làm việc.
+  // channel: 'main' = chatbot trang chủ, 'assistant' = trợ lý trong không gian làm việc.
   await pool.query(`ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'main';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ix_chat_conversations_user ON chat_conversations (user_id, updated_at DESC);`);
   await pool.query(`

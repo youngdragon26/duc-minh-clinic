@@ -10,13 +10,7 @@ const router = express.Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Công tắc bật/tắt bước OTP (2FA) khi đăng ký/đăng nhập — mặc định TẮT (chỉ bật
-// khi đặt đúng REQUIRE_OTP=true trong .env). Toàn bộ code OTP (otp.js, mailer.js,
-// route /register/verify và /login/verify bên dưới) vẫn giữ nguyên, không xoá gì —
-// chỉ cần bật lại biến này (và cấu hình SMTP_* để gửi email thật) là dùng lại được
-// ngay, không phải sửa code. Lý do mặc định tắt: chưa cấu hình SMTP thật thì OTP
-// chỉ in ra log server, người dùng thật trên link công khai sẽ không đăng nhập
-// được — tắt đi để website dùng được ngay trong lúc chưa kịp cấu hình SMTP.
+// Bật bước OTP (2FA) bằng REQUIRE_OTP=true (mặc định tắt: chưa cấu hình SMTP thì OTP chỉ in ra log server).
 const OTP_REQUIRED = process.env.REQUIRE_OTP === 'true';
 
 function signToken(user) {
@@ -31,8 +25,7 @@ function publicUser(u) {
   return { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, specialty: u.specialty, isActive: u.is_active, createdAt: u.created_at };
 }
 
-// Che bớt email khi trả về cho client lúc chờ nhập OTP (vd "mi***@gmail.com") —
-// đủ để người dùng nhận ra đúng email của mình mà không lộ nguyên vẹn qua response.
+// Che bớt email trả về lúc chờ nhập OTP ("mi***@gmail.com").
 function maskEmail(email) {
   const [user, domain] = String(email).split('@');
   if (!domain) return String(email);
@@ -46,9 +39,7 @@ function otpErrorOr500(e, res) {
   return res.status(500).json({ error: 'Có lỗi máy chủ, thử lại sau.' });
 }
 
-// Bước 1/2 đăng ký: kiểm tra thông tin hợp lệ rồi gửi mã OTP tới email — CHƯA tạo
-// tài khoản ở bước này (tài khoản chỉ thật sự được tạo khi verify đúng mã ở dưới),
-// để không tạo rác tài khoản "chưa xác thực" nếu người dùng bỏ dở giữa chừng.
+// Bước 1/2 đăng ký: kiểm tra rồi gửi OTP — tài khoản chỉ tạo khi xác thực đúng mã.
 router.post('/register', async (req, res) => {
   try {
     const { name, email, phone, password, adminCode } = req.body || {};
@@ -69,8 +60,7 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'Email này đã được đăng ký.' });
     }
 
-    // Đăng ký thành admin chỉ khi biết đúng mã quản trị (đặt trong .env) —
-    // tránh việc ai cũng tự đăng ký được tài khoản admin từ form công khai.
+    // Đăng ký admin phải có đúng ADMIN_REGISTER_CODE.
     const role = (adminCode && process.env.ADMIN_REGISTER_CODE && adminCode === process.env.ADMIN_REGISTER_CODE)
       ? 'admin'
       : 'patient';
@@ -79,7 +69,7 @@ router.post('/register', async (req, res) => {
     const normalizedPhone = phone ? String(phone).trim() : null;
 
     if (!OTP_REQUIRED) {
-      // OTP đang tắt (xem OTP_REQUIRED ở đầu file) -> tạo tài khoản ngay, đăng nhập luôn.
+      // OTP tắt → tạo tài khoản và đăng nhập luôn.
       const result = await pool.query(
         'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
         [name.trim(), normalizedEmail, normalizedPhone, passwordHash, role]
@@ -102,7 +92,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Bước 2/2 đăng ký: xác thực đúng mã OTP thì mới thật sự tạo tài khoản + đăng nhập luôn.
+// Bước 2/2 đăng ký: đúng mã OTP thì tạo tài khoản + đăng nhập.
 router.post('/register/verify', async (req, res) => {
   try {
     const { ticket, code } = req.body || {};
@@ -131,8 +121,7 @@ router.post('/register/verify', async (req, res) => {
   }
 });
 
-// Bước 1/2 đăng nhập: xác thực SĐT/Email + mật khẩu, nếu đúng thì gửi mã OTP
-// (2FA) tới email tài khoản trước khi cấp JWT — chưa cấp token ở bước này.
+// Bước 1/2 đăng nhập: kiểm tra SĐT/Email + mật khẩu rồi gửi OTP — chưa cấp token.
 router.post('/login', async (req, res) => {
   try {
     const { identifier, email, password } = req.body || {};
@@ -147,9 +136,7 @@ router.post('/login', async (req, res) => {
       : await pool.query('SELECT * FROM users WHERE phone = $1', [rawIdentifier]);
     const user = result.rows[0];
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-      // Ghi log kể cả khi không tìm thấy tài khoản (user=null) — logAudit tự chịu
-      // được user rỗng, dòng log khi đó chỉ thiếu user_id nhưng vẫn thấy identifier
-      // trong detail, đủ để admin phát hiện dò mật khẩu hàng loạt.
+      // Ghi log cả khi không tìm thấy tài khoản — để phát hiện dò mật khẩu hàng loạt.
       await logAudit(user || null, 'auth.login_failed', 'user', user?.id ?? null, { identifier: rawIdentifier });
       return res.status(401).json({ error: 'Email/số điện thoại hoặc mật khẩu không đúng.' });
     }
@@ -159,7 +146,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!OTP_REQUIRED) {
-      // OTP đang tắt (xem OTP_REQUIRED ở đầu file) -> cấp JWT ngay, bỏ qua bước OTP.
+      // OTP tắt → cấp JWT ngay.
       await logAudit(user, 'auth.login', 'user', user.id, {});
       return res.json({ token: signToken(user), user: publicUser(user) });
     }
@@ -178,7 +165,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Bước 2/2 đăng nhập: xác thực đúng mã OTP thì mới cấp JWT.
+// Bước 2/2 đăng nhập: đúng mã OTP thì cấp JWT.
 router.post('/login/verify', async (req, res) => {
   try {
     const { ticket, code } = req.body || {};
@@ -188,7 +175,7 @@ router.post('/login/verify', async (req, res) => {
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [payload.userId]);
     const user = result.rows[0];
     if (!user) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
-    // Phòng trường hợp tài khoản bị khoá đúng lúc đang chờ nhập OTP (giữa bước 1 và 2).
+    // Tài khoản có thể bị khoá giữa bước 1 và 2.
     if (!user.is_active) {
       return res.status(403).json({ error: 'Tài khoản của bạn đã bị khoá, vui lòng liên hệ quản trị viên.' });
     }

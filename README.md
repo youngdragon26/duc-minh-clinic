@@ -177,6 +177,35 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    ban đầu ở Nội tổng quát (trẻ em: Nhi, mang thai: Sản). "Khoa X khám những gì", "có nguy hiểm không" (không tự
    đánh giá mức độ bệnh) cũng có câu trả lời cố định. Gợi ý Nội tổng quát cho triệu chứng thuộc khoa không có thì
    luôn kèm lý do ngay từ đầu.
+   Vòng 9 thêm câu trả lời cố định cho: câu hỏi quanh việc đặt lịch (`detectBookingFaq` — phí đặt lịch, đến trễ,
+   khám không hẹn trước, đặt cho người nhà, quên mật khẩu: website chưa có chức năng tự lấy lại mật khẩu nên chỉ
+   hotline), dịch vụ/thủ thuật chưa công bố (`detectServiceQuestion` — siêu âm, xét nghiệm, nội soi, niềng răng,
+   tiêm chủng…: không khẳng định có/không, không báo giá), "có cần chụp/xét nghiệm không" (bác sĩ chỉ định), đọc
+   chỉ số xét nghiệm (`detectLabResultQuestion` — kể cả hỏi "có cao không" ở lượt sau), "có phải bệnh X không"
+   (không chẩn đoán), có cả BHYT lẫn thẻ sinh viên (không cộng dồn), cách thanh toán, số bác sĩ / số chuyên khoa,
+   hỏi "khoa nào" khi chưa kể triệu chứng. Tin **tiếng Anh** nhận câu trả lời tiếng Anh cố định (`englishReply`:
+   địa chỉ, giờ, hotline, các khoa, khoa gợi ý theo vài từ khoá, 115 khi cấp cứu) thay vì từ chối trơn. Danh sách
+   cấp cứu thêm nuốt dị vật, hóc, rắn cắn, bỏng nặng, điện giật, ngộ độc, nôn liên tục, quá liều thuốc, sốt ≥40 độ,
+   chảy máu không cầm; "chán sống" vào nhóm tự hại. "Đường huyết 7.5" không còn bị hiểu là ngày 07/05.
+   Vòng 10 thêm: tin hỏi 2 ý (địa chỉ + giờ, giá + bác sĩ), ngày không có thật / đã qua ("30/2", "hôm qua"), giờ ngoài
+   giờ làm ("11h đêm có khám không" — model từng đáp "là có"), hỏi về bác sĩ theo tên gọi ("bác sĩ Phúc", bác sĩ không
+   có trong danh sách, "có giỏi không" → không đánh giá trình độ, xin số điện thoại riêng → từ chối), "tôi nghĩ mình bị
+   X" (không chẩn đoán), giọng miền Nam/Trung ("tui", "bịnh", "bao tử", "tào tháo rượt", "đi cầu"), từ khoá sức khoẻ
+   sinh sản, tâm lý, hô hấp.
+   Vòng 11 thêm: **sơ cứu đúng mức** (`detectFirstAid` — chó/mèo cắn → rửa xà phòng 15 phút + tiêm phòng dại; bỏng nhẹ
+   → xả nước mát; chỉ chuyển sang 115 khi cắn sâu/chảy máu nhiều, bỏng rộng/hoá chất/điện hoặc trẻ bị bỏng), hỏi
+   cách uống thuốc ("uống trước hay sau ăn", tên kháng sinh như amoxicillin, "siro ho gì"), giá hỏi tiếp cụt ("sinh
+   viên thì sao", "còn bhyt", "cả 2 thì sao" → không cộng dồn), "bác sĩ Dung khám gì" và "bác sĩ đó có làm thứ 7
+   không" (lấy tên từ tin trước của khách), lịch trống theo **buổi** ("chiều mai" chỉ liệt kê 12:00–17:30; giờ đã qua
+   báo "đã qua giờ khám" thay vì "hết chỗ"), tin cụt "mai 9h", khách chưa đăng nhập gửi họ tên + số điện thoại → báo
+   rõ lịch CHƯA được đặt, số điện thoại phòng khám, đặt cọc, giấy khám sức khoẻ, từ khoá hắc lào/tiền sản giật/vú.
+   Tin tiếng Anh được nhận trên văn bản gốc (bước thêm dấu từng biến "can" thành "cần") và phải có ≥2 từ tiếng Anh
+   không trùng tiếng Việt gõ không dấu.
+   **Bệnh nhân đã đăng nhập hỏi dữ liệu của chính mình** (lịch hẹn, lịch sắp tới, đơn thuốc/chẩn đoán, đã khám những
+   khoa nào, hoá đơn đã thanh toán chưa, lịch tái khám) cũng do code trả lời (`detectOwnDataKind` +
+   `ownDataReply` trong `ai.js`, ở mọi chế độ): code gọi thẳng công cụ `my_appointments`/`my_records`/`my_invoices`/
+   `my_followups` (vẫn giới hạn theo `req.user.id`, vẫn ghi nhật ký `record.self_view`/`invoice.self_view`) rồi liệt kê
+   kết quả — đo thật vòng 10, model 1.7B không gọi công cụ mà chỉ đáp "mình sẽ tra cứu…".
    **Đặt lịch qua chat (khách đã đăng nhập) cũng do code điều khiển** (`bookingFlowReply` trong `ai.js`, bật ở
    cả chế độ Gemini lẫn Ollama vì Gemini trên Render cũng hiểu sai ngày và không tự đặt) — model
    1.7B không tự gọi được công cụ đặt lịch (đo thật: hỏi vòng vo, hiểu "ngày 1" thành "1/10", bảo khách "đặt bằng
@@ -195,22 +224,30 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    `node scripts/seed-chat-examples.js` — chạy lại được, tự bổ sung vector còn thiếu.
 5. **Model** với prompt rút gọn (dữ kiện tính sẵn để cuối prompt, không trích cụm từ trong ngoặc kép vì model nhỏ
    chép nguyên văn), rồi **bộ lọc câu trả lời**: bỏ câu hứa hẹn suông, khẳng định lịch trống không có cơ sở, nêu sai
-   khoa, tự đoán nguyên nhân bệnh, khuyên dùng thuốc, chữ Hán/tiếng Anh lẫn vào; luôn chèn 115 khi cấp cứu, cảnh
+   khoa, tự đoán nguyên nhân bệnh, khuyên dùng thuốc, chữ Hán/tiếng Anh lẫn vào, nguồn bịa dạng "(Nguồn: https://…)"; luôn chèn 115 khi cấp cứu, cảnh
    báo kháng sinh, nhắc đăng nhập khi khách chưa đăng nhập gửi thông tin đặt lịch.
 
 Đo chất lượng bằng `npm run eval-chat` (server phải đang chạy; `EVAL_URL=https://duc-minh-clinic.onrender.com
-npm run eval-chat` để đo bản deploy). Bộ test gồm 128 câu (cả hội thoại nhiều lượt), phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
-năng hiểu câu chưa từng gặp; được xây qua 8 vòng hỏi dò (~1.100 lượt; vòng 8 gồm 128 hội thoại nhiều lượt về câu hỏi
-tiếp nối chuyên khoa), mỗi lỗi tìm ra thành 1 câu test:
+npm run eval-chat` để đo bản deploy). Bộ test gồm 204 câu (cả hội thoại nhiều lượt), phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
+năng hiểu câu chưa từng gặp; được xây qua 11 vòng hỏi dò (~1.900 lượt; vòng 11 gồm 135 hội thoại về triệu chứng mới,
+sơ cứu, thuốc, giá hỏi tiếp, bác sĩ theo tên, lịch theo buổi; vòng 8 gồm 128 hội thoại nhiều lượt về câu hỏi
+tiếp nối chuyên khoa, vòng 9 gồm 2 bộ 160 + 99 hội thoại về thông tin phòng khám, thanh toán, dịch vụ, cấp cứu,
+xét nghiệm, tiếng Anh — bộ thứ hai cố ý nói khác bộ đầu để kiểm tra luật không "học thuộc"; vòng 10 gồm 152 hội thoại
+về giọng vùng miền, tin hỏi nhiều ý, bác sĩ, ngày/giờ sai, sức khoẻ tâm lý/sinh sản và bệnh nhân đã đăng nhập), mỗi lỗi tìm ra thành 1 câu test.
+6 câu cần đăng nhập chỉ chạy khi đặt `EVAL_PATIENT_ID` (id 1 tài khoản bệnh nhân có trong CSDL; token ký bằng
+`JWT_SECRET`), vd `EVAL_PATIENT_ID=58 npm run eval-chat` — hội thoại của các câu này được lưu vào tài khoản đó.
 
 | Cấu hình (`qwen3:1.7b`) | Kết quả | Thời gian TB |
 |---|---|---|
 | Prompt đầy đủ (ban đầu) | 6/15 | 2,9 s |
 | Prompt rút gọn + dữ kiện tính sẵn | 15/15 | 1,3 s |
 | + chuẩn hoá, trả lời cố định, câu mẫu, bộ lọc, ngữ cảnh hội thoại (sau 7 vòng) | 111/111 | 0,3 s |
+| + vòng 9 (FAQ đặt lịch, dịch vụ, xét nghiệm, cấp cứu mở rộng, tiếng Anh) — chạy 2 lần liền | 154/154 | 0,4–0,8 s |
+| + vòng 10 (dữ liệu bệnh nhân đã đăng nhập, tin hỏi nhiều ý, bác sĩ, vùng miền) — chạy 2 lần liền | 180/180 | 0,3 s |
+| + vòng 11 (sơ cứu, cách uống thuốc, giá hỏi tiếp, bác sĩ theo tên, lịch theo buổi) — chạy 2 lần liền | 204/204 | 0,3 s |
 
-Chưa kiểm thử tự động được luồng của **bệnh nhân đã đăng nhập** (đặt lịch qua chat, tra hồ sơ/hoá đơn) — cần
-tài khoản bệnh nhân; nên tự thử tay sau mỗi lần sửa chatbot.
+Luồng **đặt lịch qua chat** khi đã đăng nhập chưa có trong `eval-chat` (bước xác nhận tạo lịch thật) — nên tự thử
+tay sau mỗi lần sửa chatbot.
 
 **Lưu ý:** dù dùng Ollama, phần tìm kiếm tài liệu y khoa (RAG) vẫn nhúng vector bằng Gemini — muốn chatbot trích dẫn được Cẩm nang MSD thì vẫn cần `GEMINI_API_KEY`.
 Gọi Ollama lỗi (chưa mở Ollama, laptop tắt…) mà có `GEMINI_API_KEY` thì server tự chuyển sang Gemini cho câu đó.

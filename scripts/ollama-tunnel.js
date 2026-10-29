@@ -1,12 +1,8 @@
-// Cho bản deploy trên Render dùng Ollama đang chạy trên laptop này. Chạy: npm run tunnel
-//
-// 1. Mở proxy 127.0.0.1:11435 đứng trước Ollama — Ollama không có mật khẩu, nên proxy chỉ cho đi
-//    qua đúng POST /api/chat và /api/embed kèm "Authorization: Bearer <OLLAMA_API_KEY>", còn lại chặn hết.
-// 2. Mở đường hầm Cloudflare (cloudflared, không cần tài khoản) ra Internet tới proxy đó.
-//    Địa chỉ *.trycloudflare.com đổi sau mỗi lần chạy, nên…
-// 3. …cứ 2 phút báo địa chỉ hiện tại lên REMOTE_SERVER_URL (/api/ai/ollama-endpoint), đồng thời
-//    giữ model nằm sẵn trong VRAM và giữ bản Render miễn phí không "ngủ".
-// Tắt script (Ctrl+C) hoặc tắt laptop: sau tối đa 5 phút server tự quay về Gemini.
+// Cho bản deploy trên Render dùng Ollama trên laptop này. Chạy: npm run tunnel
+// 1. Proxy 127.0.0.1:11435 trước Ollama — chỉ cho POST /api/chat và /api/embed kèm "Bearer <OLLAMA_API_KEY>".
+// 2. Đường hầm Cloudflare (cloudflared) ra Internet tới proxy.
+// 3. Cứ 2 phút báo địa chỉ lên REMOTE_SERVER_URL, giữ model trong VRAM và giữ Render không "ngủ".
+// Tắt script: sau tối đa 5 phút server tự quay về Gemini.
 require('dotenv').config();
 const http = require('http');
 const { spawn } = require('child_process');
@@ -15,12 +11,11 @@ const llm = require('../src/lib/llm');
 const OLLAMA_LOCAL = (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:4b-instruct';
 const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '30m';
-// Phải trùng num_ctx server dùng (lib/llm.js) — khác nhau thì Ollama nạp lại model mỗi lần đổi qua lại: đo thật,
-// lệnh giữ model không có num_ctx làm model về 4096 và lượt chat sau phải chờ nạp lại 7–9 giây.
+// Phải trùng num_ctx của lib/llm.js — khác nhau thì Ollama nạp lại model mỗi lần (7–9 giây).
 const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX) || 8192;
 const REMOTE_SERVER_URL = (process.env.REMOTE_SERVER_URL || 'https://duc-minh-clinic.onrender.com').replace(/\/+$/, '');
 const PROXY_PORT = Number(process.env.OLLAMA_PROXY_PORT) || 11435;
-// Tìm cả ở thư mục cài mặc định của winget: terminal trong VS Code mở từ trước khi cài vẫn giữ PATH cũ.
+// Tìm cả thư mục cài của winget: terminal mở trước khi cài vẫn giữ PATH cũ.
 const CLOUDFLARED =
   process.env.CLOUDFLARED_PATH ||
   [
@@ -40,7 +35,6 @@ if (!OLLAMA_API_KEY) {
 
 const proxy = http.createServer((req, res) => {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  // Chỉ cho đi qua chat và embedding (câu trả lời mẫu dùng embedding của Ollama — lib/chatExamples.js).
   if (req.method !== 'POST' || !['/api/chat', '/api/embed'].includes(req.url) || !llm.checkOllamaKey(token)) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'unauthorized' }));
@@ -49,7 +43,7 @@ const proxy = http.createServer((req, res) => {
   const upstream = http.request(OLLAMA_LOCAL + req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, (up) => {
     res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/json' });
     up.pipe(res);
-    // Chỉ in lượt chat — mỗi câu hỏi còn 1 lượt embedding nhanh, in ra chỉ làm rối cửa sổ.
+    // Chỉ in lượt chat.
     if (req.url === '/api/chat') up.on('end', () => console.log(`[${now()}] Web gọi Ollama → ${up.statusCode} (${((Date.now() - started) / 1000).toFixed(1)}s)`));
   });
   upstream.on('error', (e) => {
@@ -68,7 +62,6 @@ async function warmModel() {
       body: JSON.stringify({ model: OLLAMA_MODEL, messages: [], keep_alive: OLLAMA_KEEP_ALIVE, options: { num_ctx: OLLAMA_NUM_CTX } }),
       signal: AbortSignal.timeout(120000),
     });
-    // Giữ cả model embedding của câu trả lời mẫu (lib/chatExamples.js).
     await llm.ollamaEmbed('xin chào');
   } catch (e) {
     console.error(`[${now()}] Chưa nạp được ${OLLAMA_MODEL} — Ollama đã mở chưa?`, e.message);
@@ -77,7 +70,7 @@ async function warmModel() {
 
 async function register(tunnelUrl) {
   try {
-    // Bản Render miễn phí đang "ngủ" có thể mất ~1 phút mới thức dậy trả lời.
+    // Render miễn phí đang "ngủ" có thể mất ~1 phút mới trả lời.
     const res = await fetch(REMOTE_SERVER_URL + '/api/ai/ollama-endpoint', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + OLLAMA_API_KEY },

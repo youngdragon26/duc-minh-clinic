@@ -133,7 +133,7 @@ use `setChatText()` from `chat-format.js`.
   (5) compact prompt + a post-filter on the model's reply. Rules learned the hard way: never put quoted phrases in
   the compact prompt (the 1.7B model copies them verbatim — it replied "Bạn là ai?" to "ok"); every detector regex
   needs negative cases ("5/11" is a date, not division; "đánh trống ngực" is not a slot question; "bệnh nhân" is not
-  a complaint). Every bug found becomes a case in `npm run eval-chat` (`scripts/eval-chatbot.js`, 128 cases, mostly
+  a complaint). Every bug found becomes a case in `npm run eval-chat` (`scripts/eval-chatbot.js`, 204 cases — 6 need `EVAL_PATIENT_ID`, mostly
   phrased differently from the seeded examples) — keep it at 100% across repeated runs.
 - All LLM calls go through `src/lib/llm.js` (`chatWithTools`, `generateJSON`, `generateText`), which picks the
   provider from `AI_PROVIDER`: `gemini` (default, what production on Render uses) or `ollama` (a local model,

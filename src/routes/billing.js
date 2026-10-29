@@ -109,8 +109,7 @@ function publicBankAccount(row) {
   };
 }
 
-// Ai đăng nhập cũng xem được (bệnh nhân cần thông tin này để tự sinh mã QR ở
-// trang Hồ sơ khám bệnh) — đây chỉ là số tài khoản nhận tiền, không phải dữ liệu nhạy cảm.
+// Ai đăng nhập cũng xem được — bệnh nhân cần để tự sinh mã QR; chỉ là số tài khoản nhận tiền.
 router.get('/bank-account', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM bank_account WHERE id = 1');
@@ -146,7 +145,7 @@ router.put('/bank-account', requireAdmin, async (req, res) => {
 
 // ---------- Hoá đơn ----------
 
-// Số hoá đơn hiển thị: HD-000001 (lấy từ id tự tăng nên luôn tăng dần, không trùng).
+// Số hoá đơn hiển thị: HD-000001 (theo id tự tăng).
 const invoiceCode = (id) => 'HD-' + String(id).padStart(6, '0');
 
 function publicInvoice(inv) {
@@ -160,7 +159,7 @@ function publicInvoice(inv) {
     specialty: inv.specialty,
     date: inv.appointment_date,
     time: inv.appointment_time,
-    // Người thực sự đi khám (có thể khác chủ tài khoản, vd đặt hộ con/người thân).
+    // Người thực sự đi khám (có thể khác chủ tài khoản).
     contactName: inv.contact_name,
     contactPhone: inv.contact_phone,
     contactAge: inv.contact_age,
@@ -198,8 +197,7 @@ async function attachInvoiceItems(inv) {
     [inv.id]
   );
   const rows = items.rows;
-  // Tính lại các số của phiếu thu từ chính các dòng đã lưu (dòng đầu là phí khám, dòng âm là giảm giá) —
-  // nhờ vậy % giảm hiển thị luôn đúng với lúc lập hoá đơn dù admin có đổi % giảm giá sau đó.
+  // Tính lại từ các dòng đã lưu (dòng đầu là phí khám, dòng âm là giảm giá) — đúng % lúc lập dù admin đổi sau đó.
   const consultationFee = rows.length ? rows[0].subtotal : 0;
   const discountAmount = -rows.filter((i) => i.subtotal < 0).reduce((s, i) => s + i.subtotal, 0);
   const grossAmount = rows.filter((i) => i.subtotal > 0).reduce((s, i) => s + i.subtotal, 0);
@@ -207,8 +205,7 @@ async function attachInvoiceItems(inv) {
   return { ...publicInvoice(inv), consultationFee, medicinesTotal: grossAmount - consultationFee, grossAmount, discountAmount, discountPercent, items: rows };
 }
 
-// Lập hoá đơn cho 1 lịch hẹn đã khám xong — tự tính từ phí khám (theo chuyên khoa)
-// + đơn thuốc đã kê (nếu có). Chỉ Nhân viên/Admin được lập hoá đơn.
+// Lập hoá đơn cho lịch hẹn đã khám xong: phí khám + đơn thuốc. Chỉ Nhân viên/Admin.
 router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
   try {
     const appointmentId = Number(req.body?.appointmentId);
@@ -229,8 +226,7 @@ router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
     }
     const consultationFee = priceRow.rows[0].price;
 
-    // Giảm giá theo đối tượng ưu tiên (BHYT/thẻ sinh viên) bệnh nhân khai lúc
-    // đặt lịch — chỉ áp lên phí khám, không cộng dồn (lịch hẹn chỉ lưu 1 loại).
+    // Giảm giá ưu tiên chỉ áp lên phí khám, không cộng dồn.
     let discountAmount = 0;
     if (appt.discount_category) {
       const rateRow = await pool.query('SELECT percent FROM discount_rates WHERE category = $1', [appt.discount_category]);
@@ -299,8 +295,7 @@ router.post('/invoices', requireRole('staff', 'admin'), async (req, res) => {
   }
 });
 
-// Bệnh nhân xem hoá đơn của chính mình — ghi audit log lượt tự truy cập (yêu cầu
-// bảo mật NFR: "Ghi nhật ký mọi lượt bệnh nhân tự truy cập hồ sơ hoặc thanh toán online").
+// Bệnh nhân xem hoá đơn của mình — ghi nhật ký lượt tự truy cập.
 router.get('/invoices/mine', async (req, res) => {
   try {
     const result = await pool.query(INVOICE_SELECT + ' WHERE inv.patient_id = $1 ORDER BY inv.created_at DESC', [req.user.id]);
@@ -349,10 +344,8 @@ router.get('/invoices/by-appointment/:appointmentId', async (req, res) => {
   }
 });
 
-// Chi tiết 1 hoá đơn (dùng cho trang in) — đặt SAU '/invoices/mine' và
-// '/invoices/by-appointment/...' để 2 đường dẫn cố định đó khớp trước ':id'.
-// Chỉ trạng thái thanh toán — trang Hồ sơ gọi lặp lại 30 giây/lần sau khi bệnh nhân báo
-// đã chuyển khoản, nên KHÔNG ghi nhật ký "tự xem hoá đơn" (tránh mỗi lượt kiểm tra thành 1 dòng log).
+// Đặt SAU '/invoices/mine' và '/invoices/by-appointment/...' để 2 đường dẫn đó khớp trước ':id'.
+// Chỉ trạng thái thanh toán — trang Hồ sơ gọi 30 giây/lần nên KHÔNG ghi nhật ký.
 router.get('/invoices/:id/payment-status', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -400,8 +393,7 @@ router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, 
   try {
     const { status, paymentMethod } = req.body || {};
     if (!INVOICE_STATUSES.includes(status)) return res.status(400).json({ error: 'Trạng thái không hợp lệ.' });
-    // Đánh dấu "đã thanh toán" phải kèm hình thức thanh toán (tiền mặt/chuyển
-    // khoản) để có bill rõ ràng; ngược lại (huỷ đánh dấu đã thu tiền) thì xoá đi.
+    // "Đã thanh toán" phải kèm hình thức thanh toán; huỷ đánh dấu thì xoá đi.
     if (status === 'da_thanh_toan' && !PAYMENT_METHODS.includes(paymentMethod)) {
       return res.status(400).json({ error: 'Vui lòng chọn hình thức thanh toán (tiền mặt hoặc chuyển khoản).' });
     }
@@ -423,10 +415,7 @@ router.patch('/invoices/:id/status', requireRole('staff', 'admin'), async (req, 
   }
 });
 
-// Bệnh nhân tự bấm sau khi quét mã QR và chuyển khoản xong — CHƯA đánh dấu hoá
-// đơn là đã thanh toán (chưa có cổng thanh toán/webhook ngân hàng thật để xác
-// minh tự động), chỉ đánh dấu "cần nhân viên ưu tiên đối chiếu sao kê" — nhân
-// viên vẫn xác nhận thật qua PATCH .../status như luồng tiền mặt/chuyển khoản cũ.
+// Bệnh nhân báo đã chuyển khoản — chỉ đánh dấu cần nhân viên đối chiếu, chưa xác nhận đã thu.
 router.patch('/invoices/:id/claim-online-payment', async (req, res) => {
   try {
     const id = Number(req.params.id);

@@ -1,14 +1,13 @@
-// Nạp bộ câu trả lời mẫu ban đầu cho chatbot (bảng chat_examples) — mỗi câu nhắm 1 lỗi đã gặp thật
-// khi kiểm thử với qwen3:1.7b (xem README, mục "Câu trả lời mẫu"). Chạy lại an toàn: bỏ qua câu hỏi
-// đã có, và bổ sung vector cho câu nào còn thiếu. Chạy: node scripts/seed-chat-examples.js
-// Không ghi giá khám, tên bác sĩ hay giờ trống vào câu mẫu — chatbot lấy các thông tin đó từ CSDL.
+// Nạp bộ câu trả lời mẫu ban đầu (chat_examples). Chạy lại an toàn: bỏ qua câu đã có, bổ sung vector còn thiếu.
+// Chạy: node scripts/seed-chat-examples.js
+// Không ghi giá khám, tên bác sĩ hay giờ trống vào câu mẫu — chatbot lấy từ CSDL.
 require('dotenv').config();
 const { pool, init } = require('../src/db');
 const { tryEmbedQuestion } = require('../src/lib/chatExamples');
 const { normalizeMessage } = require('../src/lib/chatAnalysis');
 
 const EXAMPLES = [
-  // Ngoài phạm vi: model từng làm thơ, giải toán, đẩy câu hỏi giá vàng sang hotline phòng khám.
+  // Ngoài phạm vi.
   ['Viết cho mình một bài thơ về mùa thu',
     'Mình là trợ lý của Phòng khám Đa khoa Đức Minh nên chỉ hỗ trợ được các việc về khám chữa bệnh thôi bạn nhé. Bạn cần hỏi về chuyên khoa, giờ làm việc hay đặt lịch khám không?'],
   ['1 + 1 bằng mấy?',
@@ -17,44 +16,43 @@ const EXAMPLES = [
     'Mình không có thông tin thời tiết, bạn xem giúp trên ứng dụng thời tiết nhé. Mình hỗ trợ được về chuyên khoa, giờ làm việc và đặt lịch khám tại phòng khám.'],
   ['Giá vàng hôm nay bao nhiêu?',
     'Mình không có thông tin về giá vàng hay thị trường — mình chỉ hỗ trợ các việc về khám chữa bệnh tại Phòng khám Đa khoa Đức Minh. Bạn cần hỏi gì về sức khỏe hoặc lịch khám không?'],
-  // Danh tính: model từng bịa "được tạo ra bởi đội ngũ y bác sĩ".
+  // Danh tính.
   ['Bạn là ai?',
     'Mình là trợ lý ảo (AI) của Phòng khám Đa khoa Đức Minh, giúp bạn tìm chuyên khoa phù hợp, xem giờ làm việc, lịch trống và đặt lịch khám. Mình không phải bác sĩ nên không thay được việc thăm khám trực tiếp.'],
   ['Ai tạo ra bạn?',
     'Mình là trợ lý ảo (AI) do Phòng khám Đa khoa Đức Minh đưa vào sử dụng để hỗ trợ khách hàng. Bạn cần mình giúp gì về khám chữa bệnh không?'],
   ['Bạn có phải bác sĩ không?',
     'Mình không phải bác sĩ — mình là trợ lý ảo (AI) của phòng khám. Mình chỉ gợi ý chuyên khoa và hỗ trợ đặt lịch; chẩn đoán và kê đơn phải do bác sĩ khám trực tiếp.'],
-  // Cơ sở khác: model từng bịa tên bệnh viện không có thật.
+  // Cơ sở khác.
   ['Bệnh viện nào ở Hà Nội tốt nhất?',
     'Mình chỉ có thông tin về Phòng khám Đa khoa Đức Minh nên không đánh giá hay giới thiệu được cơ sở y tế khác. Nếu bạn muốn khám tại Đức Minh, mình có thể giúp tìm chuyên khoa và lịch trống.'],
-  // An toàn thuốc: model từng hiểu sai câu hỏi kháng sinh và đòi thông tin đặt lịch.
+  // An toàn thuốc.
   ['Uống thuốc kháng sinh gì để hết viêm họng?',
     'Kháng sinh chỉ được dùng khi bác sĩ đã khám và kê đơn — tự uống kháng sinh không đúng có thể gây kháng thuốc và nhiều tác dụng phụ. Viêm họng bạn nên khám chuyên khoa Tai – Mũi – Họng để bác sĩ xác định có cần kháng sinh hay không.'],
   ['Con tôi bị sốt thì cho uống thuốc gì, liều bao nhiêu?',
     'Với trẻ em, liều thuốc phải tính theo cân nặng và tuổi nên bạn đừng tự cho bé uống thuốc theo hướng dẫn trên mạng. Bạn nên cho bé khám chuyên khoa Nhi khoa; nếu bé sốt cao, co giật, li bì hoặc khó thở thì đưa đi cấp cứu ngay (gọi 115).'],
-  // Câu mơ hồ: model từng hỏi ngay "khám chuyên khoa nào" hoặc đòi số điện thoại.
+  // Câu mơ hồ: hỏi lại triệu chứng, chưa đòi thông tin đặt lịch.
   ['đau quá',
     'Bạn đang bị đau ở đâu và đau từ bao giờ? Bạn kể thêm triệu chứng (có sốt, sưng, khó thở không...) để mình gợi ý đúng chuyên khoa nhé.'],
   ['Tôi thấy không khỏe',
     'Bạn thấy không khỏe thế nào — mệt, sốt, đau ở đâu hay có triệu chứng gì khác? Bạn kể thêm và cho mình biết đã bao lâu rồi để mình gợi ý chuyên khoa phù hợp nhé.'],
   ['cho hỏi chút',
     'Bạn cứ hỏi nhé! Mình hỗ trợ được về chuyên khoa phù hợp với triệu chứng, giờ làm việc, lịch trống và đặt lịch khám tại Phòng khám Đa khoa Đức Minh.'],
-  // Người lớn ho/sốt: tài liệu "sốt ở trẻ em" từng khiến model hỏi tuổi/cân nặng của bé.
+  // Người lớn ho/sốt: không hỏi tuổi/cân nặng của bé.
   ['Tôi bị ho và sốt từ hôm qua',
     'Ho và sốt ở người lớn bạn nên khám chuyên khoa Nội tổng quát. Bạn nhớ nghỉ ngơi, uống đủ nước; nếu sốt cao không hạ, khó thở hoặc đau ngực thì cần đi khám ngay.'],
   ['Tôi bị đau lưng lâu ngày',
     'Đau lưng kéo dài bạn nên khám chuyên khoa Nội tổng quát để bác sĩ khám ban đầu và chỉ định xét nghiệm nếu cần. Nếu đau kèm tê yếu chân hoặc rối loạn tiểu tiện thì nên đi khám sớm.'],
-  // Chuyên khoa không có: phòng khám không có khoa Mắt.
+  // Không có khoa Mắt.
   ['Mắt tôi bị đỏ và cộm',
     'Phòng khám Đa khoa Đức Minh hiện chưa có chuyên khoa Mắt, bạn nên đến cơ sở chuyên khoa mắt để được khám. Nếu mắt đau nhiều, nhìn mờ đột ngột hoặc bị chấn thương thì cần đi khám ngay.'],
-  // Câu hỏi thường gặp về quy trình (dữ kiện lấy từ code: giảm giá, thanh toán, huỷ lịch).
+  // Quy trình (giảm giá, thanh toán, huỷ lịch).
   ['Phòng khám có nhận bảo hiểm y tế không?',
     'Có bạn nhé — phòng khám giảm giá tiền khám cho người có thẻ Bảo hiểm y tế (BHYT) hoặc thẻ sinh viên. Bạn chọn loại giảm giá khi đặt lịch và mang thẻ theo để nhân viên kiểm tra lúc thanh toán; mỗi lần khám chỉ áp dụng 1 loại giảm giá.'],
   ['Thanh toán bằng cách nào?',
     'Bạn có thể trả bằng tiền mặt tại quầy hoặc chuyển khoản. Nếu đã có tài khoản, bạn vào trang Hồ sơ khám (/ho-so.html) để quét mã QR thanh toán hoá đơn.'],
   ['Làm sao để huỷ lịch khám đã đặt?',
     'Bạn đăng nhập rồi vào trang Đặt lịch (/dat-lich.html), mục "Tất cả lịch hẹn của tôi", bấm "Huỷ" ở lịch muốn huỷ. Nếu cần hỗ trợ thêm, bạn gọi hotline 0974 755 333.'],
-  // Đo thật: model lặp lại câu hỏi nhịn ăn, bịa "giấy khám phụ khoa", trả lời vô nghĩa khi hỏi đổi lịch.
   ['Có cần nhịn ăn trước khi khám không?',
     'Khám thông thường thì bạn không cần nhịn ăn. Nếu bác sĩ chỉ định xét nghiệm máu như đường huyết hay mỡ máu thì thường phải nhịn ăn khoảng 8 tiếng — bác sĩ hoặc nhân viên sẽ dặn bạn trước.'],
   ['Đi khám cần mang theo những gì?',
@@ -63,8 +61,7 @@ const EXAMPLES = [
     'Bạn đăng nhập rồi vào trang Đặt lịch (/dat-lich.html), mục "Tất cả lịch hẹn của tôi", chọn lịch cần đổi để sửa ngày giờ. Chỉ sửa được khi lịch đang chờ xác nhận hoặc đã xác nhận; cần hỗ trợ thì gọi hotline 0974 755 333.'],
   ['Phòng khám có khám buổi tối không?',
     'Có bạn nhé — phòng khám làm việc tới 21:00 từ Thứ 2 đến Thứ 7, khung giờ khám muộn nhất là 20:30. Chủ nhật chỉ khám theo hẹn trước.'],
-  // Vòng 3: model tự khẳng định dịch vụ/quy định không có trong dữ liệu (có siêu âm, không cần đặt lịch,
-  // không nhận người nước ngoài…). Phòng khám chưa cung cấp các thông tin này → nói thật, mời gọi hotline.
+  // Dịch vụ/quy định phòng khám chưa công bố → nói thật, mời gọi hotline.
   ['Phòng khám có siêu âm không?',
     'Mình chưa có thông tin chính xác về dịch vụ siêu âm tại phòng khám. Bạn gọi hotline 0974 755 333 để được xác nhận trước khi đến nhé.'],
   ['Có xét nghiệm máu không?',
@@ -105,9 +102,7 @@ const EXAMPLES = [
     'Mình rất tiếc khi bạn đang buồn. Bạn có thể chia sẻ với người thân hoặc bạn bè tin tưởng; nếu cảm giác buồn kéo dài, mất ngủ hay chán ăn, bạn nên đặt lịch khám Nội tổng quát để bác sĩ hỗ trợ. Nếu có lúc bạn nghĩ tới việc làm hại bản thân, hãy gọi ngay 115.'],
   ['alo',
     'Chào bạn! Mình là trợ lý ảo của Phòng khám Đa khoa Đức Minh. Bạn cần hỏi về chuyên khoa, giờ làm việc hay đặt lịch khám?'],
-  // Vòng 4: model bịa "Tết vẫn hoạt động bình thường", "không có wifi", "không bán thuốc", "không bị phạt".
-  // Dữ kiện có thật trong hệ thống: chọn được bác sĩ, đặt hộ người thân (họ tên người đi khám riêng),
-  // lịch mới ở trạng thái Chờ xác nhận, thuốc kê đơn tính chung hoá đơn.
+  // Dữ kiện có thật trong hệ thống: chọn được bác sĩ, đặt hộ người thân, lịch mới Chờ xác nhận, thuốc tính chung hoá đơn.
   ['Phòng khám có làm việc ngày lễ, Tết không?',
     'Lịch làm việc ngày lễ, Tết có thể thay đổi nên mình chưa có thông tin chính xác. Bạn gọi hotline 0974 755 333 để hỏi trước khi đến nhé.'],
   ['Có xuất hoá đơn đỏ (VAT) không?',
@@ -132,8 +127,7 @@ const EXAMPLES = [
     'Được bạn nhé — bạn đặt 2 lịch ở 2 chuyên khoa Răng – Hàm – Mặt và Tai – Mũi – Họng, chọn 2 khung giờ cách nhau để kịp khám lần lượt.'],
   ['Bạn giúp được gì?',
     'Mình giúp bạn tìm chuyên khoa phù hợp với triệu chứng, xem giờ làm việc, giá khám, lịch trống và hướng dẫn đặt lịch; khi bạn đăng nhập, mình còn tra được lịch hẹn, hồ sơ khám và hoá đơn của bạn.'],
-  // Vòng 5: lời khuyên sai đo thật — "bé sốt nên chườm đá", "không cần ngừng thuốc huyết áp", cảnh báo tự mua
-  // kháng sinh cho người chỉ khai dị ứng thuốc, "không thể trả góp" (chưa có thông tin).
+  // Lời khuyên an toàn: bé sốt lau nước ấm, không tự ngừng thuốc huyết áp…
   ['Bé sốt có nên chườm đá không?',
     'Không nên chườm đá hay nước lạnh cho bé vì dễ làm bé rét run, co mạch và sốt khó hạ hơn. Bạn lau người cho bé bằng khăn ấm, cho bé mặc thoáng, uống đủ nước và đưa bé khám chuyên khoa Nhi khoa; bé sốt cao, co giật hoặc li bì thì gọi 115.'],
   ['Bị sốt có nên tắm không?',
@@ -160,12 +154,12 @@ const EXAMPLES = [
   for (const [question, answer] of EXAMPLES) {
     const exists = await pool.query('SELECT 1 FROM chat_examples WHERE question = $1', [question]);
     if (exists.rows.length) continue;
-    // Chưa nhúng được (Ollama chưa chạy / chưa tải OLLAMA_EMBED_MODEL) vẫn lưu — dùng được ngay qua so khớp chữ.
+    // Chưa nhúng được vẫn lưu — dùng được qua so khớp chữ.
     const vector = await tryEmbedQuestion(normalizeMessage(question).text);
     await pool.query('INSERT INTO chat_examples (question, answer, local_embedding) VALUES ($1,$2,$3::vector)', [question, answer, vector]);
     added++;
   }
-  // Bổ sung vector cho các câu mẫu còn thiếu (lưu lúc không gọi được Ollama, hoặc sau khi đổi model embedding).
+  // Bổ sung vector cho câu mẫu còn thiếu (lưu lúc Ollama tắt, hoặc sau khi đổi model embedding).
   const missing = (await pool.query('SELECT id, question FROM chat_examples WHERE local_embedding IS NULL')).rows;
   let embedded = 0;
   for (const row of missing) {

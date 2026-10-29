@@ -13,17 +13,14 @@ router.param('appointmentId', intParam);
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
 
-// Danh sách bác sĩ theo chuyên khoa cho trang chủ (công khai, không cần đăng
-// nhập) — khách bấm vào 1 thẻ chuyên khoa là xem được ngay bác sĩ phụ trách,
-// SĐT liên hệ và lý lịch, trước khi quyết định đặt lịch. Đặt TRƯỚC
-// router.use(authenticate) bên dưới để route này không bắt buộc đăng nhập.
+// Bác sĩ theo chuyên khoa cho trang chủ (công khai) — đặt TRƯỚC router.use(authenticate).
 router.get('/public-doctors', async (req, res) => {
   try {
     const { specialty } = req.query;
     if (!specialty || !SPECIALTIES.includes(specialty)) {
       return res.status(400).json({ error: 'Chuyên khoa không hợp lệ.' });
     }
-    // specialty = NULL nghĩa là "bác sĩ tổng quát", phụ trách được mọi chuyên khoa.
+    // specialty = NULL là bác sĩ tổng quát, khám được mọi chuyên khoa.
     const result = await pool.query(
       "SELECT id, name, phone, specialty, bio FROM users WHERE role = 'doctor' AND (specialty = $1 OR specialty IS NULL) ORDER BY specialty NULLS LAST, name",
       [specialty]
@@ -71,9 +68,7 @@ function publicAppointment(a) {
   };
 }
 
-// Danh sách bác sĩ (lọc theo chuyên khoa) để bệnh nhân chọn khi đặt lịch.
-// Bác sĩ có specialty = NULL được coi là "bác sĩ tổng quát" phụ trách được mọi
-// chuyên khoa, nên hiện diện ở mọi kết quả lọc theo chuyên khoa.
+// Bác sĩ (lọc theo chuyên khoa, kể cả bác sĩ tổng quát) để bệnh nhân chọn khi đặt lịch.
 router.get('/doctors', async (req, res) => {
   try {
     const { specialty } = req.query;
@@ -109,8 +104,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Khung giờ còn trống cho 1 chuyên khoa (và bác sĩ cụ thể nếu có) vào 1 ngày —
-// nguồn dữ liệu cho lưới lịch tuần ở trang đặt lịch.
+// Khung giờ còn trống cho lưới lịch tuần ở trang đặt lịch.
 router.get('/availability', async (req, res) => {
   try {
     const { specialty, date, doctorId, excludeAppointmentId } = req.query;
@@ -132,8 +126,7 @@ router.get('/availability', async (req, res) => {
   }
 });
 
-// Sửa thông tin liên hệ và/hoặc ngày giờ của 1 lịch hẹn đã đặt (xem quy tắc
-// quyền + trạng thái cho phép sửa trong updateAppointment).
+// Sửa thông tin liên hệ và/hoặc ngày giờ (quy tắc trong updateAppointment).
 router.patch('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -165,9 +158,7 @@ router.get('/mine', async (req, res) => {
   }
 });
 
-// Chi tiết 1 lịch hẹn — nhân viên/bác sĩ/admin xem mọi lịch hẹn, bệnh nhân chỉ xem của mình.
-// Lưu ý: route này phải đặt SAU '/mine' và '/doctors' ở trên — Express khớp theo thứ tự
-// đăng ký, nên 2 đường dẫn cố định đó luôn được ưu tiên trước khi rơi vào ':id'.
+// Chi tiết 1 lịch hẹn — bệnh nhân chỉ xem của mình. Đặt SAU '/mine' và '/doctors' để khớp trước ':id'.
 router.get('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -220,8 +211,7 @@ router.patch('/:id/status', async (req, res) => {
     const isStaffLike = STAFF_ROLES.includes(req.user.role);
     const isOwner = appt.patient_id === req.user.id;
 
-    // Lịch khám Chủ nhật là khám theo hẹn trước, chỉ có hiệu lực khi chính bác sĩ
-    // phụ trách (hoặc admin) đồng ý — nhân viên không được xác nhận thay.
+    // Lịch Chủ nhật chỉ hiệu lực khi chính bác sĩ phụ trách (hoặc admin) đồng ý.
     if (status === 'da_xac_nhan' && appt.status === 'cho_xac_nhan' && req.user.role !== 'admin' && appt.doctor_id !== req.user.id) {
       const dow = await pool.query('SELECT EXTRACT(DOW FROM appointment_date)::int AS dow FROM appointments WHERE id = $1', [id]);
       if (dow.rows[0].dow === 0) {
@@ -229,11 +219,8 @@ router.patch('/:id/status', async (req, res) => {
       }
     }
 
-    // Bác sĩ chỉ được đổi trạng thái lịch hẹn ĐÃ CHỈ ĐỊNH cho chính mình — không
-    // được đụng vào lịch của bác sĩ khác. Lịch chưa chỉ định bác sĩ cụ thể thì bác
-    // sĩ cùng chuyên khoa (hoặc bác sĩ tổng quát) được "nhận ca": hành động đầu
-    // tiên trên lịch đó sẽ tự gán mình làm bác sĩ phụ trách luôn. Nhân viên/admin
-    // không bị giới hạn này, vẫn đổi được mọi lịch hẹn.
+    // Bác sĩ chỉ đổi trạng thái lịch của mình; lịch chưa gắn bác sĩ thì bác sĩ cùng chuyên khoa "nhận ca" bằng
+    // hành động đầu tiên. Nhân viên/admin không bị giới hạn.
     let autoAssignDoctorId = null;
     if (req.user.role === 'doctor') {
       if (appt.doctor_id) {
@@ -250,8 +237,7 @@ router.patch('/:id/status', async (req, res) => {
       }
     }
 
-    // Nhân viên/bác sĩ/admin đổi được mọi trạng thái (đã kiểm tra riêng ở trên
-    // với bác sĩ); bệnh nhân chỉ được tự huỷ lịch hẹn của chính mình.
+    // Bệnh nhân chỉ được tự huỷ lịch của mình.
     if (!isStaffLike && !(isOwner && status === 'da_huy')) {
       return res.status(403).json({ error: 'Bạn chỉ có thể huỷ lịch hẹn của chính mình.' });
     }

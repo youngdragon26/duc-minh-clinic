@@ -49,8 +49,7 @@ router.patch('/medicines/:id', requireAdmin, async (req, res) => {
     const current = await pool.query('SELECT price, group_name FROM medicines WHERE id = $1', [id]);
     if (current.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy thuốc.' });
 
-    // Cho sửa từng phần (giá hoặc nhóm thuốc) — mỗi ô trên bảng admin lưu độc lập,
-    // không bắt phải gửi kèm cả 2 trường nếu chỉ đổi 1 ô.
+    // Cho sửa từng phần — mỗi ô trên bảng admin lưu độc lập.
     const priceNum = req.body?.price !== undefined ? Number(req.body.price) : current.rows[0].price;
     if (!Number.isFinite(priceNum) || priceNum < 0) return res.status(400).json({ error: 'Giá thuốc không hợp lệ.' });
     const groupName = req.body?.groupName !== undefined
@@ -157,10 +156,7 @@ async function findInteractions(medicineIds) {
   return result.rows;
 }
 
-// Gợi ý thuốc thay thế (UC006): các thuốc khác cùng "nhóm thuốc/hoạt chất" với
-// targetMedicineId, đánh dấu "safe: false" cho thuốc thay thế nào lại tương tác
-// với 1 thuốc khác đang có trong đơn (restMedicineIds) — để bác sĩ không vô tình
-// chọn 1 thuốc thay thế nhưng vẫn dính tương tác nguy hiểm với phần còn lại của đơn.
+// Thuốc thay thế: cùng nhóm với targetMedicineId; safe: false nếu tương tác với thuốc khác trong đơn (restMedicineIds).
 async function suggestSubstitutes(targetMedicineId, restMedicineIds = []) {
   const target = await pool.query('SELECT group_name FROM medicines WHERE id = $1', [targetMedicineId]);
   const groupName = target.rows[0]?.group_name;
@@ -189,10 +185,7 @@ async function suggestSubstitutes(targetMedicineId, restMedicineIds = []) {
   return candidates.rows.map((c) => ({ ...c, safe: !conflicting.has(c.id) }));
 }
 
-// Tra thuốc thay thế cho 1 thuốc cụ thể, dùng độc lập với cảnh báo tương tác (vd
-// bác sĩ muốn xem thuốc thay thế ngay khi vừa chọn 1 thuốc, chưa cần có cảnh báo
-// gì). "otherMedicineIds" là các thuốc khác đã có trong đơn đang soạn (nếu có), để
-// đánh dấu luôn thuốc thay thế nào có nguy cơ tương tác với phần còn lại của đơn.
+// Tra thuốc thay thế cho 1 thuốc; otherMedicineIds là các thuốc khác đã có trong đơn đang soạn.
 router.get('/medicines/:id/substitutes', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -206,9 +199,7 @@ router.get('/medicines/:id/substitutes', async (req, res) => {
   }
 });
 
-// Bác sĩ gọi khi đang chọn thuốc để kê đơn, xem cảnh báo ngay trước khi lưu — kèm
-// gợi ý thuốc thay thế (cùng nhóm) cho từng thuốc dính cảnh báo, để bác sĩ có thể
-// đổi ngay sang 1 lựa chọn an toàn hơn thay vì chỉ được báo "có tương tác".
+// Cảnh báo tương tác trước khi lưu đơn, kèm thuốc thay thế cho từng thuốc dính cảnh báo.
 router.post('/check-interactions', async (req, res) => {
   try {
     const { medicineIds } = req.body || {};
@@ -241,7 +232,7 @@ router.post('/check-interactions', async (req, res) => {
 
 // ---------- Hồ sơ khám bệnh + đơn thuốc ----------
 
-// Số đơn thuốc hiển thị: DT-000001 (lấy từ id tự tăng của hồ sơ khám).
+// Số đơn thuốc hiển thị: DT-000001 (theo id hồ sơ).
 const prescriptionCode = (id) => 'DT-' + String(id).padStart(6, '0');
 
 function publicRecord(r) {
@@ -315,7 +306,7 @@ router.post('/records', requireRole('doctor'), async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Nếu lịch hẹn ban đầu chưa chỉ định bác sĩ cụ thể, bác sĩ khám sẽ được gán vào đây.
+    // Lịch chưa gắn bác sĩ thì gán bác sĩ khám.
     const inserted = await client.query(
       `INSERT INTO medical_records (appointment_id, patient_id, doctor_id, symptoms, diagnosis, notes)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
@@ -354,8 +345,7 @@ router.post('/records', requireRole('doctor'), async (req, res) => {
   }
 });
 
-// Bệnh nhân xem lịch sử khám bệnh của chính mình — ghi audit log lượt tự truy cập
-// (yêu cầu bảo mật NFR: "Ghi nhật ký mọi lượt bệnh nhân tự truy cập hồ sơ").
+// Bệnh nhân xem lịch sử khám của mình — ghi nhật ký lượt tự truy cập.
 router.get('/records/mine', async (req, res) => {
   try {
     const result = await pool.query(
@@ -373,8 +363,7 @@ router.get('/records/mine', async (req, res) => {
   }
 });
 
-// Xem hồ sơ khám của 1 lịch hẹn cụ thể — nhân viên/bác sĩ/admin xem mọi hồ sơ,
-// bệnh nhân chỉ xem được hồ sơ của chính mình.
+// Hồ sơ khám của 1 lịch hẹn — bệnh nhân chỉ xem của mình.
 router.get('/records/by-appointment/:appointmentId', async (req, res) => {
   try {
     const result = await pool.query(RECORD_SELECT + ' WHERE mr.appointment_id = $1', [Number(req.params.appointmentId)]);
@@ -393,8 +382,7 @@ router.get('/records/by-appointment/:appointmentId', async (req, res) => {
   }
 });
 
-// Chi tiết 1 hồ sơ khám/đơn thuốc theo id (dùng cho trang in) — đặt SAU
-// '/records/mine' và '/records/by-appointment/...' để 2 đường dẫn cố định khớp trước.
+// Chi tiết 1 hồ sơ (trang in) — đặt SAU '/records/mine' và '/records/by-appointment/...'.
 router.get('/records/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);

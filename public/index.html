@@ -595,14 +595,10 @@
     return el;
   }
 
-  // Trang web thường (ngoài Claude Artifact) không có window.claude, nên khung
-  // chat này luôn dùng bộ trả lời theo từ khoá dưới đây. Muốn AI thật (LLM) trả
-  // lời ở đây, cần thêm 1 route gọi API LLM ở backend rồi thay hàm answer() này
-  // bằng một lệnh gọi fetch tới route đó.
+  // Bộ trả lời theo từ khoá — chỉ dùng dự phòng khi không kết nối được /api/ai/chat.
   function answer(q){
     const s = q.toLowerCase();
-    // Khớp theo TỪ nguyên vẹn, không khớp chuỗi con — nếu không "ho" sẽ trùng với "khoa",
-    // "da" trùng với "đa khoa"... và trả lời sai chuyên khoa.
+    // Khớp nguyên từ — không thì "ho" trùng "khoa", "da" trùng "đa khoa".
     const has = (...words) => words.some(w => new RegExp('(^|[^\\p{L}])' + w + '([^\\p{L}]|$)', 'u').test(s));
     if (has('giờ', 'mấy giờ', 'làm việc')){
       return 'Phòng khám mở cửa từ 7:00 đến 21:00, các ngày Thứ 2 – Thứ 7. Chủ nhật chỉ khám theo hẹn trước với bác sĩ (đặt chậm nhất Thứ 3 và cần bác sĩ đồng ý).';
@@ -632,8 +628,7 @@
   }
 
   // ---------- Lịch sử trò chuyện ----------
-  // Đã đăng nhập: hội thoại lưu ở CSDL (xem lại / chat tiếp được ở mọi thiết bị), trình
-  // duyệt chỉ nhớ id cuộc trò chuyện đang mở. Chưa đăng nhập: chỉ nhớ tạm trong trình duyệt.
+  // Đã đăng nhập: hội thoại lưu ở CSDL, trình duyệt chỉ nhớ id cuộc trò chuyện. Chưa đăng nhập: nhớ trong trình duyệt.
   const GREETING = 'Xin chào! Mình là trợ lý của phòng khám Đức Minh. Hỏi mình về giờ làm việc, chuyên khoa phù hợp hoặc cách đặt lịch khám nhé.';
   const CONV_KEY = 'dm_chat_conv';
   const GUEST_KEY = 'dm_chat_guest';
@@ -651,7 +646,7 @@
   let convId = null;      // id cuộc trò chuyện đang mở (chỉ khi đã đăng nhập)
   let loggedIn = false;
 
-  // Toàn màn hình trên máy tính: cột lịch sử luôn hiện bên trái (không đóng được), giống Gemini/Claude.
+  // Toàn màn hình trên máy tính: cột lịch sử luôn hiện bên trái.
   const sidebarPinned = () => card.classList.contains('full') && wideMQ.matches;
   function closeHistory(){ if (!sidebarPinned()) histPanel.hidden = true; }
 
@@ -664,8 +659,7 @@
   function saveGuest(){
     try { localStorage.setItem(GUEST_KEY, JSON.stringify(chatHistory.slice(-40))); } catch (e) {}
   }
-  // Nút gợi ý dưới câu trả lời CUỐI của trợ lý: bản tóm tắt đặt lịch chờ xác nhận -> "Xác nhận đặt lịch" /
-  // "Sửa thông tin"; vừa đặt xong -> đường dẫn tới danh sách lịch hẹn. Chỉ hiện ở tin cuối cùng.
+  // Nút gợi ý dưới tin CUỐI của trợ lý: bản tóm tắt chờ xác nhận → Xác nhận / Sửa; vừa đặt xong → link lịch hẹn.
   function clearActions(){ body.querySelectorAll('.msg-actions').forEach(e => e.remove()); }
   function sendFromButton(q){ addMsg(q, 'me'); askAI(q); }
   function addActions(el, text){
@@ -682,8 +676,7 @@
       box.appendChild(b);
     };
     if (isSummary) {
-      // 3 lựa chọn sau khi kiểm tra lại thông tin: đặt luôn / từ chối / sửa. Nội dung gửi đi dùng đúng từ khoá
-      // mà AI nhận là xác nhận ("xác nhận") hoặc từ chối ("không muốn đặt nữa, huỷ").
+      // Nội dung gửi đi dùng đúng từ khoá AI nhận là xác nhận / từ chối.
       mk('✔ OK, đặt lịch', 'primary', () => sendFromButton('Xác nhận, đặt lịch giúp mình'));
       mk('✖ Từ chối', 'danger', () => sendFromButton('Mình không muốn đặt lịch nữa, huỷ yêu cầu này giúp mình'));
       mk('✎ Sửa thông tin', '', () => sendFromButton('Mình muốn sửa lại thông tin đặt lịch'));
@@ -786,7 +779,7 @@
   }
   fullBtn.addEventListener('click', () => setFull(!card.classList.contains('full')));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card.classList.contains('full') && !document.querySelector('.modal-overlay:not([hidden])')) setFull(false); });
-  // Đổi cỡ cửa sổ khi đang toàn màn hình: rộng -> cột lịch sử hiện cố định, hẹp -> thu về nút "Lịch sử".
+  // Rộng → cột lịch sử cố định, hẹp → thu về nút "Lịch sử".
   wideMQ.addEventListener('change', () => {
     if (!card.classList.contains('full')) return;
     if (wideMQ.matches) showHistory(true); else histPanel.hidden = true;
@@ -847,9 +840,7 @@
         saveGuest();
       }
     } catch (e) {
-      // Server đã trả lý do cụ thể (hết hạn ngạch AI, quá tải...) -> báo đúng lý do đó, vì
-      // câu trả lời theo từ khoá không hiểu ngữ cảnh đặt lịch đang dở và sẽ gây hiểu nhầm.
-      // Chỉ khi mất kết nối hẳn mới dùng bộ trả lời theo từ khoá làm phương án dự phòng.
+      // Server trả lý do cụ thể (hết hạn ngạch, quá tải…) thì báo đúng lý do; chỉ mất kết nối mới dùng bộ trả lời từ khoá.
       thinkingEl.textContent = e.fromServer ? e.message : answer(q);
       thinkingEl.style.fontStyle = 'normal';
     } finally {
@@ -862,7 +853,7 @@
     clearActions();
     const q = input.value.trim();
     if (!q) {
-      // Bấm gửi khi ô nhập trống: nhắc nhẹ thay vì im lặng (không gọi AI, không lưu lịch sử).
+      // Ô nhập trống: nhắc nhẹ, không gọi AI.
       addMsg('Bạn chưa nhập nội dung nào. Bạn gõ câu hỏi hoặc thông tin cần gửi rồi bấm Gửi nhé.', 'bot');
       input.focus();
       return;
@@ -881,8 +872,7 @@
     });
   });
 
-  // Bệnh nhân đã đăng nhập: khung chat này cũng tra cứu được dữ liệu của chính họ
-  // (thay cho khung "Trợ lý AI của bạn" cũ trong không gian bệnh nhân) -> thêm câu gợi ý tương ứng.
+  // Bệnh nhân đã đăng nhập: thêm câu gợi ý tra cứu dữ liệu của chính họ.
   document.addEventListener('dm:user', (e) => {
     if (!e.detail || e.detail.role !== 'patient') return;
     const box = document.querySelector('.chat-quick');
@@ -898,9 +888,7 @@
 
 <script src="/account-menu.js" data-mount="#navAccountMount" data-current="home"></script>
 <script>
-  // Nút "Thanh toán": nhân viên/admin vào trang Hoá đơn để thu tiền, còn bệnh
-  // nhân/bác sĩ vào Hồ sơ khám để quét QR trả hoá đơn của mình. Chưa đăng nhập
-  // thì đưa tới trang đăng nhập.
+  // Nút "Thanh toán": nhân viên/admin → Hoá đơn; bệnh nhân/bác sĩ → Hồ sơ khám; chưa đăng nhập → đăng nhập.
   document.addEventListener('dm:user', (e) => {
     const role = e.detail && e.detail.role;
     document.getElementById('navPay').href = ['staff', 'admin'].includes(role) ? '/hoa-don.html' : '/ho-so.html';
@@ -908,10 +896,9 @@
 </script>
 
 <script>
-  // Xem bác sĩ phụ trách 1 chuyên khoa — công khai, không cần đăng nhập, để
-  // khách vãng lai cũng xem được trước khi quyết định đặt lịch.
+  // Bác sĩ phụ trách 1 chuyên khoa — công khai.
   (function(){
-  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  // Tên trong CSDL có thể đã kèm 'BS.' — tránh hiện 'BS. BS. …'.
   const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
     function esc(s){
       return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));

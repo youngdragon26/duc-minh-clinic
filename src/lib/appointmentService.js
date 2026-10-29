@@ -5,31 +5,25 @@ const { FIXED_SLOTS, isDoctorWorkingAt, isSlotOpen } = require('./availability')
 const SLOT_FULL_MESSAGE = 'Khung giờ này đã kín lịch, vui lòng chọn giờ khác.';
 
 const STAFF_ROLES = ['staff', 'doctor', 'admin'];
-// Chỉ sửa/huỷ được lịch hẹn khi chưa bắt đầu khám — tránh sửa "sau lưng" 1 buổi
-// khám đang/đã diễn ra.
+// Chỉ sửa/huỷ được khi chưa bắt đầu khám.
 const EDITABLE_STATUSES = ['cho_xac_nhan', 'da_xac_nhan'];
 
-// Chủ nhật phòng khám KHÔNG khám thường xuyên: chỉ khám theo hẹn trước với 1 bác
-// sĩ cụ thể, phải đặt chậm nhất vào Thứ 3 của tuần đó, và chỉ có hiệu lực khi
-// chính bác sĩ đó xác nhận (xem route đổi trạng thái). Bệnh nhân/AI phải theo đủ
-// quy tắc này; nhân viên/bác sĩ/admin nhập hộ thì không bị giới hạn hạn chót
-// (vì đã trao đổi trực tiếp với bác sĩ).
+// Chủ nhật chỉ khám theo hẹn với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 cùng tuần, hiệu lực khi bác sĩ xác nhận.
+// Nhân viên/bác sĩ/admin nhập hộ thì không bị hạn chót.
 function isSundayISO(dateStr) {
   return new Date(dateStr + 'T00:00:00Z').getUTCDay() === 0;
 }
 function vnTodayISO() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
-// Hạn chót đặt lịch cho 1 ngày Chủ nhật = Thứ 3 cùng tuần = 5 ngày trước đó.
+// Hạn chót = Thứ 3 cùng tuần = 5 ngày trước Chủ nhật.
 function sundayDeadlineISO(sundayStr) {
   const d = new Date(sundayStr + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() - 5);
   return d.toISOString().slice(0, 10);
 }
 
-// Lỗi do dữ liệu đầu vào sai (khách nhập thiếu/sai, giờ đã có người đặt...) —
-// khác lỗi hệ thống, để nơi gọi (route HTTP hoặc tool AI) biết trả thông báo
-// rõ ràng cho người dùng thay vì báo "lỗi máy chủ" chung chung.
+// Lỗi do dữ liệu đầu vào — nơi gọi (route HTTP hoặc tool AI) trả thông báo rõ ràng thay vì "lỗi máy chủ".
 class BookingError extends Error {
   constructor(message, status = 400) {
     super(message);
@@ -37,8 +31,7 @@ class BookingError extends Error {
   }
 }
 
-// Kiểm tra + chuẩn hoá các trường chung cho cả tạo mới lẫn sửa lịch hẹn — dùng
-// chung để 2 đường (đặt lịch lần đầu / sửa lịch đã đặt) luôn áp cùng 1 quy tắc.
+// Kiểm tra + chuẩn hoá các trường chung cho cả tạo mới lẫn sửa lịch hẹn.
 function validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory, doctorId, skipSundayDeadline }) {
   if (!specialty || !date || !time) {
     throw new BookingError('Thiếu chuyên khoa, ngày hoặc giờ khám.');
@@ -105,9 +98,7 @@ async function resolveDoctorId(doctorId, specialty) {
   return doctorIdNum;
 }
 
-// Tạo 1 lịch hẹn — dùng chung cho cả form đặt lịch trên web (route POST
-// /api/appointments) và tool book_appointment mà trợ lý AI gọi, để 2 đường
-// đặt lịch luôn áp dụng đúng 1 bộ quy tắc kiểm tra, không lệch nhau.
+// Tạo 1 lịch hẹn — dùng chung cho form đặt lịch và tool book_appointment của chatbot.
 async function createAppointment({ patientId, specialty, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory }) {
   const normalized = validateBookingFields({ specialty, date, time, contactName, contactPhone, age, gender, discountCategory, doctorId });
   const doctorIdNum = await resolveDoctorId(doctorId, specialty);
@@ -134,10 +125,7 @@ async function createAppointment({ patientId, specialty, doctorId, date, time, n
   }
 }
 
-// Sửa 1 lịch hẹn đã đặt (thông tin liên hệ và/hoặc ngày giờ) — chuyên khoa giữ
-// nguyên như lúc đặt (muốn đổi chuyên khoa thì huỷ rồi đặt lại). Bệnh nhân chỉ
-// sửa được lịch của chính mình và khi lịch chưa bắt đầu khám; nhân viên/bác
-// sĩ/admin sửa được mọi lịch hẹn còn trong 2 trạng thái đó (vd sửa hộ SĐT sai).
+// Sửa lịch hẹn đã đặt (liên hệ và/hoặc ngày giờ); chuyên khoa giữ nguyên. Bệnh nhân chỉ sửa lịch của mình.
 async function updateAppointment({ id, requester, doctorId, date, time, note, contactName, contactPhone, age, gender, discountCategory }) {
   const existing = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
@@ -158,9 +146,7 @@ async function updateAppointment({ id, requester, doctorId, date, time, note, co
     doctorId, skipSundayDeadline: isStaffLike,
   });
   const doctorIdNum = await resolveDoctorId(doctorId, appt.specialty);
-  // Nhân viên/bác sĩ/admin sửa lịch coi như đã trao đổi trực tiếp với bác sĩ
-  // (giống lý do bỏ qua hạn chót Chủ nhật ở trên) nên không bị chặn bởi ca trực;
-  // bệnh nhân tự sửa lịch của mình vẫn phải theo đúng ca trực như lúc đặt mới.
+  // Nhân viên/bác sĩ/admin sửa lịch không bị chặn bởi ca trực; bệnh nhân thì có.
   if (!isStaffLike && doctorIdNum && !(await isDoctorWorkingAt(doctorIdNum, date, time))) {
     throw new BookingError('Bác sĩ không có ca trực vào khung giờ này, vui lòng chọn giờ khác trong lịch làm việc của bác sĩ.');
   }

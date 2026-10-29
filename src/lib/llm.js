@@ -1,15 +1,7 @@
-// Lớp gọi mô hình ngôn ngữ dùng chung cho mọi tính năng AI (chatbot công khai, trợ lý theo
-// vai trò, mở rộng câu hỏi RAG, tóm tắt bệnh sử) — chọn nhà cung cấp bằng biến AI_PROVIDER:
-//   - "gemini" (mặc định): gọi Gemini qua SDK @google/genai, cần GEMINI_API_KEY.
-//   - "ollama": gọi mô hình chạy NGAY TRÊN MÁY qua Ollama (http://127.0.0.1:11434) — không
-//     tốn hạn ngạch 20 lượt/ngày của Gemini, không phụ thuộc mạng tới Google. Chỉ dùng được
-//     khi server Node gọi tới được Ollama: cùng máy, hoặc bản deploy trên Render gọi về laptop
-//     qua đường hầm do scripts/ollama-tunnel.js mở (laptop tự báo địa chỉ lên, xem
-//     setRemoteOllama). Gọi Ollama lỗi (laptop tắt, đường hầm đứt) thì tự chuyển sang Gemini
-//     nếu có GEMINI_API_KEY — chatbot trên web không chết theo laptop.
-// Embedding (vector cho RAG, lib/embeddings.js) KHÔNG đi qua đây — vẫn luôn dùng Gemini, vì
-// toàn bộ kb_chunks đã được nhúng bằng gemini-embedding-001 (3072 chiều); đổi mô hình nhúng
-// thì phải nhúng lại cả cơ sở tri thức.
+// Lớp gọi mô hình ngôn ngữ dùng chung cho mọi tính năng AI. AI_PROVIDER:
+//   - "gemini" (mặc định): SDK @google/genai, cần GEMINI_API_KEY.
+//   - "ollama": model chạy trên máy (hoặc laptop qua đường hầm, xem setRemoteOllama); lỗi thì chuyển sang Gemini nếu có khoá.
+// Embedding cho RAG (lib/embeddings.js) luôn dùng Gemini — kb_chunks đã nhúng bằng gemini-embedding-001.
 const PROVIDER = (process.env.AI_PROVIDER || 'gemini').trim().toLowerCase() === 'ollama' ? 'ollama' : 'gemini';
 
 const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
@@ -17,22 +9,16 @@ const GEMINI_SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.6-fla
 
 const OLLAMA_HOST = (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:4b-instruct';
-// System prompt của chatbot công khai (quy tắc + giá khám + tài liệu RAG) dài vài nghìn token —
-// để mặc định 4096 của Ollama thì phần đầu prompt bị cắt mất âm thầm, nên đặt 8192.
+// System prompt dài vài nghìn token — mặc định 4096 của Ollama cắt mất phần đầu.
 const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX) || 8192;
-// Giữ model nằm sẵn trong RAM/VRAM giữa các câu hỏi — nạp lại model mất vài giây mỗi lần.
 const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '30m';
 const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120000;
-// Qwen3 mặc định "suy nghĩ" (sinh cả đoạn lập luận ẩn trước khi trả lời) — chậm gấp nhiều lần
-// mà với câu trả lời 2-4 câu của chatbot thì không cần, nên tắt trừ khi đặt OLLAMA_THINK=true.
+// Tắt chế độ suy nghĩ của Qwen3 (chậm gấp nhiều lần) trừ khi OLLAMA_THINK=true.
 const OLLAMA_THINK = process.env.OLLAMA_THINK === 'true';
-// Khoá chung giữa server và laptop: server gửi kèm khi gọi Ollama qua đường hầm (proxy trên laptop
-// kiểm tra), laptop gửi kèm khi báo địa chỉ đường hầm lên server. Để trống = tắt cả 2 chiều.
-// trim(): dán khoá vào ô Environment của Render dễ dính dấu xuống dòng ở cuối.
+// Khoá chung server ↔ laptop (đường hầm Ollama). Để trống = tắt. trim(): ô Environment của Render hay dính xuống dòng.
 const OLLAMA_API_KEY = (process.env.OLLAMA_API_KEY || '').trim();
 
-// Địa chỉ đường hầm laptop báo lên gần nhất. Script báo lại mỗi 2 phút, nên quá 5 phút không
-// nghe báo là coi như laptop đã tắt và quay về OLLAMA_HOST (trên Render: không gọi được → Gemini).
+// Địa chỉ đường hầm laptop báo gần nhất; quá 5 phút không báo lại thì quay về OLLAMA_HOST.
 const REMOTE_OLLAMA_TTL_MS = 5 * 60 * 1000;
 let remoteOllama = null;
 
@@ -45,7 +31,7 @@ function ollamaHost() {
   return OLLAMA_HOST;
 }
 
-// So khoá theo thời gian hằng (so băm SHA-256 cùng độ dài) để không lộ khoá qua thời gian phản hồi.
+// So khoá theo thời gian hằng (băm SHA-256) để không lộ khoá qua thời gian phản hồi.
 function checkOllamaKey(token) {
   if (!OLLAMA_API_KEY || !token) return false;
   const crypto = require('crypto');
@@ -71,10 +57,7 @@ function isConfigured() {
 
 const NOT_CONFIGURED_ERROR = 'Trợ lý AI chưa được cấu hình (thiếu GEMINI_API_KEY).';
 
-// Gemini bản miễn phí đôi khi báo 503 "quá tải" hoặc 429 "quá nhiều yêu cầu" —
-// đây là lỗi tạm thời phía Google, nên thử lại vài lần trước khi báo lỗi cho người dùng.
-// Riêng lỗi hết hạn ngạch NGÀY (RESOURCE_EXHAUSTED/PerDay) thì thử lại vô ích
-// (phải đợi qua ngày mới hết), nên báo lỗi ngay thay vì làm người dùng chờ.
+// Thử lại lỗi tạm thời 503/429 của Gemini; hết hạn ngạch NGÀY (RESOURCE_EXHAUSTED/PerDay) thì báo ngay.
 async function withRetry(fn, retries = 2, delayMs = 900) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -103,9 +86,6 @@ function aiErrorResponse(e) {
     }
     return { status: 502, error: 'Mô hình AI trên máy (Ollama) gặp lỗi, thử lại sau.' };
   }
-  // Gói Gemini miễn phí giới hạn 20 request/ngày/model — hết hạn ngạch NGÀY,
-  // không phải quá tải tạm thời, nên phải báo khác với lỗi 503 thông thường
-  // (không nên khuyên "thử lại sau ít phút" vì thực tế phải đợi qua ngày mới).
   if (e && e.status === 429 && (msg.includes('PerDay') || msg.includes('RESOURCE_EXHAUSTED'))) {
     return {
       status: 503,
@@ -150,8 +130,7 @@ async function ollamaChat(body) {
   if (!res.ok || data.error) {
     throw Object.assign(new Error('Ollama: ' + (data.error || res.statusText)), { provider: 'ollama', status: res.status });
   }
-  // AI_DEBUG=true: in ra số token và thời gian đọc prompt / sinh câu trả lời của từng lượt gọi,
-  // để biết chậm vì prompt dài hay vì sinh chữ.
+  // AI_DEBUG=true: in số token và thời gian đọc prompt / sinh câu trả lời.
   if (process.env.AI_DEBUG === 'true' && data.total_duration) {
     const s = (ns) => ((ns || 0) / 1e9).toFixed(1) + 's';
     console.log(`[ollama] prompt ${data.prompt_eval_count || 0} token/${s(data.prompt_eval_duration)}, trả lời ${data.eval_count || 0} token/${s(data.eval_duration)}, tổng ${s(data.total_duration)}`);
@@ -159,9 +138,7 @@ async function ollamaChat(body) {
   return data.message || {};
 }
 
-// Vector của 1 đoạn văn bằng model embedding chạy trên Ollama (dùng cho câu trả lời mẫu — lib/chatExamples.js).
-// Đi cùng địa chỉ/khoá với chat nên bản Render cũng gọi được qua đường hầm. Không gọi được thì trả null để nơi
-// gọi tự dùng cách khác — không bao giờ ném lỗi làm hỏng lượt chat.
+// Vector của 1 đoạn văn bằng model embedding trên Ollama (câu trả lời mẫu). Lỗi trả null, không ném lỗi.
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL || 'qwen3-embedding:0.6b';
 async function ollamaEmbed(text) {
   try {
@@ -181,13 +158,11 @@ async function ollamaEmbed(text) {
   }
 }
 
-// Nạp sẵn model vào bộ nhớ lúc khởi động server, để câu hỏi ĐẦU TIÊN của khách không phải chờ
-// thêm vài giây nạp model. Lỗi ở đây chỉ ghi log — không chặn server khởi động.
+// Nạp sẵn model lúc khởi động để câu hỏi đầu tiên không phải chờ. Lỗi chỉ ghi log.
 async function warmUp() {
   if (PROVIDER !== 'ollama') return;
   try {
     await ollamaChat({ messages: [] });
-    // Model embedding của câu trả lời mẫu cũng nạp sẵn — lượt đầu không nạp thì mất thêm ~1,2 s.
     await ollamaEmbed('xin chào');
     console.log(`Đã nạp sẵn mô hình ${PROVIDER_LABEL}.`);
   } catch (e) {
@@ -197,9 +172,8 @@ async function warmUp() {
 
 // ---------- API chung ----------
 
-// AI_PROVIDER=ollama: thử Ollama trước, lỗi (không kết nối được, đường hầm đứt, chưa có model…)
-// thì chuyển sang Gemini nếu có GEMINI_API_KEY. Riêng lỗi xảy ra SAU KHI đã chạy công cụ (e.toolsRan)
-// thì không chuyển — Gemini sẽ chạy lại công cụ, vd đặt lịch lần 2 thành lịch trùng.
+// AI_PROVIDER=ollama: lỗi thì chuyển sang Gemini nếu có khoá — trừ khi công cụ đã chạy (e.toolsRan),
+// vì Gemini sẽ chạy lại công cụ (vd đặt lịch trùng).
 async function withFallback(ollamaFn, geminiFn) {
   if (PROVIDER !== 'ollama') return geminiFn();
   try {
@@ -211,7 +185,7 @@ async function withFallback(ollamaFn, geminiFn) {
   }
 }
 
-// Sinh 1 đối tượng JSON theo đúng schema (dùng cho bước mở rộng câu hỏi RAG).
+// Sinh 1 đối tượng JSON theo schema (mở rộng câu hỏi RAG).
 async function generateJSON({ system, prompt, schema }) {
   return withFallback(
     async () => {
@@ -235,7 +209,7 @@ async function generateJSON({ system, prompt, schema }) {
   );
 }
 
-// Sinh 1 đoạn văn bản, không có công cụ (dùng cho tóm tắt bệnh sử).
+// Sinh 1 đoạn văn bản, không có công cụ (tóm tắt bệnh sử).
 async function generateText({ system, prompt }) {
   return withFallback(
     async () => {
@@ -255,9 +229,8 @@ async function generateText({ system, prompt }) {
   );
 }
 
-// Hội thoại có công cụ: gửi tin nhắn mới kèm lịch sử, mỗi khi model yêu cầu gọi công cụ thì chạy
-// handleCall(name, args) và gửi kết quả lại, tối đa maxRounds vòng. Trả về câu trả lời cuối
-// (chuỗi rỗng nếu model không trả lời bằng chữ). history: [{ role: 'user'|'assistant', content }].
+// Hội thoại có công cụ: chạy handleCall(name, args) mỗi khi model gọi, tối đa maxRounds vòng.
+// history: [{ role: 'user'|'assistant', content }]. Trả về chuỗi rỗng nếu model không trả lời bằng chữ.
 async function chatWithTools(params) {
   return withFallback(() => ollamaChatWithTools(params), () => geminiChatWithTools(params));
 }

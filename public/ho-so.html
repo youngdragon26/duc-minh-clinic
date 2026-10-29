@@ -75,7 +75,7 @@
 <script src="/invoice-sheet.js"></script>
 <script>
   const API = '';
-  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  // Tên trong CSDL có thể đã kèm 'BS.' — tránh hiện 'BS. BS. …'.
   const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -96,7 +96,7 @@
     return data;
   }
 
-  // Thông tin nhận thanh toán chỉ cần lấy 1 lần cho cả trang (dùng chung cho mọi hoá đơn).
+  // Thông tin nhận thanh toán lấy 1 lần cho cả trang.
   let bankAccountPromise = null;
   function getBankAccount() {
     if (!bankAccountPromise) {
@@ -117,8 +117,7 @@
       if (invoice.status !== 'chua_thanh_toan') return base;
 
       const bank = await getBankAccount();
-      // Chưa có tài khoản nhận tiền thì không sinh được mã QR — báo rõ để bệnh nhân
-      // biết cách thanh toán thay vì phần thanh toán biến mất không lý do.
+      // Chưa có tài khoản nhận tiền thì báo rõ thay vì ẩn phần thanh toán.
       if (!bank.configured) {
         return base + `<div class="field"><b>Thanh toán</b>Phòng khám chưa mở thanh toán chuyển khoản QR online. Bạn vui lòng thanh toán tại quầy thu ngân hoặc gọi hotline 0974 755 333.</div>`;
       }
@@ -126,8 +125,7 @@
       const addInfo = encodeURIComponent((invoice.code + ' ' + (invoice.patientName || '')).trim());
       const accountName = encodeURIComponent(bank.accountName || '');
       const qrUrl = `https://img.vietqr.io/image/${bank.bankBin}-${bank.accountNumber}-compact2.png?amount=${invoice.totalAmount}&addInfo=${addInfo}&accountName=${accountName}`;
-      // Đã báo chuyển khoản: vẫn giữ mã QR (lỡ bấm trước khi chuyển thì quét lại được),
-      // thay nút bấm bằng khung tự kiểm tra trạng thái — xem watchPayment() bên dưới.
+      // Đã báo chuyển khoản: giữ mã QR, thay nút bằng khung tự kiểm tra (watchPayment).
       const action = invoice.onlinePaymentClaimedAt
         ? `<div class="pay-watch" data-invoice-id="${invoice.id}" style="margin-top:8px; padding:9px 12px; border-radius:3px; border:1px solid var(--line); font-size:.85rem;">
              Bạn đã báo chuyển khoản lúc ${new Date(invoice.onlinePaymentClaimedAt).toLocaleString('vi-VN')}. Đang chờ xác nhận…
@@ -152,11 +150,8 @@
     }
   }
 
-  // Sau khi bệnh nhân báo đã chuyển khoản: hỏi lại trạng thái hoá đơn — 3 lần đầu cách
-  // nhau 5 giây (nhân viên xác nhận nhanh thì báo thành công ngay), sau đó 30 giây/lần.
-  // Hoá đơn chỉ chuyển "Đã thanh toán" khi nhân viên đối chiếu sao kê xác nhận (chưa có
-  // webhook ngân hàng). Lần 3 vẫn chưa có thì yêu cầu gọi nhân viên hỗ trợ nhưng vẫn tự
-  // kiểm tra tiếp để báo thành công khi được xác nhận; khoảng 10 phút thì dừng hẳn.
+  // Hỏi lại trạng thái: 3 lần đầu cách 5 giây, sau đó 30 giây/lần, dừng sau ~10 phút.
+  // Lần 3 vẫn chưa xác nhận thì nhắc gọi nhân viên nhưng vẫn kiểm tra tiếp.
   const QUICK_CHECKS = 3;
   const QUICK_S = 5;
   const SLOW_S = 30;
@@ -165,7 +160,6 @@
 
   const hotlineLink = `<a href="tel:${HOTLINE.replace(/\s/g, '')}">${HOTLINE}</a>`;
 
-  // Đã nhận tiền: báo thành công, đổi nhãn hoá đơn — từ đây không kiểm tra gì thêm nữa.
   function showPaid(box, paidAt) {
     box.innerHTML = `✅ <strong>Chuyển khoản thành công.</strong> Phòng khám đã nhận được tiền và xác nhận thanh toán lúc ${new Date(paidAt).toLocaleString('vi-VN')}.`;
     box.closest('.card').querySelectorAll('.pill.chua_thanh_toan').forEach((p) => {
@@ -284,8 +278,7 @@
         btn.replaceWith(box);
         watchPayment(box);
       } catch (err) {
-        // Nhân viên có thể đã xác nhận thu tiền ngay trước khi bệnh nhân bấm (API báo
-        // "đã được xử lý") — khi đó báo thành công luôn thay vì hiện lỗi.
+        // Nhân viên có thể đã xác nhận ngay trước khi bệnh nhân bấm — báo thành công luôn.
         const s = await api('/api/billing/invoices/' + id + '/payment-status').catch(() => null);
         if (s && s.status === 'da_thanh_toan') {
           btn.replaceWith(box);

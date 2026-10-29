@@ -327,7 +327,7 @@
 
   let me = null;
 
-  // Tên bác sĩ có thể đã kèm 'BS.' sẵn trong CSDL — chỉ thêm khi chưa có, tránh hiện 'BS. BS. …'.
+  // Tên trong CSDL có thể đã kèm 'BS.' — tránh hiện 'BS. BS. …'.
   const drName = (n) => (/^BS\.?\s/i.test(n || '') ? n : 'BS. ' + (n || ''));
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -446,7 +446,7 @@
     if (v >= 1e3) return +(v / 1e3).toFixed(0) + 'k';
     return String(v);
   }
-  // Liệt kê đủ mọi ngày/tháng trong khoảng để ngày không có doanh thu hiện cột 0, không bị "nhảy cóc".
+  // Đủ mọi ngày/tháng trong khoảng để ngày không có doanh thu hiện cột 0.
   function fillPeriods(data, from, to, group) {
     const map = new Map(data.map((d) => [d.period, d]));
     const out = [];
@@ -482,7 +482,6 @@
       const x = L + slot * i + (slot - bw) / 2;
       const h = Math.max(s.total > 0 ? 2 : 0, (s.total / max) * ph);
       const label = i % every === 0 ? `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${periodLabel(s.period, group)}</text>` : '';
-      // Cột có góc trên bo 4px, đáy phẳng sát trục.
       const r = Math.min(4, bw / 2, h);
       const path = h > 0 ? `M${x},${T + ph} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z` : '';
       return `${path ? `<path class="bar" d="${path}" data-i="${i}"/>` : ''}<rect class="hit" x="${L + slot * i}" y="${T}" width="${slot}" height="${ph}" data-i="${i}"/>${label}`;
@@ -530,9 +529,7 @@
     return data;
   }
 
-  // Tải file .xlsx thật (không phải CSV) — phải fetch bằng JS kèm header
-  // Authorization rồi tự tạo link tải, vì thẻ <a href> thường không gửi kèm được
-  // token đăng nhập.
+  // Tải .xlsx bằng fetch kèm header Authorization (thẻ <a href> không gửi được token).
   document.getElementById('exportXlsxBtn').addEventListener('click', async () => {
     const btn = document.getElementById('exportXlsxBtn');
     const original = btn.textContent;
@@ -641,8 +638,7 @@
     addMsg('Xin chào ' + me.name + '! ' + (AI_HINT[role] || '') + ' Bạn có thể bấm câu gợi ý bên dưới hoặc tự đặt câu hỏi.', 'bot');
   }
   function setupAssistant(role) {
-    // Bệnh nhân không còn khung chat riêng ở đây: mọi câu hỏi về lịch hẹn, đơn thuốc, hoá đơn, tái khám
-    // đã gộp vào khung chat chính ở trang chủ (nút "Chat" nổi ở góc phải mở khung đó).
+    // Bệnh nhân dùng khung chat chính ở trang chủ (nút "Chat" nổi).
     if (role === 'patient') { $('aiSection').hidden = true; return; }
     $('aiHint').textContent = AI_HINT[role] || '';
     greet(role);
