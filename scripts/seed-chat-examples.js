@@ -160,18 +160,18 @@ const EXAMPLES = [
   for (const [question, answer] of EXAMPLES) {
     const exists = await pool.query('SELECT 1 FROM chat_examples WHERE question = $1', [question]);
     if (exists.rows.length) continue;
-    // Chưa nhúng được (thiếu key / hết hạn ngạch Gemini) vẫn lưu — dùng được ngay qua so khớp chữ.
+    // Chưa nhúng được (Ollama chưa chạy / chưa tải OLLAMA_EMBED_MODEL) vẫn lưu — dùng được ngay qua so khớp chữ.
     const vector = await tryEmbedQuestion(normalizeMessage(question).text);
-    await pool.query('INSERT INTO chat_examples (question, answer, embedding) VALUES ($1,$2,$3::vector)', [question, answer, vector]);
+    await pool.query('INSERT INTO chat_examples (question, answer, local_embedding) VALUES ($1,$2,$3::vector)', [question, answer, vector]);
     added++;
   }
-  // Bổ sung vector cho các câu mẫu còn thiếu (lưu lúc Gemini hết hạn ngạch, hoặc admin thêm lúc đó).
-  const missing = (await pool.query('SELECT id, question FROM chat_examples WHERE embedding IS NULL')).rows;
+  // Bổ sung vector cho các câu mẫu còn thiếu (lưu lúc không gọi được Ollama, hoặc sau khi đổi model embedding).
+  const missing = (await pool.query('SELECT id, question FROM chat_examples WHERE local_embedding IS NULL')).rows;
   let embedded = 0;
   for (const row of missing) {
     const vector = await tryEmbedQuestion(normalizeMessage(row.question).text);
     if (!vector) break;
-    await pool.query('UPDATE chat_examples SET embedding = $1::vector WHERE id = $2', [vector, row.id]);
+    await pool.query('UPDATE chat_examples SET local_embedding = $1::vector WHERE id = $2', [vector, row.id]);
     embedded++;
   }
   console.log(`Đã thêm ${added} câu mẫu (bỏ qua ${EXAMPLES.length - added} câu đã có); `

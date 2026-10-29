@@ -159,12 +159,36 @@ async function ollamaChat(body) {
   return data.message || {};
 }
 
+// Vector của 1 đoạn văn bằng model embedding chạy trên Ollama (dùng cho câu trả lời mẫu — lib/chatExamples.js).
+// Đi cùng địa chỉ/khoá với chat nên bản Render cũng gọi được qua đường hầm. Không gọi được thì trả null để nơi
+// gọi tự dùng cách khác — không bao giờ ném lỗi làm hỏng lượt chat.
+const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL || 'qwen3-embedding:0.6b';
+async function ollamaEmbed(text) {
+  try {
+    const res = await fetch(ollamaHost() + '/api/embed', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(OLLAMA_API_KEY ? { Authorization: 'Bearer ' + OLLAMA_API_KEY } : {}),
+      },
+      body: JSON.stringify({ model: OLLAMA_EMBED_MODEL, input: text, keep_alive: OLLAMA_KEEP_ALIVE }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await res.json().catch(() => ({}));
+    return res.ok && data.embeddings && data.embeddings[0] ? data.embeddings[0] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Nạp sẵn model vào bộ nhớ lúc khởi động server, để câu hỏi ĐẦU TIÊN của khách không phải chờ
 // thêm vài giây nạp model. Lỗi ở đây chỉ ghi log — không chặn server khởi động.
 async function warmUp() {
   if (PROVIDER !== 'ollama') return;
   try {
     await ollamaChat({ messages: [] });
+    // Model embedding của câu trả lời mẫu cũng nạp sẵn — lượt đầu không nạp thì mất thêm ~1,2 s.
+    await ollamaEmbed('xin chào');
     console.log(`Đã nạp sẵn mô hình ${PROVIDER_LABEL}.`);
   } catch (e) {
     console.error(`Chưa nạp được mô hình ${PROVIDER_LABEL}:`, e.message);
@@ -305,5 +329,7 @@ module.exports = {
   chatWithTools,
   warmUp,
   setRemoteOllama,
+  ollamaEmbed,
+  OLLAMA_EMBED_MODEL,
   checkOllamaKey,
 };

@@ -366,7 +366,7 @@ const OTHER_FACILITY_RE = words(
 const detectOtherFacilityQuestion = (message) => has(OTHER_FACILITY_RE, message);
 
 // Hỏi giờ/ngày làm việc chung ("thứ bảy có khám không", "trưa có nghỉ không") — vòng 6 model trả lời mơ hồ.
-const HOURS_RE = /(?:thứ (?:2|3|4|5|6|7|hai|ba|tư|năm|sáu|bảy)|chủ nhật|buổi trưa|trưa|buổi tối|tối|mấy giờ)[^.?!]{0,15}(?:có )?(?:khám|làm việc|làm|mở cửa|nghỉ|đóng cửa)(?: không)?\s*[?!.]*$|giờ (?:làm việc|mở cửa|đóng cửa)/;
+const HOURS_RE = /(?:thứ (?:2|3|4|5|6|7|hai|ba|tư|năm|sáu|bảy)|chủ nhật|buổi trưa|trưa|buổi tối|tối|mấy giờ)[^.?!]{0,25}(?:có )?(?:khám|làm việc|làm|mở cửa|nghỉ|đóng cửa)(?: không)?\s*[?!.]*$|giờ (?:làm việc|mở cửa|đóng cửa)/;
 const detectHoursQuestion = (message) => HOURS_RE.test(String(message || '').toLowerCase());
 
 // Hỏi lịch làm việc ngày lễ/Tết — phòng khám chưa cung cấp, đo thật model bịa "vẫn hoạt động bình thường".

@@ -194,18 +194,23 @@ async function init() {
 
   // Câu trả lời mẫu cho chatbot (few-shot): admin soạn cặp hỏi–đáp chuẩn, mỗi lượt chat tìm vài
   // cặp có câu hỏi gần nhất (so vector câu hỏi) đưa vào prompt để model nhỏ bắt chước — "dạy"
-  // chatbot mà không cần huấn luyện lại model. Cùng loại vector 3072 chiều, cũng KHÔNG tạo chỉ mục.
+  // chatbot mà không cần huấn luyện lại model. Vector do model embedding chạy trên Ollama tạo (OLLAMA_EMBED_MODEL,
+  // qwen3-embedding:0.6b = 1024 chiều) — không ghi số chiều để đổi model không phải sửa bảng; KHÔNG tạo chỉ mục.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_examples (
       id SERIAL PRIMARY KEY,
       question TEXT NOT NULL,
       answer TEXT NOT NULL,
-      embedding vector(3072),
+      local_embedding vector,
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Bản đầu dùng vector Gemini 3072 chiều (cột "embedding") — gói miễn phí chỉ 1000 lượt nhúng/ngày, đã hết thật
+  // khi kiểm thử nên chuyển sang Ollama. Tên cột mới khác hẳn để lệnh dưới không xoá mất vector mới mỗi lần khởi động.
+  await pool.query(`ALTER TABLE chat_examples ADD COLUMN IF NOT EXISTS local_embedding vector;`);
+  await pool.query(`ALTER TABLE chat_examples DROP COLUMN IF EXISTS embedding;`);
 
   await pool.query(`ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;`);
 

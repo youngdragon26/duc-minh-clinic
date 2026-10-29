@@ -122,7 +122,8 @@ Có thể dùng mô hình AI chạy trên máy qua [Ollama](https://ollama.com) 
 Server chạy cùng máy thì làm theo các bước dưới; muốn **bản deploy trên Render** cũng dùng Ollama của laptop thì
 làm thêm Bước 6.6.
 
-1. Cài Ollama, rồi tải model phù hợp với card đồ hoạ:
+1. Cài Ollama, tải model embedding cho câu trả lời mẫu `ollama pull qwen3-embedding:0.6b` (~0,6 GB, nằm cùng GPU
+   với model chat), rồi tải model chat phù hợp với card đồ hoạ:
    - Card rời **4 GB VRAM** (vd RTX 3050 Laptop): `ollama pull qwen3:1.7b` — nằm trọn trên GPU, mỗi câu trả lời ~1–4 giây.
      `qwen3:4b-instruct` không vừa 4 GB (khoảng 1/3 phải chạy bằng CPU) nên mất 10–40 giây/câu.
      Muốn câu trả lời chi tiết hơn mà chấp nhận ~10 giây/câu: bản 4B nén Q3
@@ -154,6 +155,7 @@ Các biến tuỳ chọn khác (xem chú thích trong `.env.example`):
 |---|---|---|
 | `OLLAMA_NUM_CTX` | `8192` | Độ dài ngữ cảnh tối đa (token). Không nên để thấp hơn 8192 vì prompt chatbot dài |
 | `OLLAMA_KEEP_ALIVE` | `30m` | Giữ model trong bộ nhớ bao lâu sau câu hỏi cuối |
+| `OLLAMA_EMBED_MODEL` | `qwen3-embedding:0.6b` | Model embedding để tìm câu trả lời mẫu (đổi model thì chạy lại `node scripts/seed-chat-examples.js`) |
 | `AI_QUERY_EXPANSION` | bật với Gemini, tắt với Ollama | Bước mở rộng câu hỏi Multi-Query + HyDE (tốn thêm 1 lượt gọi AI mỗi câu) |
 | `AI_COMPACT_PROMPT` | tắt với Gemini, bật với Ollama | Prompt rút gọn cho model nhỏ + trả lời câu hỏi lịch trống thẳng từ dữ liệu, không qua model |
 
@@ -170,9 +172,11 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    danh tính trợ lý, câu ngoài phạm vi, khoa Mắt (không có), ngày lễ/Tết, tiện ích chưa có thông tin…
 4. **Câu trả lời mẫu** (few-shot, bảng `chat_examples`): admin tự dạy chatbot ở trang `/co-so-tri-thuc.html`
    (thêm/sửa/xoá + ô "Thử 1 câu hỏi" xem chatbot lấy câu mẫu nào). Câu hỏi gần như trùng → trả nguyên văn; gần
-   giống → đưa vào prompt làm ví dụ. Tìm bằng vector Gemini; **hết hạn ngạch nhúng Gemini (gói miễn phí
-   1000 lượt/ngày) thì tự so khớp chữ** (trigram, chỉ bắt câu gần giống về chữ). Bộ câu mẫu ban đầu (64 câu, mỗi
-   câu nhắm 1 lỗi đã gặp): `node scripts/seed-chat-examples.js` — chạy lại được, tự bổ sung vector còn thiếu.
+   giống → đưa vào prompt làm ví dụ. Tìm bằng **vector của model embedding chạy trên Ollama**
+   (`qwen3-embedding:0.6b`, không tốn hạn ngạch — bản đầu dùng Gemini nhưng gói miễn phí chỉ 1000 lượt nhúng/ngày và
+   đã hết thật khi kiểm thử) kết hợp **so khớp chữ** (trigram, bắt câu gõ không dấu gần trùng); không gọi được Ollama
+   (vd Render lúc laptop tắt) thì chỉ so khớp chữ. Bộ câu mẫu ban đầu (64 câu, mỗi câu nhắm 1 lỗi đã gặp):
+   `node scripts/seed-chat-examples.js` — chạy lại được, tự bổ sung vector còn thiếu.
 5. **Model** với prompt rút gọn (dữ kiện tính sẵn để cuối prompt, không trích cụm từ trong ngoặc kép vì model nhỏ
    chép nguyên văn), rồi **bộ lọc câu trả lời**: bỏ câu hứa hẹn suông, khẳng định lịch trống không có cơ sở, nêu sai
    khoa, tự đoán nguyên nhân bệnh, khuyên dùng thuốc, chữ Hán/tiếng Anh lẫn vào; luôn chèn 115 khi cấp cứu, cảnh
@@ -197,7 +201,8 @@ Gọi Ollama lỗi (chưa mở Ollama, laptop tắt…) mà có `GEMINI_API_KEY`
 ## Bước 6.6 — (Tuỳ chọn) Cho bản deploy trên Render dùng Ollama của laptop
 
 Laptop mở 1 đường hầm Cloudflare (miễn phí, không cần tài khoản) để Render gọi về Ollama. Ollama không có mật
-khẩu, nên đường hầm trỏ vào 1 proxy có khoá (`OLLAMA_API_KEY`) chỉ cho đi qua đúng `POST /api/chat`.
+khẩu, nên đường hầm trỏ vào 1 proxy có khoá (`OLLAMA_API_KEY`) chỉ cho đi qua đúng `POST /api/chat` và
+`POST /api/embed` (embedding của câu trả lời mẫu).
 
 ```
 Trình duyệt → Render (server) → https://xxx.trycloudflare.com → proxy có khoá :11435 → Ollama :11434 (laptop)

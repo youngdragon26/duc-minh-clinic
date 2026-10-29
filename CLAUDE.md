@@ -126,8 +126,10 @@ use `setChatText()` from `chat-format.js`.
   query + dates, price/discount, dose, antibiotics, own-data, privacy/prompt-injection, off-topic, identity…;
   (3) fixed code replies for anything with a deterministic answer (crisis and privacy refusals in ALL modes, the rest
   only with `COMPACT_PROMPT`, default on for Ollama); (4) `chat_examples` few-shot bank (`src/lib/chatExamples.js`,
-  admin UI on `/co-so-tri-thuc.html`, seed `scripts/seed-chat-examples.js`) — Gemini vectors, falling back to
-  trigram matching when the free embedding quota (1000/day, really exhausted during testing) runs out;
+  admin UI on `/co-so-tri-thuc.html`, seed `scripts/seed-chat-examples.js`) — vectors from an Ollama embedding model
+  (`OLLAMA_EMBED_MODEL`, `qwen3-embedding:0.6b`, column `local_embedding`; moved off Gemini after its free 1000/day
+  embedding quota really ran out) combined with trigram matching, trigram-only when Ollama is unreachable. The
+  tunnel proxy must allow `/api/embed` as well as `/api/chat`. (The KB/RAG embeddings in `kb_chunks` stay on Gemini.);
   (5) compact prompt + a post-filter on the model's reply. Rules learned the hard way: never put quoted phrases in
   the compact prompt (the 1.7B model copies them verbatim — it replied "Bạn là ai?" to "ok"); every detector regex
   needs negative cases ("5/11" is a date, not division; "đánh trống ngực" is not a slot question; "bệnh nhân" is not

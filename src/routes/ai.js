@@ -1154,14 +1154,14 @@ router.post('/examples/match', requireAdmin, async (req, res) => {
   }
 });
 
-// Không nhúng được câu hỏi (thiếu key, hết hạn ngạch Gemini) vẫn lưu — câu mẫu dùng được ngay qua so khớp chữ.
+// Không nhúng được câu hỏi (không gọi được Ollama) vẫn lưu — câu mẫu dùng được ngay qua so khớp chữ.
 router.post('/examples', requireAdmin, async (req, res) => {
   const input = readExample(req.body);
   if (input.error) return res.status(400).json({ error: input.error });
   try {
     const vector = await tryEmbedQuestion(normalizeMessage(input.question).text);
     const result = await pool.query(
-      `INSERT INTO chat_examples (question, answer, embedding, created_by) VALUES ($1,$2,$3::vector,$4) RETURNING ${EXAMPLE_FIELDS}`,
+      `INSERT INTO chat_examples (question, answer, local_embedding, created_by) VALUES ($1,$2,$3::vector,$4) RETURNING ${EXAMPLE_FIELDS}`,
       [input.question, input.answer, vector, req.user.id]
     );
     logAudit(req.user, 'chat_example.create', 'chat_example', result.rows[0].id, { question: input.question });
@@ -1179,13 +1179,13 @@ router.put('/examples/:id', requireAdmin, async (req, res) => {
   try {
     const current = await pool.query('SELECT question FROM chat_examples WHERE id = $1', [Number(req.params.id)]);
     if (current.rows.length === 0) return res.status(404).json({ error: 'Không tìm thấy câu trả lời mẫu.' });
-    // Chỉ nhúng lại khi đổi câu hỏi — sửa câu trả lời không tốn lượt gọi Gemini. Đổi câu hỏi mà không nhúng
+    // Chỉ nhúng lại khi đổi câu hỏi — sửa câu trả lời thì giữ vector cũ. Đổi câu hỏi mà không nhúng
     // được thì XOÁ vector cũ (không thì câu mẫu bị tìm theo nghĩa câu hỏi cũ) — so khớp chữ dùng tạm.
     const questionChanged = current.rows[0].question !== input.question;
     const vector = questionChanged ? await tryEmbedQuestion(normalizeMessage(input.question).text) : null;
     const result = await pool.query(
       `UPDATE chat_examples SET question = $1, answer = $2,
-         embedding = CASE WHEN $3 THEN $4::vector ELSE embedding END, updated_at = now()
+         local_embedding = CASE WHEN $3 THEN $4::vector ELSE local_embedding END, updated_at = now()
        WHERE id = $5 RETURNING ${EXAMPLE_FIELDS}`,
       [input.question, input.answer, questionChanged, vector, Number(req.params.id)]
     );
