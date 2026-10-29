@@ -268,6 +268,9 @@ async function slotFacts(specialty, dates, todayVN) {
   });
 }
 
+// Khách nhờ đặt lịch. Dùng chung 1 hằng — trước đây 2 chỗ viết lệch nhau và cùng thiếu "đặt hộ" (đo thật).
+const BOOKING_INTENT_RE = /đặt (?:lịch|hẹn|khám|cho|giúp|giùm|luôn|hộ)|đặt được không|book/i;
+
 // Khách hỏi đúng 1 khung giờ ("hôm nay 14h còn không", hoặc chọn giờ sau khi xem lịch) — trả lời thẳng khung đó,
 // đã kín thì gợi ý giờ trống gần nhất. Đo thật: trả cả danh sách giờ trống khiến khách phải tự dò.
 async function timeSlotReply({ specialty, date, time, todayVN, loggedIn }) {
@@ -619,6 +622,20 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         suggested ? `Khi tình trạng đã ổn định, bạn có thể tái khám chuyên khoa ${suggested.specialty} tại phòng khám.` : '',
       ].filter(Boolean).join('\n\n'));
     }
+    // Khách CHƯA đăng nhập nhờ đặt lịch — chatbot chỉ đặt được cho tài khoản đã đăng nhập (bookAppointmentTool). Đo thật:
+    // "bạn đặt hộ mình được không" → model đáp "Bạn đang nói gì vậy? … không thể đặt hộ bạn", không nói lý do. Giải
+    // thích + nhắc lại khung giờ khách vừa chọn để đăng nhập xong nhắn lại cho nhanh.
+    // Tin vừa nhờ đặt vừa hỏi lịch trống ("đặt lịch… check lịch tuần này") thì để nhánh lịch trống trả lời (đã kèm
+    // hướng dẫn đăng nhập) — bộ test bắt được lỗi này khi nhánh dưới chặn mất phần tra lịch.
+    if (COMPACT_PROMPT && !req.user && !emergency.length && !slotQuery && BOOKING_INTENT_RE.test(msg)) {
+      const picked = lastAssistantText.match(/^Khung (\d{2}:\d{2} ngày [\d/]+ khoa .+?) còn trống/);
+      const specialty = suggested ? suggested.specialty : specialtyFromConversation(msg, turns);
+      return reply([
+        picked ? `Khung ${picked[1]} vẫn đang trống.` : specialty ? `Chuyên khoa phù hợp là ${specialty}.` : '',
+        'Để mình đặt lịch qua chat, bạn cần đăng nhập (hoặc đăng ký miễn phí) tại /tai-khoan.html — lịch hẹn được lưu vào tài khoản để bạn xem, đổi, huỷ và theo dõi trạng thái xác nhận, đồng thời tránh người lạ đặt lịch ảo.',
+        'Đăng nhập xong bạn quay lại đây nhắn chuyên khoa và giờ muốn khám, mình đặt ngay; hoặc bạn tự đặt tại /dat-lich.html.',
+      ].filter(Boolean).join(' '));
+    }
     // Câu gần như trùng 1 câu mẫu admin đã soạn → trả nguyên câu mẫu. Tin quá ngắn ("ok") phụ thuộc ngữ cảnh nên bỏ qua.
     const topExample = examples[0];
     // Chỉ khi câu mẫu cùng chuyên khoa với câu hỏi — đo thật vòng 6: "đau đầu quá" khớp chữ với câu mẫu "đau quá"
@@ -743,7 +760,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
           : [`- Khách hỏi lịch trống nhưng CHƯA RÕ chuyên khoa → hỏi lại khách muốn khám chuyên khoa nào (${SPECIALTIES.join(', ')}).`])
       );
     }
-    if (!req.user && /đặt (?:lịch|hẹn|khám|cho|giúp|giùm|luôn)|book/i.test(msg)) {
+    if (!req.user && BOOKING_INTENT_RE.test(msg)) {
       facts.push('- Khách muốn đặt lịch nhưng CHƯA ĐĂNG NHẬP → hướng dẫn khách đăng nhập/đăng ký tại /tai-khoan.html rồi quay lại chat, hoặc tự đặt tại /dat-lich.html.');
     }
     if (!slotQuery && suggested) {
@@ -961,6 +978,8 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         || (suggested && /chuyên khoa nào/i.test(s))
         // Nêu thêm khoa khác ("khám Da liễu hoặc Nhi khoa" cho bé vàng da) khi code đã xác định khoa.
         || otherSpecialties.some((re) => re.test(s))
+        // Câu cộc model nhỏ hay mở đầu khi chưa hiểu ý (đo thật nhiều lần, người dùng phản ánh trên web).
+        || /đang nói gì vậy/i.test(s)
         // Câu nhắc đăng nhập do code chèn ở lượt trước — model chép lại thành câu cụt vô nghĩa (vòng 7).
         || /một trong hai cách này|Lịch CHƯA được đặt/i.test(s)
         // Cả câu bằng tiếng Anh.
@@ -991,7 +1010,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     }
     // Khách chưa đăng nhập gửi thông tin đặt lịch (tên, số điện thoại…) — đo thật vòng 5: model chỉ nhắc lại
     // thông tin mà không nói cần đăng nhập, khách tưởng đã đặt xong.
-    if (!req.user && (bookingDetails || /đặt (?:lịch|hẹn|khám|cho|giúp)/i.test(msg)) && !/đăng nhập|tai-khoan/i.test(answer)) {
+    if (!req.user && (bookingDetails || BOOKING_INTENT_RE.test(msg)) && !/đăng nhập|tai-khoan/i.test(answer)) {
       answer += '\n\nĐể mình đặt lịch qua chat, bạn cần đăng nhập/đăng ký tại /tai-khoan.html rồi nhắn lại; hoặc bạn tự đặt tại /dat-lich.html. Lịch CHƯA được đặt cho tới khi bạn làm một trong hai cách này.';
     }
     return reply(answer);

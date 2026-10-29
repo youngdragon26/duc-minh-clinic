@@ -120,6 +120,14 @@ const CASES = [
   { q: 'hôm nay mình muốn đặt lịch khám lúc 14h vì bị ngứa hãy check lịch khám cho mình', must: [/Khung 14:00/, /Da liễu/] },
   { q: 'bạn có thể đi chơi với tôi không', must: [REFUSE], mustNot: [/đang nói gì/i] },
   { q: 'mai khoa nhi 7h còn không', must: [/Khung 07:00/, /Nhi khoa/] },
+  {
+    q: 'bạn đặt hộ mình được không',
+    history: [
+      { role: 'user', content: 'mình muốn đặt khám 14h hơn' },
+      { role: 'assistant', content: 'Khung 14:00 ngày 29/10/2026 khoa Da liễu còn trống với: BS. Phạm Thị Dung, Bùi Đức Minh. Bạn đăng nhập tại /tai-khoan.html rồi nhắn lại để mình đặt giúp, hoặc tự đặt tại /dat-lich.html.' },
+    ],
+    must: [/đăng nhập/i, /Khung 14:00/], mustNot: [/đang nói gì/i],
+  },
 
   // Vòng 7 (16 hội thoại dài, 107 lượt) — giữ ngữ cảnh qua nhiều lượt.
   {
