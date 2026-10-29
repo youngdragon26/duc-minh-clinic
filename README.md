@@ -177,7 +177,8 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    ban đầu ở Nội tổng quát (trẻ em: Nhi, mang thai: Sản). "Khoa X khám những gì", "có nguy hiểm không" (không tự
    đánh giá mức độ bệnh) cũng có câu trả lời cố định. Gợi ý Nội tổng quát cho triệu chứng thuộc khoa không có thì
    luôn kèm lý do ngay từ đầu.
-   **Đặt lịch qua chat (khách đã đăng nhập) cũng do code điều khiển** (`bookingFlowReply` trong `ai.js`) — model
+   **Đặt lịch qua chat (khách đã đăng nhập) cũng do code điều khiển** (`bookingFlowReply` trong `ai.js`, bật ở
+   cả chế độ Gemini lẫn Ollama vì Gemini trên Render cũng hiểu sai ngày và không tự đặt) — model
    1.7B không tự gọi được công cụ đặt lịch (đo thật: hỏi vòng vo, hiểu "ngày 1" thành "1/10", bảo khách "đặt bằng
    công cụ book_appointment"). Code gom họ tên, tuổi, giới tính, số điện thoại (`parsePatientDetails`), ngày
    (`parseBookingDate`: "mai", "thứ 7", "5/11", "ngày 1" = ngày 1 sắp tới) và giờ (`parseBookingTime`: "9h", "2h

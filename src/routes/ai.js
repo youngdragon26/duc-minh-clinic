@@ -836,9 +836,10 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         'Đăng nhập xong bạn quay lại đây nhắn chuyên khoa và giờ muốn khám, mình đặt ngay; hoặc bạn tự đặt tại /dat-lich.html.',
       ].filter(Boolean).join(' '));
     }
-    // Khách đã đăng nhập đang đặt lịch qua chat — code điều khiển cả luồng (bookingFlowReply). Hỏi lịch trống
-    // chung chung ("mai còn giờ nào") để nhánh lịch trống bên dưới trả lời.
-    if (COMPACT_PROMPT && req.user && !emergency.length && !(slotQuery && !parseBookingTime(msg))) {
+    // Khách đã đăng nhập đang đặt lịch qua chat — code điều khiển cả luồng (bookingFlowReply), ở MỌI chế độ: đo thật
+    // trên Render, Gemini cũng hỏi vòng vo và hiểu "ngày 2" thành "2/10 (ngày mai)". Hỏi lịch trống chung chung
+    // ("mai còn giờ nào") để nhánh lịch trống bên dưới trả lời.
+    if (req.user && !emergency.length && !(slotQuery && !parseBookingTime(msg))) {
       const flow = await bookingFlowReply({ msg, userText, turns, user: req.user, todayVN, lastAssistantText });
       if (flow) return reply(flow);
     }
