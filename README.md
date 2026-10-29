@@ -183,14 +183,14 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    báo kháng sinh, nhắc đăng nhập khi khách chưa đăng nhập gửi thông tin đặt lịch.
 
 Đo chất lượng bằng `npm run eval-chat` (server phải đang chạy; `EVAL_URL=https://duc-minh-clinic.onrender.com
-npm run eval-chat` để đo bản deploy). Bộ test gồm 107 câu (cả hội thoại nhiều lượt), phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
+npm run eval-chat` để đo bản deploy). Bộ test gồm 110 câu (cả hội thoại nhiều lượt), phần lớn CỐ Ý hỏi khác chữ so với câu mẫu để đo khả
 năng hiểu câu chưa từng gặp; được xây qua 7 vòng hỏi dò (~800 lượt), mỗi lỗi tìm ra thành 1 câu test:
 
 | Cấu hình (`qwen3:1.7b`) | Kết quả | Thời gian TB |
 |---|---|---|
 | Prompt đầy đủ (ban đầu) | 6/15 | 2,9 s |
 | Prompt rút gọn + dữ kiện tính sẵn | 15/15 | 1,3 s |
-| + chuẩn hoá, trả lời cố định, câu mẫu, bộ lọc, ngữ cảnh hội thoại (sau 7 vòng) | 107/107 | 0,5 s |
+| + chuẩn hoá, trả lời cố định, câu mẫu, bộ lọc, ngữ cảnh hội thoại (sau 7 vòng) | 110/110 | 0,3 s |
 
 Chưa kiểm thử tự động được luồng của **bệnh nhân đã đăng nhập** (đặt lịch qua chat, tra hồ sơ/hoá đơn) — cần
 tài khoản bệnh nhân; nên tự thử tay sau mỗi lần sửa chatbot.

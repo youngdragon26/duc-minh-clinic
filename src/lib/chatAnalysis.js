@@ -286,7 +286,9 @@ const OFF_TOPIC_TASK_RE = words(
 );
 const OFF_TOPIC_SUBJECT_RE = words(
   '(?<!ứng )thời tiết', 'trời (?:có )?(?:mưa|nắng)', 'giá (?:vàng|xăng|dầu|đô|usd|bitcoin|cổ phiếu|chứng khoán)',
-  'bóng đá', 'world cup', 'xổ số', 'lô đề', 'nấu (?:món|ăn)', 'tin tức', 'âm lịch'
+  'bóng đá', 'world cup', 'xổ số', 'lô đề', 'nấu (?:món|ăn)', 'tin tức', 'âm lịch',
+  // Rủ rê / tán tỉnh — model từng đáp cộc "Bạn đang nói gì vậy?".
+  'đi chơi', 'hẹn hò', 'làm người yêu', 'kết bạn', 'đi cà phê', 'đi ăn'
 );
 const ARITHMETIC_RE = /\d+\s*(?:[+*×]|nhân|chia|cộng|trừ)\s*\d+/i;
 const detectOffTopicTask = (message) => has(OFF_TOPIC_TASK_RE, message) || ARITHMETIC_RE.test(String(message || ''));
@@ -411,7 +413,7 @@ const WEEKDAY_WORDS = { '2': 1, hai: 1, '3': 2, ba: 2, '4': 3, 'tư': 3, '5': 4,
 // "có chỗ" KHÔNG tính (đo thật: "có chỗ gửi xe không" bị trả lời bằng danh sách lịch trống).
 // "đánh trống ngực" là triệu chứng tim mạch, không phải hỏi lịch trống (đo thật vòng 4).
 // Vòng 6: "mai khám nhi được không", "lịch khám nhi mai còn không".
-const SLOT_INTENT_RE = /(?<!đánh )trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|có (?:lịch|giờ khám|ai khám)|còn khám (?:được )?không|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm|thứ|chủ nhật)|(?:check|kiểm tra|xem) lịch|lịch[^.?!]{0,30}(?:còn|có)[^.?!]{0,10}không|(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,20}khám[^.?!]{0,15}được không|khám[^.?!]{0,20}(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,10}được không/;
+const SLOT_INTENT_RE = /(?<!đánh )trống|rảnh|còn (?:giờ|lịch|chỗ|slot)|có (?:lịch|giờ khám|ai khám)|còn khám (?:được )?không|giờ nào|khung giờ|lịch khám (?:nào|ngày|tuần|hôm|thứ|chủ nhật)|(?:check|kiểm tra|xem) lịch|lịch[^.?!]{0,30}(?:còn|có)[^.?!]{0,10}không|(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,20}khám[^.?!]{0,15}được không|khám[^.?!]{0,20}(?:mai|hôm nay|ngày mai|ngày kia|thứ \d|chủ nhật)[^.?!]{0,10}được không|(?:mai|hôm nay|ngày kia|thứ \d|chủ nhật|\d{1,2}\s*(?:h|giờ))[^.?!]{0,25}còn (?:không|chỗ|được)/;
 // "Lịch của tôi", "tôi đã đặt", "tôi có lịch hẹn nào"… là hỏi lịch hẹn của chính khách (my_appointments), không phải lịch trống.
 const OWN_APPOINTMENT_RE = /lịch(?: hẹn| khám)? của (?:tôi|mình|em)|(?:tôi|mình|em) (?:đã đặt|có lịch)/;
 

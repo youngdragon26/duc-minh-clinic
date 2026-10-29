@@ -116,6 +116,11 @@ const CASES = [
   { q: 'Tết có làm việc không?', mustNot: [/bình thường/i] },
   { q: 'bạn giúp được gì', mustNot: [/chưa hiểu/i] },
 
+  // Người dùng gặp thật trên web: hỏi đúng 1 giờ thì phải trả lời thẳng giờ đó, không đưa cả danh sách.
+  { q: 'hôm nay mình muốn đặt lịch khám lúc 14h vì bị ngứa hãy check lịch khám cho mình', must: [/Khung 14:00/, /Da liễu/] },
+  { q: 'bạn có thể đi chơi với tôi không', must: [REFUSE], mustNot: [/đang nói gì/i] },
+  { q: 'mai khoa nhi 7h còn không', must: [/Khung 07:00/, /Nhi khoa/] },
+
   // Vòng 7 (16 hội thoại dài, 107 lượt) — giữ ngữ cảnh qua nhiều lượt.
   {
     q: 'mai có lịch không',

@@ -268,6 +268,28 @@ async function slotFacts(specialty, dates, todayVN) {
   });
 }
 
+// Khách hỏi đúng 1 khung giờ ("hôm nay 14h còn không", hoặc chọn giờ sau khi xem lịch) — trả lời thẳng khung đó,
+// đã kín thì gợi ý giờ trống gần nhất. Đo thật: trả cả danh sách giờ trống khiến khách phải tự dò.
+async function timeSlotReply({ specialty, date, time, todayVN, loggedIn }) {
+  const [y, m, d] = date.split('-');
+  const label = `${time} ngày ${d}/${m}/${y} khoa ${specialty}`;
+  const nowVN = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
+  const cta = loggedIn
+    ? 'Bạn có muốn mình đặt lịch giúp luôn không?'
+    : 'Bạn đăng nhập tại /tai-khoan.html rồi nhắn lại để mình đặt giúp, hoặc tự đặt tại /dat-lich.html.';
+  const { doctors } = await getAvailableSlots({ specialty, date });
+  const upcoming = (t) => date !== todayVN || t > nowVN;
+  const free = upcoming(time) ? doctors.filter((doc) => doc.freeSlots.includes(time)).map((doc) => doc.doctorName) : [];
+  if (free.length) return `Khung ${label} còn trống với: ${free.join(', ')}. ${cta}`;
+  const nearest = [...new Set(doctors.flatMap((doc) => doc.freeSlots))].filter(upcoming)
+    .sort((a, b) => Math.abs(toMinutes(a) - toMinutes(time)) - Math.abs(toMinutes(b) - toMinutes(time))).slice(0, 3).sort();
+  const reason = upcoming(time) ? 'đã kín' : 'đã qua';
+  return nearest.length
+    ? `Khung ${label} ${reason}. Giờ còn trống gần nhất hôm đó: ${nearest.join(', ')}. ${cta}`
+    : `Khung ${label} ${reason} và ngày này không còn giờ trống. Bạn chọn ngày khác nhé.`;
+}
+const toMinutes = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+
 // Chuyên khoa khách đang nói tới: ưu tiên tin nhắn mới, không có thì lần ngược lịch sử (tin của
 // khách trước, rồi tới câu trả lời của trợ lý — vd trợ lý vừa gợi ý "Tai – Mũi – Họng").
 function specialtyFromConversation(message, turns) {
@@ -636,13 +658,7 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
     if (shortcutOk && !req.user && !slotQuery && pickedTime && shownSlots && SPECIALTIES.includes(shownSlots[1])) {
       const dateNote = facts.find((f) => /= (\d{4}-\d{2}-\d{2})/.test(f));
       const date = dateNote ? dateNote.match(/(\d{4}-\d{2}-\d{2})/)[1] : `${shownSlots[4]}-${shownSlots[3]}-${shownSlots[2]}`;
-      const time = pickedTime[1];
-      const { doctors } = await getAvailableSlots({ specialty: shownSlots[1], date });
-      const free = doctors.filter((d) => d.freeSlots.includes(time)).map((d) => d.doctorName);
-      const [y, m, d] = date.split('-');
-      return reply(free.length
-        ? `Khung ${time} ngày ${d}/${m}/${y} khoa ${shownSlots[1]} còn trống với: ${free.join(', ')}. Bạn đăng nhập tại /tai-khoan.html rồi nhắn lại để mình đặt giúp, hoặc tự đặt tại /dat-lich.html.`
-        : `Khung ${time} ngày ${d}/${m}/${y} khoa ${shownSlots[1]} đã kín. Bạn chọn giờ khác trong danh sách lịch trống ở trên nhé.`);
+      return reply(await timeSlotReply({ specialty: shownSlots[1], date, time: pickedTime[1], todayVN, loggedIn: false }));
     }
     // Hỏi giá — số liệu từ CSDL, giảm giá tính sẵn. Câu hỏi "giá đã gồm xét nghiệm/thuốc chưa", "trả góp" để quy trình chính.
     const price = detectPriceQuestion(msg);
@@ -698,6 +714,11 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
 
     if (slotQuery) {
       const specialty = specialtyFromConversation(msg, turns);
+      // Hỏi đúng 1 giờ của 1 ngày ("hôm nay 14h còn không") → trả lời thẳng khung giờ đó.
+      const askedTime = (facts.find((f) => /Giờ khách nói = \d{2}:\d{2}/.test(f)) || '').match(/\d{2}:\d{2}/);
+      if (COMPACT_PROMPT && !emergency.length && !bookingDetails && specialty && askedTime && slotQuery.dates.length === 1) {
+        return reply(await timeSlotReply({ specialty, date: slotQuery.dates[0], time: askedTime[0], todayVN, loggedIn: !!req.user }));
+      }
       const slotLines = specialty ? await slotFacts(specialty, slotQuery.dates, todayVN) : null;
       // Model nhỏ bỏ qua cả lịch trống đã tra sẵn trong prompt (vẫn hứa "mình sẽ kiểm tra"), mà câu trả
       // lời ở đây xác định hoàn toàn từ dữ liệu — nên với bản rút gọn, code trả lời luôn, không gọi model.
