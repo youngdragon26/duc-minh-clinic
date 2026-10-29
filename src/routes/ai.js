@@ -9,6 +9,9 @@ const { createAppointment, BookingError, isSundayISO, sundayDeadlineISO } = requ
 const { toolsForRole, runTool } = require('../lib/assistantTools');
 const {
   analyzeMessage,
+  parseBookingDate,
+  parseBookingTime,
+  parsePatientDetails,
   isBlankMessage,
   upcomingDaysNote,
   describeDate,
@@ -366,6 +369,143 @@ function specialtyFollowUpReply(kind, specialty, named, message, turns, lastAssi
   ].join(' ');
 }
 
+// ---------- Đặt lịch qua chat do code điều khiển (khách đã đăng nhập, prompt rút gọn) ----------
+// Đo thật: qwen3:1.7b hỏi vòng vo, không bao giờ tóm tắt hay gọi book_appointment, còn bảo khách "đặt lịch bằng công
+// cụ book_appointment". Code gom thông tin từ các tin của khách, hỏi phần thiếu, tra giờ trống, tóm tắt, rồi tự đặt
+// khi khách xác nhận. Bản tóm tắt khớp nhận diện của giao diện (index.html, isSummary) để hiện 3 nút.
+const BOOKING_SUMMARY_HEAD = 'Mình tóm tắt thông tin đặt lịch:';
+const BOOKING_DONE_RE = /^(?:Đặt lịch thành công|Đã gửi yêu cầu khám Chủ nhật|Mình đã huỷ yêu cầu đặt lịch)/;
+const CONFIRM_RE = /xác nhận|đúng rồi|đồng ý|chốt|đặt (?:đi|luôn|giúp|nhé)|^\s*(?:ok\p{L}*|oke|có|ừ+|vâng|dạ|được|đúng)\b/iu;
+const CANCEL_RE = /không (?:muốn )?đặt|(?:huỷ|hủy) (?:yêu cầu|đặt|việc đặt)|^\s*thôi(?: không đặt nữa| bỏ qua)?\s*[.!]*$|từ chối/i;
+const FLOW_PROMPT_RE = /^(?:Để đặt lịch, mình cần thêm|Mình đã ghi nhận)/;
+const EDIT_RE = /sửa|đổi|thay|nhầm|sai/i;
+const GENDER_LABEL = { nam: 'Nam', nu: 'Nữ', khac: 'Khác' };
+const isoToVN = (iso) => iso.split('-').reverse().join('/');
+
+function parseSummary(text) {
+  const field = (label) => (text.match(new RegExp(`- ${label}: (.+)`)) || [])[1];
+  const date = field('Ngày khám');
+  const gender = field('Giới tính');
+  return {
+    specialty: field('Chuyên khoa'),
+    date: date && date.match(/(\d{2})\/(\d{2})\/(\d{4})/).slice(1).reverse().join('-'),
+    time: field('Giờ khám'),
+    fullName: field('Họ tên'),
+    phone: field('Số điện thoại'),
+    age: Number(field('Tuổi')),
+    gender: Object.keys(GENDER_LABEL).find((k) => GENDER_LABEL[k] === gender),
+    note: field('Lý do khám'),
+  };
+}
+
+async function bookingFlowReply({ msg, userText, turns, user, todayVN, lastAssistantText }) {
+  const lastIsSummary = lastAssistantText.startsWith(BOOKING_SUMMARY_HEAD);
+  const lastIsFlow = lastIsSummary || FLOW_PROMPT_RE.test(lastAssistantText);
+  if (lastIsFlow && CANCEL_RE.test(msg)) {
+    return 'Mình đã huỷ yêu cầu đặt lịch này — chưa có lịch nào được đặt. Bạn cần mình hỗ trợ gì thêm không?';
+  }
+  if (lastIsSummary && CONFIRM_RE.test(msg) && !EDIT_RE.test(msg)) {
+    const result = await bookAppointmentTool(parseSummary(lastAssistantText), user);
+    return result.success
+      ? `${result.message} Bạn xem và quản lý lịch ở mục "Tất cả lịch hẹn của tôi" tại /dat-lich.html.`
+      : `Chưa đặt được lịch: ${result.error} Bạn nhắn thông tin cần đổi (vd: đổi sang 10h, hoặc ngày khác) để mình đặt lại nhé.`;
+  }
+
+  // Chỉ xét các tin từ sau lần đặt/huỷ gần nhất.
+  let start = 0;
+  turns.forEach((t, i) => { if (t.role === 'assistant' && BOOKING_DONE_RE.test(t.content)) start = i + 1; });
+  const windowTurns = turns.slice(start);
+  const userTexts = [...windowTurns.filter((t) => t.role === 'user').map((t) => t.content), userText];
+  const ownDetails = parsePatientDetails(userText);
+  const ownDate = parseBookingDate(msg, todayVN);
+  const ownTime = parseBookingTime(msg);
+  // Tin cụt ("không", "ok") ngay sau câu hỏi của luồng: nhắc lại phần còn thiếu thay vì để model đoán (đo thật: model
+  // hỏi lại "chuyên khoa" dù đã có).
+  const shortReply = lastIsFlow && !lastIsSummary && msg.trim().split(/\s+/).length <= 3;
+  const contributes = Object.keys(ownDetails).length || ownDate || ownTime || detectSpecialty(msg) || BOOKING_INTENT_RE.test(msg) || shortReply;
+  const active = lastIsFlow || userTexts.some((t) => BOOKING_INTENT_RE.test(normalizeMessage(t).text) || parsePatientDetails(t).phone);
+  if (lastIsFlow && EDIT_RE.test(msg) && !ownDate && !ownTime && !Object.keys(ownDetails).length && !detectSpecialty(msg)) {
+    return 'Bạn muốn sửa mục nào: chuyên khoa, ngày, giờ, họ tên, số điện thoại, tuổi hay giới tính? Bạn nhắn luôn thông tin mới giúp mình (vd: đổi sang 10h, hoặc ngày 5/11).';
+  }
+  if (!active || !contributes) return null;
+
+  // Gom thông tin, tin sau ghi đè tin trước.
+  const info = {};
+  const problems = [];
+  for (const raw of userTexts) {
+    const text = normalizeMessage(raw).text;
+    Object.assign(info, parsePatientDetails(raw));
+    for (const [key, value] of [['date', parseBookingDate(text, todayVN)], ['time', parseBookingTime(text)]]) {
+      if (!value) continue;
+      if (typeof value === 'string') info[key] = value;
+      else if (raw === userText) problems.push(value.invalid);
+      else delete info[key];
+    }
+    const detected = detectSpecialty(text);
+    if (detected && symptomKeywords(detected).length && !BOOKING_INTENT_RE.test(text)) info.note = raw.trim().slice(0, 200);
+  }
+  info.specialty = specialtyFromConversation(msg, windowTurns) || specialtyFromConversation(msg, turns);
+  if (info.date && info.date < todayVN) {
+    problems.push(`ngày ${isoToVN(info.date)} đã qua`);
+    delete info.date;
+  }
+  if (info.date && isSundayISO(info.date)) {
+    problems.push(`${isoToVN(info.date)} là Chủ nhật — Chủ nhật chỉ khám theo hẹn trước với 1 bác sĩ cụ thể, đặt chậm nhất Thứ 3 tuần đó (bạn đặt tại /dat-lich.html để chọn bác sĩ)`);
+    delete info.date;
+  }
+  if (info.phone && !/^0\d{8,10}$/.test(info.phone)) {
+    problems.push(`số điện thoại ${info.phone} chưa đúng (cần 9-11 chữ số, bắt đầu bằng 0)`);
+    delete info.phone;
+  }
+  if (info.age !== undefined && !(info.age >= 0 && info.age <= 120)) {
+    problems.push(`tuổi ${info.age} không hợp lệ`);
+    delete info.age;
+  }
+  // Giờ khách chọn phải còn trống thật (và chưa qua nếu là hôm nay).
+  if (info.specialty && info.date && info.time) {
+    const { doctors } = await getAvailableSlots({ specialty: info.specialty, date: info.date });
+    const nowVN = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
+    const upcoming = (t) => info.date !== todayVN || t > nowVN;
+    if (!(upcoming(info.time) && doctors.some((d) => d.freeSlots.includes(info.time)))) {
+      const nearest = [...new Set(doctors.flatMap((d) => d.freeSlots))].filter(upcoming)
+        .sort((a, b) => Math.abs(toMinutes(a) - toMinutes(info.time)) - Math.abs(toMinutes(b) - toMinutes(info.time))).slice(0, 3).sort();
+      problems.push(`khung ${info.time} ngày ${isoToVN(info.date)} khoa ${info.specialty} ${upcoming(info.time) ? 'đã kín' : 'đã qua'}`
+        + (nearest.length ? ` (giờ còn trống gần nhất: ${nearest.join(', ')})` : ' và ngày này không còn giờ trống'));
+      delete info.time;
+    }
+  }
+
+  const missing = [
+    !info.specialty && 'triệu chứng hoặc chuyên khoa muốn khám', !info.date && 'ngày khám', !info.time && 'giờ khám',
+    !info.fullName && 'họ tên người khám', !info.phone && 'số điện thoại', info.age === undefined && 'tuổi', !info.gender && 'giới tính',
+  ].filter(Boolean);
+  const problemText = problems.length ? `Lưu ý: ${problems.join('; ')}. ` : '';
+  if (missing.length) {
+    const got = [
+      info.specialty && `chuyên khoa ${info.specialty}`, info.date && `ngày ${isoToVN(info.date)} (${describeDate(info.date).replace(/^.*\(|\)$/g, '')})`,
+      info.time && `giờ ${info.time}`, info.fullName && `họ tên ${info.fullName}`, info.phone && `số điện thoại ${info.phone}`,
+      info.age !== undefined && `${info.age} tuổi`, info.gender && `giới tính ${GENDER_LABEL[info.gender]}`,
+    ].filter(Boolean);
+    return [
+      got.length ? `Mình đã ghi nhận: ${got.join(', ')}.` : 'Để đặt lịch, mình cần thêm vài thông tin.',
+      problemText + `Bạn cho mình thêm ${missing.join(', ')} nhé.`,
+    ].join(' ');
+  }
+  return [
+    BOOKING_SUMMARY_HEAD,
+    `- Chuyên khoa: ${info.specialty}`,
+    `- Ngày khám: ${isoToVN(info.date)} (${describeDate(info.date).replace(/^.*\(|\)$/g, '')})`,
+    `- Giờ khám: ${info.time}`,
+    `- Họ tên: ${info.fullName}`,
+    `- Số điện thoại: ${info.phone}`,
+    `- Tuổi: ${info.age}`,
+    `- Giới tính: ${GENDER_LABEL[info.gender]}`,
+    ...(info.note ? [`- Lý do khám: ${info.note}`] : []),
+    'Lịch CHƯA được đặt — bạn bấm "OK, đặt lịch" hoặc trả lời "xác nhận" để mình đặt, hoặc nhắn mục cần sửa.',
+    ...(problemText ? [problemText.trim()] : []),
+  ].join('\n');
+}
+
 // Hai câu trả lời gần như trùng chữ (≥ 80% từ chung).
 function sameReply(a, b) {
   const wordSet = (s) => new Set(s.toLowerCase().match(/[\p{L}\d]+/gu) || []);
@@ -695,6 +835,12 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         'Để mình đặt lịch qua chat, bạn cần đăng nhập (hoặc đăng ký miễn phí) tại /tai-khoan.html — lịch hẹn được lưu vào tài khoản để bạn xem, đổi, huỷ và theo dõi trạng thái xác nhận, đồng thời tránh người lạ đặt lịch ảo.',
         'Đăng nhập xong bạn quay lại đây nhắn chuyên khoa và giờ muốn khám, mình đặt ngay; hoặc bạn tự đặt tại /dat-lich.html.',
       ].filter(Boolean).join(' '));
+    }
+    // Khách đã đăng nhập đang đặt lịch qua chat — code điều khiển cả luồng (bookingFlowReply). Hỏi lịch trống
+    // chung chung ("mai còn giờ nào") để nhánh lịch trống bên dưới trả lời.
+    if (COMPACT_PROMPT && req.user && !emergency.length && !(slotQuery && !parseBookingTime(msg))) {
+      const flow = await bookingFlowReply({ msg, userText, turns, user: req.user, todayVN, lastAssistantText });
+      if (flow) return reply(flow);
     }
     // Câu gần như trùng 1 câu mẫu admin đã soạn → trả nguyên câu mẫu. Tin quá ngắn ("ok") phụ thuộc ngữ cảnh nên bỏ qua.
     const topExample = examples[0];
@@ -1081,6 +1227,8 @@ router.post('/chat', optionalAuthenticate, async (req, res) => {
         || otherSpecialties.some((re) => re.test(s))
         // Câu cộc model nhỏ hay mở đầu khi chưa hiểu ý (đo thật nhiều lần, người dùng phản ánh trên web).
         || /đang nói gì vậy/i.test(s)
+        // Lộ tên công cụ nội bộ — đo thật: "Bạn có thể đặt lịch trực tiếp qua chat bằng công cụ book_appointment".
+        || /book_appointment|check_available_slots|my_(?:appointments|records|invoices|followups)|công cụ/i.test(s)
         // Hứa "mình xin kiểm tra lịch…" mà không tra, và câu chỉ nhắc lại triệu chứng của khách ("Bạn đang bị đau đầu gối.").
         || (/mình xin (?:phép )?(?:kiểm tra|xem|check)/i.test(s) && !isQuestion(s))
         || /^\s*bạn (?:đang )?bị [^.?!,\n]{1,40}[.!]?\s*$/i.test(s)

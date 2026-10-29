@@ -177,6 +177,14 @@ model chỉ là lớp cuối (`src/routes/ai.js`, route `POST /api/ai/chat`):
    ban đầu ở Nội tổng quát (trẻ em: Nhi, mang thai: Sản). "Khoa X khám những gì", "có nguy hiểm không" (không tự
    đánh giá mức độ bệnh) cũng có câu trả lời cố định. Gợi ý Nội tổng quát cho triệu chứng thuộc khoa không có thì
    luôn kèm lý do ngay từ đầu.
+   **Đặt lịch qua chat (khách đã đăng nhập) cũng do code điều khiển** (`bookingFlowReply` trong `ai.js`) — model
+   1.7B không tự gọi được công cụ đặt lịch (đo thật: hỏi vòng vo, hiểu "ngày 1" thành "1/10", bảo khách "đặt bằng
+   công cụ book_appointment"). Code gom họ tên, tuổi, giới tính, số điện thoại (`parsePatientDetails`), ngày
+   (`parseBookingDate`: "mai", "thứ 7", "5/11", "ngày 1" = ngày 1 sắp tới) và giờ (`parseBookingTime`: "9h", "2h
+   chiều", "9 giờ rưỡi") từ mọi tin của khách, chuyên khoa từ triệu chứng; hỏi phần còn thiếu, báo rõ thông tin sai
+   (ngày không có, Chủ nhật, ngoài giờ, số điện thoại thiếu số, giờ đã kín + gợi ý giờ trống gần nhất), đủ thì tóm
+   tắt (giao diện hiện nút "OK, đặt lịch / Từ chối / Sửa"), khách xác nhận thì code gọi thẳng `bookAppointmentTool`.
+   Khách sửa ("đổi sang 14h") → tóm tắt lại; huỷ → báo chưa có lịch nào được đặt.
 4. **Câu trả lời mẫu** (few-shot, bảng `chat_examples`): admin tự dạy chatbot ở trang `/co-so-tri-thuc.html`
    (thêm/sửa/xoá + ô "Thử 1 câu hỏi" xem chatbot lấy câu mẫu nào). Câu hỏi gần như trùng → trả nguyên văn; gần
    giống → đưa vào prompt làm ví dụ. Tìm bằng **vector của model embedding chạy trên Ollama**

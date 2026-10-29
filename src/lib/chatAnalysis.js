@@ -581,8 +581,139 @@ function upcomingDaysNote(todayISO, days = 14) {
   return ['Lịch các ngày tới (dùng bảng này để quy đổi "mai", "thứ 6 tuần này"... ra ngày cụ thể, KHÔNG tự tính):', ...lines].join('\n');
 }
 
+// ---------- Thu thập thông tin đặt lịch qua chat ----------
+// Đo thật: qwen3:1.7b không tự gọi được công cụ đặt lịch — hỏi vòng vo, hiểu "ngày 1" thành "1/10 (ngày mai)",
+// rồi bảo khách "đặt lịch bằng công cụ book_appointment". Code tự gom thông tin từ các tin của khách.
+
+// Ngày khám trong 1 tin → 'YYYY-MM-DD' | { invalid: 'mô tả' } | null. "ngày 1" (không nói tháng) = ngày 1 sắp tới.
+function parseBookingDate(message, todayISO) {
+  const lower = String(message || '').toLowerCase();
+  if (/hôm nay|(?:sáng|trưa|chiều|tối) nay/.test(lower)) return todayISO;
+  if (/ngày kia|(?:ngày|hôm) mốt/.test(lower)) return addDaysISO(todayISO, 2);
+  if (/(?:ngày|sáng|trưa|chiều|tối|hôm) mai|^\s*mai(?!\p{L})|(?<!\p{L})mai\s*(?:lúc\s*)?\d{1,2}\s*(?:h|giờ)/u.test(lower)) return addDaysISO(todayISO, 1);
+  const year = Number(todayISO.slice(0, 4));
+  const real = (y, mo, d) => {
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+  };
+  const dm = lower.match(/(?<![\d/:])(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2,4}))?(?![\d/:])/)
+    || lower.match(/ngày\s*(\d{1,2})\s*tháng\s*(\d{1,2})(?:\s*(?:năm)?\s*(\d{4}))?/);
+  if (dm) {
+    const d = Number(dm[1]);
+    const mo = Number(dm[2]);
+    let y = dm[3] ? Number(dm[3]) : year;
+    if (dm[3] && dm[3].length === 2) y += 2000;
+    if (!real(y, mo, d)) return { invalid: `ngày "${dm[0].trim()}" không có trên lịch` };
+    let iso = `${y}-${pad(mo)}-${pad(d)}`;
+    // Không nói năm mà ngày đã qua trong năm nay → hiểu là năm sau (vd đặt "5/1" vào tháng 12).
+    if (!dm[3] && iso < todayISO) iso = `${y + 1}-${pad(mo)}-${pad(d)}`;
+    return iso;
+  }
+  const dayOnly = lower.match(/ngày\s*(\d{1,2})(?!\s*(?:tháng|[/.-]|\d|ngày|tuổi))/);
+  if (dayOnly) {
+    const d = Number(dayOnly[1]);
+    let y = year;
+    let mo = Number(todayISO.slice(5, 7));
+    if (d < Number(todayISO.slice(8, 10))) mo += 1;
+    if (mo > 12) { mo = 1; y += 1; }
+    if (!real(y, mo, d)) return { invalid: `tháng ${mo} không có ngày ${d}` };
+    return `${y}-${pad(mo)}-${pad(d)}`;
+  }
+  const wd = lower.match(/thứ\s*(2|3|4|5|6|7|hai|ba|tư|năm|sáu|bảy)(?!\p{L})|chủ nhật/u);
+  if (wd) {
+    const target = wd[0] === 'chủ nhật' ? 0 : WEEKDAY_WORDS[wd[1]];
+    const todayDow = new Date(todayISO + 'T00:00:00Z').getUTCDay();
+    let diff = (target - todayDow + 7) % 7;
+    if (/tuần (?:sau|tới)/.test(lower)) diff = ((target + 6) % 7) - ((todayDow + 6) % 7) + 7;
+    return addDaysISO(todayISO, diff);
+  }
+  return null;
+}
+
+// Giờ khám trong 1 tin → 'HH:MM' | { invalid } | null. "9h", "9 giờ 30", "2h chiều", "9h rưỡi".
+function parseBookingTime(message) {
+  const lower = String(message || '').toLowerCase();
+  const tm = lower.match(/(?<![\d/])(\d{1,2})\s*(?:giờ|h(?!\p{L})|:)\s*(rưỡi|\d{1,2})?/u);
+  if (!tm) return null;
+  let hour = Number(tm[1]);
+  const minute = tm[2] === 'rưỡi' ? 30 : tm[2] ? Number(tm[2]) : 0;
+  if (/chiều|tối/.test(lower) && hour >= 1 && hour <= 11) hour += 12;
+  const total = hour * 60 + minute;
+  if (hour > 23 || minute > 59) return { invalid: `giờ "${tm[0].trim()}" không hợp lệ` };
+  if (total < OPEN_MIN || total > LAST_SLOT_MIN) return { invalid: `${pad(hour)}:${pad(minute)} ngoài giờ khám (07:00–20:30)` };
+  if (minute % 30 !== 0) return { invalid: `${pad(hour)}:${pad(minute)} không phải mốc đặt lịch (mỗi khung 30 phút: ${pad(hour)}:00 hoặc ${pad(hour)}:30)` };
+  return `${pad(hour)}:${pad(minute)}`;
+}
+
+// Từ không thể là họ tên — loại tin như "bị đau bụng", "ngày 1 lúc 9h" khỏi việc đoán tên.
+const NOT_NAME_WORDS = new Set(('bị đau khám ngày giờ lúc mai mốt nay hôm tuần thứ chủ nhật sáng trưa chiều tối tuổi số điện thoại sđt sdt '
+  + 'giới tính là của tôi mình em tên họ và đặt lịch hẹn cho giúp muốn khoa chuyên bác sĩ không có được ok xác nhận '
+  + 'sửa đổi huỷ hủy thôi rồi nhé ạ với tháng năm sinh lý do vì triệu chứng cần vâng dạ đúng').split(' '));
+const titleCase = (s) => s.replace(/\p{L}+/gu, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+const isCapitalized = (w) => w[0] !== w[0].toLowerCase();
+
+// Đoán họ tên trong phần chữ còn lại: tách đoạn theo dấu câu/số; ưu tiên cụm 2-5 chữ viết hoa đầu ("…khám nội mai
+// 10h, Phạm Văn Bình"), không thì cả đoạn 2-5 chữ không chứa từ thông thường ("thân tuấn vũ").
+function guessName(rest) {
+  const segments = rest.split(/[\d,;:.+/\n-]+/).map((s) => s.trim().split(/\s+/).filter(Boolean)).filter((s) => s.length);
+  for (const words of segments) {
+    const runs = [];
+    let run = [];
+    for (const w of [...words, '']) {
+      if (w && isCapitalized(w)) run.push(w);
+      else { if (run.length >= 2 && run.length <= 5) runs.push(run); run = []; }
+    }
+    if (runs.length) return runs[runs.length - 1].join(' ');
+  }
+  const plain = segments.find((words) => words.length >= 2 && words.length <= 5 && words.every((w) => !NOT_NAME_WORDS.has(w.toLowerCase())));
+  return plain ? titleCase(plain.join(' ')) : null;
+}
+
+// Thông tin người khám trong 1 tin (văn bản GỐC khách gõ — tên riêng không được thêm dấu tự động).
+function parsePatientDetails(message) {
+  const text = String(message || '');
+  const lower = text.toLowerCase();
+  const out = {};
+  // Nhóm số cách nhau phải ≥3 chữ số — "0912345 40 tuổi" không được gộp thành số điện thoại 9 chữ số.
+  const phoneMatch = text.match(/(?<![\d/])(?:\+84|0)\d{2,3}(?:[ .-]?\d{3,4}){1,2}(?![\d/])/);
+  if (phoneMatch) {
+    let digits = phoneMatch[0].replace(/\D/g, '');
+    if (digits.startsWith('84')) digits = '0' + digits.slice(2);
+    out.phone = digits;
+  }
+  const ageMatch = lower.match(/(\d{1,3})\s*tuổi/) || lower.match(/tuổi\s*(?:là|:)?\s*(\d{1,3})/);
+  // Tin khai thông tin ("thân tuấn vũ 21 nam 0353012966"): số 1-3 chữ số đứng riêng, không phải ngày/giờ, là tuổi.
+  const bareAge = !ageMatch && (phoneMatch || /(?<!\p{L})(?:nam|nữ|nu)(?!\p{L})/u.test(lower))
+    && lower.replace(phoneMatch ? phoneMatch[0] : '', ' ').match(/(?<![\d/:\p{L}])(\d{1,3})(?![\d/:]|\s*(?:h(?!\p{L})|giờ|tháng|ngày))/u);
+  // Cả tin chỉ có 1 số ("45") là câu trả lời cho câu hỏi tuổi.
+  const onlyNumber = lower.match(/^\s*(\d{1,3})\s*$/);
+  const age = ageMatch || bareAge || onlyNumber;
+  if (age && !/(?:ngày|lúc|thứ|tháng)\s*$/.test(lower.slice(0, age.index))) out.age = Number(age[1]);
+  // Khớp trên văn bản gốc (không phân biệt hoa thường) để bỏ đúng vị trí chữ giới tính khỏi phần đoán tên.
+  const gender = text.match(/giới tính\s*(?:là|:)?\s*(nam|nữ|nu|khác)/iu)
+    || text.match(/(?:^|[\d,;.]\s*|\s(?:là|tuổi)\s+)(nam|nữ|nu)(?!\p{L})/iu);
+  if (gender) {
+    const g = gender[1].toLowerCase();
+    out.gender = g === 'nam' ? 'nam' : g === 'khác' ? 'khac' : 'nu';
+  }
+  const named = text.match(/(?:họ (?:và )?tên|tên(?: (?:tôi|mình|em|bệnh nhân|người khám))?)\s*(?:là|:)\s*([\p{L} ]{2,40}?)(?=\s*(?:[,;.\d]|$|\s(?:sinh|năm|số|sđt|sdt|tuổi|giới)(?!\p{L})))/iu);
+  if (named) {
+    out.fullName = titleCase(named[1].trim());
+  } else if (out.phone || out.age !== undefined) {
+    // Bỏ đúng chữ giới tính đã nhận ra (theo vị trí) — "Nam" trong "Nguyễn Văn Nam 30 tuổi" là tên.
+    const withoutGender = gender ? text.slice(0, gender.index) + ' , ' + text.slice(gender.index + gender[0].length) : text;
+    const name = guessName(withoutGender.replace(phoneMatch ? phoneMatch[0] : '', ' , ')
+      .replace(/(?<!\p{L})(?:số điện thoại|so dien thoai|sđt|sdt|giới tính|gioi tinh|tuổi|tuoi)\s*(?:là|la|:)?(?!\p{L})/giu, ' , '));
+    if (name) out.fullName = name;
+  }
+  return out;
+}
+
 module.exports = {
   analyzeMessage,
+  parseBookingDate,
+  parseBookingTime,
+  parsePatientDetails,
   isBlankMessage,
   upcomingDaysNote,
   describeDate,
